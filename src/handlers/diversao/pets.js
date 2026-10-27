@@ -319,11 +319,22 @@ async function handleCapturarPet(sock, msg, jid) {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
 
-  const spawn = spawnedPets.get(jid);
+  let spawn;
+  try {
+    const registro = await PetSpawn.findOne({ idGrupo: jid }).select('personagemAtivo').lean();
+    const ativo = registro?.personagemAtivo;
+    if (ativo?.type && ativo?.rarity && ativo?.spawnedAt && Date.now() - ativo.spawnedAt < 60 * 60 * 1000) {
+      spawn = { type: ativo.type, rarity: ativo.rarity, spawnedAt: ativo.spawnedAt };
+      spawnedPets.set(jid, spawn);
+    }
+  } catch (err) {
+    console.error('[capturar] Erro ao consultar personagem ativo:', err.message || err);
+    return reply(sock, jid, msg, '❌ Não consegui verificar o personagem agora. Tente novamente.');
+  }
   if (!spawn) {
     return reply(
       sock, jid, msg,
-      '❌ Nenhum pet apareceu por aqui ainda. Aguarde o próximo spawn nos arbustos!',
+      '❌ Nenhum personagem apareceu por aqui ainda. Aguarde o próximo personagem!',
     );
   }
 
@@ -350,7 +361,22 @@ async function handleCapturarPet(sock, msg, jid) {
     );
   }
 
-  // 2. Trava de concorrência
+  // 2. Reserva atómica: apenas uma captura pode reivindicar este personagem.
+  let reservado;
+  try {
+    reservado = await PetSpawn.findOneAndUpdate(
+      { idGrupo: jid, 'personagemAtivo.spawnedAt': spawn.spawnedAt },
+      { $unset: { personagemAtivo: '' } },
+      { new: false }
+    );
+  } catch (err) {
+    console.error('[capturar] Falha ao reservar personagem:', err.message || err);
+    return reply(sock, jid, msg, '❌ Não consegui reservar o personagem. Tente novamente.');
+  }
+  if (!reservado) {
+    spawnedPets.delete(jid);
+    return reply(sock, jid, msg, '⚠️ Outro jogador já está tentando capturar esse personagem.');
+  }
   spawnedPets.delete(jid);
 
   // 3. Sistema de taxa de captura
@@ -384,8 +410,11 @@ async function handleCapturarPet(sock, msg, jid) {
     await savePet(userId, jid, novoPet);
   } catch (err) {
     console.error('[capturar] Erro ao salvar pet:', err);
-    spawnedPets.set(jid, spawn);
-    return reply(sock, jid, msg, '❌ Erro de banco de dados ao guardar o pet na mochila. Tente novamente!');
+    try {
+      await PetSpawn.updateOne({ idGrupo: jid, $or: [{ personagemAtivo: null }, { 'personagemAtivo.spawnedAt': { $exists: false } }] }, { $set: { personagemAtivo: spawn } });
+      spawnedPets.set(jid, spawn);
+    } catch (restoreErr) { console.error('[capturar] Falha ao restaurar personagem:', restoreErr.message || restoreErr); }
+    return reply(sock, jid, msg, '❌ Erro ao guardar o personagem. Tente novamente!');
   }
 
   // 5. Retorno visual de sucesso para o chat
@@ -1209,7 +1238,34 @@ async function handleAdoptarPet(sock, msg, jid, caption = '') {
  * Retorna true em sucesso, false em falha (sem lançar exceção).
  */
 async function triggerSpawn(sock, groupJid) {
-  const spawn = spawnNovoPet(groupJid);
+  let spawn;
+  try {
+    await PetSpawn.obterOuCriar(groupJid);
+    const agora = Date.now();
+    spawn = {
+      type: PERSONAGENS[Math.floor(Math.random() * PERSONAGENS.length)].type,
+      rarity: sortearRaridadePet().rarity,
+      spawnedAt: agora,
+    };
+    const reivindicado = await PetSpawn.findOneAndUpdate(
+      { idGrupo: groupJid, $or: [
+        { personagemAtivo: null },
+        { 'personagemAtivo.spawnedAt': { $exists: false } },
+        { 'personagemAtivo.spawnedAt': { $lte: agora - 60 * 60 * 1000 } },
+      ] },
+      { $set: { personagemAtivo: spawn } },
+      { new: true }
+    );
+    if (!reivindicado) {
+      console.log(`[triggerSpawn] Já existe personagem ativo em ${groupJid}; spawn ignorado.`);
+      return false;
+    }
+    spawnedPets.set(groupJid, spawn);
+    setTimeout(() => { if (spawnedPets.get(groupJid)?.spawnedAt === spawn.spawnedAt) spawnedPets.delete(groupJid); }, 60 * 60 * 1000);
+  } catch (err) {
+    console.error('[triggerSpawn] Falha ao reservar personagem:', err.message || err);
+    return false;
+  }
   const def   = PET_SYSTEM[spawn.type];
   const re    = RARITY_EMOJI[spawn.rarity] ?? '⭐';
 
@@ -1243,6 +1299,7 @@ async function triggerSpawn(sock, groupJid) {
     console.error(`[triggerSpawn] Falha ao enviar mensagem para ${groupJid}:`, err.message ?? err);
     // Remove o spawn do mapa se não conseguiu nem avisar o grupo
     spawnedPets.delete(groupJid);
+    try { await PetSpawn.updateOne({ idGrupo: groupJid, 'personagemAtivo.spawnedAt': spawn.spawnedAt }, { $unset: { personagemAtivo: '' } }); } catch (cleanupErr) { console.error('[triggerSpawn] Falha ao limpar personagem não enviado:', cleanupErr.message || cleanupErr); }
     return false;
   }
 }
@@ -1654,11 +1711,11 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
 
   if (arg === 'spawn') {
     if (spawnedPets.has(jid)) {
-      return reply(sock, jid, msg, '🐾 Já existe um pet selvagem neste grupo. Capture-o antes de invocar outro.');
+      return reply(sock, jid, msg, 'Já existe um personagem neste grupo. Capture-o antes de invocar outro.');
     }
     const enviado = await triggerSpawn(sock, jid);
     if (!enviado) {
-      return reply(sock, jid, msg, '❌ Não foi possível invocar o pet. Tente novamente.');
+      return reply(sock, jid, msg, '❌ Não foi possível invocar o personagem. Tente novamente.');
     }
     try {
       await PetSpawn.findOneAndUpdate(
@@ -1669,7 +1726,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
     } catch (err) {
       console.error('[handlePetToggle] Pet invocado, mas falhou ao registrar horário:', err.message);
     }
-    return reply(sock, jid, msg, '✅ Pet invocado manualmente pelo administrador!');
+    return reply(sock, jid, msg, '✅ Personagem invocado manualmente pelo administrador!');
   }
 
   const novoEstado = arg === 'on';
