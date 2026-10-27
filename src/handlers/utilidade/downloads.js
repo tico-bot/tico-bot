@@ -372,6 +372,60 @@ async function fetchMeta(ytdlp, link, extraArgs = []) {
   try { return JSON.parse(stdout.trim()); } catch { return null; }
 }
 
+// Alguns pins do Pinterest são imagens estáticas, não vídeos. O yt-dlp pode
+// retornar "No video formats found" nesses casos; tenta recuperar a imagem
+// de Open Graph em vez de falhar o comando !save.
+async function downloadPinterestImage(link, outputBase) {
+  try {
+    const validatedPage = await validateExternalUrl(link);
+    const page = await axios.get(validatedPage.url.href, {
+      timeout: 15000,
+      maxRedirects: 0,
+      responseType: 'text',
+      maxContentLength: 5 * 1024 * 1024,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      lookup: validatedPage.lookup,
+      validateStatus: status => status >= 200 && status < 300,
+    });
+    const html = typeof page.data === 'string' ? page.data : '';
+    const decode = value => value
+      .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+    const imageMatch = html.match(/<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']/i);
+    if (!imageMatch?.[1]) return null;
+
+    const imageUrl = new URL(decode(imageMatch[1]), validatedPage.url).href;
+    const validatedImage = await validateExternalUrl(imageUrl);
+    const image = await axios.get(validatedImage.url.href, {
+      timeout: 20000,
+      maxRedirects: 0,
+      responseType: 'arraybuffer',
+      maxContentLength: SIZE_LIMIT,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      lookup: validatedImage.lookup,
+      validateStatus: status => status >= 200 && status < 300,
+    });
+    const contentType = String(image.headers['content-type'] || '').toLowerCase();
+    if (!contentType.startsWith('image/')) return null;
+    const buffer = Buffer.from(image.data);
+    if (buffer.length < 1000 || buffer.length > SIZE_LIMIT) return null;
+    const ext = contentType.includes('png') ? '.png'
+      : contentType.includes('webp') ? '.webp'
+      : contentType.includes('gif') ? '.gif' : '.jpg';
+    const outputPath = outputBase + ext;
+    fs.writeFileSync(outputPath, buffer);
+    log.info('📌 Pinterest: imagem estática recuperada via Open Graph.');
+    return outputPath;
+  } catch (error) {
+    log.warn('Pinterest: fallback de imagem falhou:', error.message);
+    return null;
+  }
+}
+
 function formatMeta(meta) {
   if (!meta) return '';
   const parts = [];
@@ -496,13 +550,16 @@ async function handleSave(sock, msg, jid, caption) {
   baseArgs.push('-o', outTemplate, link);
 
   const { ok: dlOk } = await ytDlp(ytdlp, baseArgs, 120000);
-  if (!dlOk) {
-    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo.' }, { quoted: msg });
-  }
-
   const base = outTemplate.replace('.%(ext)s', '');
   const exts = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
   let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
+
+  if (!dlOk && !filePath && /pinterest|pin\.it/i.test(link)) {
+    filePath = await downloadPinterestImage(link, base);
+  }
+  if (!dlOk && !filePath) {
+    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo. Se for um pin de imagem, confirme se ele está público; se for vídeo, tente outro link do Pinterest.' }, { quoted: msg });
+  }
 
   if (!filePath) {
     return sock.sendMessage(jid, { text: '❌ Arquivo baixado não encontrado.' }, { quoted: msg });
