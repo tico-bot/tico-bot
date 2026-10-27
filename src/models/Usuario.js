@@ -80,7 +80,7 @@ const usuarioSchema = new mongoose.Schema({
   // ainda conta como "existe" e quebra o unique index assim que o segundo
   // usuário sem username/email é criado. Sem default, o Mongoose não grava
   // o campo quando ele não é informado, e o sparse index volta a funcionar.
-  username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30, unique: true, sparse: true },
+  username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
   passwordHash: { type: String, default: null },
   email:        { type: String, trim: true, lowercase: true },
 
