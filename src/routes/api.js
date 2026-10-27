@@ -2108,19 +2108,19 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
       : [];
     const idsWhatsApp = variantesTelefone.map(n => `${n}@s.whatsapp.net`);
 
-    // Compatibilidade com contas antigas cujos email/username podem ter sido
-    // salvos com letras maiúsculas antes da normalização do cadastro.
-    const identificadorRegex = new RegExp(
-      '^' + emailOuUsuario.replace(/[.*+?^${}()|[\]\\]/g, '\\    let usuario = await Usuario.findOne({
+    // Compatibilidade com contas antigas: compara email/username sem diferenciar maiúsculas.
+    let usuario = await Usuario.findOne({
       $or: [
         { username: emailOuUsuario },
         { email: emailOuUsuario },
+        { $expr: { $eq: [{ $toLower: { $ifNull: ['$username', ''] } }, emailOuUsuario] } },
+        { $expr: { $eq: [{ $toLower: { $ifNull: ['$email', ''] } }, emailOuUsuario] } },
         ...(variantesTelefone.length ? [
           { telefone: { $in: variantesTelefone } },
           { idWhatsApp: { $in: idsWhatsApp } },
         ] : []),
       ],
-    }).lean();') + '
+    }).lean();
 
     // Alguns usuários do WhatsApp têm um JID @lid em vez do número @s.whatsapp.net.
     // A recuperação já resolve esse vínculo; o login por telefone também precisa fazê-lo.
