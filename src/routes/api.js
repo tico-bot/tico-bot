@@ -2072,6 +2072,16 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 
   } catch (err) {
+    if (err?.code === 11000) {
+      const campo = Object.keys(err.keyPattern || {})[0];
+      const mensagens = {
+        username: 'Este nome de usuário já está em uso.',
+        email: 'Este email já está sendo usado por outra conta.',
+      };
+      return res.status(409).json({
+        error: mensagens[campo] || 'Já existe uma conta com esses dados.',
+      });
+    }
     console.error('[API] POST /auth/cadastrar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
