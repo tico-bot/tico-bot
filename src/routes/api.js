@@ -26,6 +26,36 @@ function nomeGrupo(grupo = {}, jid = '') {
   return String(jid).split('@')[0] || 'Grupo sem nome';
 }
 
+// Gera variantes de números brasileiros com e sem o nono dígito.
+function gerarVariantesNumero(numero = '') {
+  const original = String(numero).replace(/\D/g, '');
+  if (!original) return [];
+
+  const variantes = new Set([original]);
+  const temCodigoPais = original.startsWith('55') &&
+    (original.length === 12 || original.length === 13);
+  const nacional = temCodigoPais ? original.slice(2) : original;
+
+  if (nacional.length !== 10 && nacional.length !== 11) {
+    return [...variantes];
+  }
+
+  const ddd = nacional.slice(0, 2);
+  const assinante = nacional.slice(2);
+  const prefixos = temCodigoPais ? ['55'] : ['', '55'];
+
+  for (const prefixo of prefixos) {
+    variantes.add(`${prefixo}${nacional}`);
+    if (assinante.length === 8) {
+      variantes.add(`${prefixo}${ddd}9${assinante}`);
+    } else if (assinante.length === 9 && assinante.startsWith('9')) {
+      variantes.add(`${prefixo}${ddd}${assinante.slice(1)}`);
+    }
+  }
+
+  return [...variantes];
+}
+
 // ─── Variáveis obrigatórias ───────────────────────────────────────────────────
 const getJwtSecret = () => {
   const secret = process.env.JWT_SECRET;
