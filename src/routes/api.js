@@ -2091,7 +2091,7 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Email, telefone ou nome de usuário e senha são obrigatórios.' });
 
     const emailOuUsuario = identificador.toLowerCase();
-    const digitos = identificador.replace(/\\D/g, '');
+    const digitos = identificador.replace(/\D/g, '');
     const variantesTelefone = digitos.length >= 8 && digitos.length <= 15
       ? gerarVariantesNumero(digitos)
       : [];
