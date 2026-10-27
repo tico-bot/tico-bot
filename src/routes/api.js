@@ -11,8 +11,6 @@ const LidMapping    = require('../models/LidMapping');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const rateLimit      = require('express-rate-limit');
 
-const { ipKeyGenerator } = require('express-rate-limit');
-
 // Helpers usados pelas rotas públicas de ranking e grupos.
 // Mantêm a fórmula de nível igual à usada no site.
 function calcularLevel(xp = 0) {
@@ -104,7 +102,8 @@ const LOGIN_JANELA_MS = 15 * 60 * 1000;
 const rateLimitAdmin = rateLimit({
   windowMs:     LOGIN_JANELA_MS,
   max:          LOGIN_MAX,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  // Usa o IP resolvido pelo Express; o rate-limit trata IPv4/IPv6 por padrão.
+  // A configuração de trust proxy deve ser restrita ao proxy real da hospedagem.
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitas tentativas. Tente novamente mais tarde.'
