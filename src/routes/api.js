@@ -365,6 +365,25 @@ router.get('/user/ranking/grupo', async (req, res) => {
 // ROTAS AUTENTICADAS (JWT de sessão)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// PATCH /api/user/display-name
+router.patch('/user/display-name', auth, async (req, res) => {
+  try {
+    const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+    if (!displayName || displayName.length > 40)
+      return res.status(400).json({ error: 'Nome de exibição deve ter entre 1 e 40 caracteres.' });
+    const usuario = await Usuario.findOneAndUpdate(
+      { idWhatsApp: req.user.idWhatsApp },
+      { $set: { displayName } },
+      { new: true, runValidators: true }
+    ).select('displayName').lean();
+    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    return res.json({ ok: true, displayName: usuario.displayName });
+  } catch (err) {
+    console.error('[API] PATCH /user/display-name:', err);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
 // GET /api/user/me
 router.get('/user/me', auth, async (req, res) => {
   try {
@@ -528,7 +547,8 @@ if (!carteiras.length) {
     const telefoneResolvido = usuario.telefone || idWhatsApp.split('@')[0] || null;
 
     return res.json({
-      nome:     nomeResolvido,
+      nome:     usuario.displayName || nomeResolvido,
+      displayName: usuario.displayName || '',
       telefone: telefoneResolvido,
       bio:      usuario.bio,
 
