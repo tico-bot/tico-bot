@@ -1324,7 +1324,9 @@ async function tentarSpawnComRetry(sock, jid, tentativas = 3, delayMs = 15_000) 
 const PetSpawn = require('../../models/PetSpawn');
 
 const INTERVALO_MS = 30 * 60 * 1000; // 30 minutos
-const CHECK_INTERVAL = 30 * 1000; // verifica a cada 30s
+const CHECK_INTERVAL = 30 * 1000; // verifica cooldowns a cada 30s
+const GROUP_REFRESH_INTERVAL = 10 * 60 * 1000; // intervalo normal entre consultas de grupos
+const GROUP_REFRESH_MAX_BACKOFF = 60 * 60 * 1000; // limite de espera após rate limit
 const FUSO_PET = 'America/Cuiaba';
 
 // Pausa automática das 22:00 às 09:00, no fuso de Cuiabá.
@@ -1346,6 +1348,8 @@ function initPetScheduler(sock) {
   let currentSock = sock;
   let cicloEmAndamento = false;
   let timerInicial = null;
+  let proximaAtualizacaoGrupos = 0;
+  let esperaAtualizacaoGrupos = GROUP_REFRESH_INTERVAL;
 
   initPetScheduler.updateSock = (newSock) => {
     currentSock = newSock;
@@ -1356,14 +1360,34 @@ function initPetScheduler(sock) {
     if (cicloEmAndamento) return;
     cicloEmAndamento = true;
     try {
-    // Recarrega os grupos participantes do WhatsApp para não depender de
-    // mensagens recebidas desde o boot para entrar no scheduler.
-    if (isSockReady(currentSock) && typeof currentSock.groupFetchAllParticipating === 'function') {
+    // Não consultar a lista de grupos em todo ciclo (30s): isso pode provocar
+    // rate-overlimit. Em caso de erro, preserva o cache e aplica backoff.
+    const agoraRefresh = Date.now();
+    if (
+      isSockReady(currentSock) &&
+      typeof currentSock.groupFetchAllParticipating === 'function' &&
+      agoraRefresh >= proximaAtualizacaoGrupos
+    ) {
+      proximaAtualizacaoGrupos = agoraRefresh + esperaAtualizacaoGrupos;
       try {
         const grupos = await currentSock.groupFetchAllParticipating();
         for (const jid of Object.keys(grupos || {})) registerActiveGroup(jid);
+        esperaAtualizacaoGrupos = GROUP_REFRESH_INTERVAL;
+        proximaAtualizacaoGrupos = Date.now() + GROUP_REFRESH_INTERVAL;
       } catch (err) {
-        console.warn('[PetScheduler] Não foi possível atualizar grupos:', err.message);
+        const mensagem = String(err?.message || err);
+        const rateLimit = /rate[-_ ]?overlimit|rate.?limit|too many requests/i.test(mensagem);
+        if (rateLimit) {
+          esperaAtualizacaoGrupos = Math.min(
+            Math.max(esperaAtualizacaoGrupos * 2, GROUP_REFRESH_INTERVAL),
+            GROUP_REFRESH_MAX_BACKOFF
+          );
+        }
+        proximaAtualizacaoGrupos = Date.now() + esperaAtualizacaoGrupos;
+        console.warn(
+          `[PetScheduler] Não foi possível atualizar grupos; mantendo cache e tentando novamente em ${Math.round(esperaAtualizacaoGrupos / 60000)} min:`,
+          mensagem
+        );
       }
     }
     const total = activeGroups.size;
