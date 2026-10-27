@@ -1,0 +1,2279 @@
+'use strict';
+
+const fs   = require('fs');
+const path = require('path');
+const { normalizarJid } = require('../utils/jid');
+
+// ─── Import handleRanking do economia ────────────────────────────────────────
+
+
+// ═══════════════════════════════════════════════════════════════
+// ─── ESTADO GLOBAL (em memória — resetado ao reiniciar o bot) ─
+// ═══════════════════════════════════════════════════════════════
+
+/** @type {Map<string, { segundos: number, lastMsg: Map<string, number> }>} */
+const slowModeGroups = new Map();
+
+/** @type {Map<string, { limite: number, janela_ms: number, msgs: Map<string, number[]>, ultimaLimpeza: number }>} */
+const antiFloodGroups = new Map();
+
+/** @type {Map<string, { ativo: boolean, mensagem: string }>} */
+const bemVindoGroups = new Map();
+
+function setBemVindo(jid, mensagem) {
+  if (!mensagem || !mensagem.trim()) {
+    bemVindoGroups.delete(jid);
+  } else {
+    bemVindoGroups.set(jid, { ativo: true, mensagem: mensagem.trim() });
+  }
+}
+
+/** @type {Map<string, Array<{ texto: string, data: number }>>} */
+const grupoAvisosMap = new Map();
+
+/**
+ * Map<grupoJid, Set<userJid>> — isolado por grupo para evitar
+ * que mutes de um grupo vazem para outro.
+ * @type {Map<string, Set<string>>}
+ */
+const mutedUsers = new Map();
+
+const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'imageban.jpg');
+const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', 'Audio-Image', 'audioban.mp4');
+// ═══════════════════════════════════════════════════════════════
+// ─── UTILS ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Verifica se um participante é admin ou superadmin num grupo.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {Promise<boolean>}
+ */
+// Cache de groupMetadata — evita rate-limit do WhatsApp em grupos movimentados.
+// TTL de 5 minutos; invalidado automaticamente por tempo (sem necessidade de
+// limpeza manual em ações como promover/rebaixar/ban, que são raras).
+if (!global._groupMetadataCache) global._groupMetadataCache = new Map();
+const GROUP_METADATA_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Busca groupMetadata com cache (TTL 5min) para evitar estourar o
+ * rate-limit do WhatsApp em grupos com muitas mensagens.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {boolean} [forceRefresh] força ignorar o cache
+ * @returns {Promise<object>}
+ */
+async function getGroupMetadataCached(sock, groupJid, forceRefresh = false) {
+  const agora = Date.now();
+  const cached = global._groupMetadataCache.get(groupJid);
+
+  if (!forceRefresh && cached && (agora - cached.fetchedAt) < GROUP_METADATA_TTL_MS) {
+    return cached.meta;
+  }
+
+  const meta = await sock.groupMetadata(groupJid);
+  global._groupMetadataCache.set(groupJid, { meta, fetchedAt: agora });
+  return meta;
+}
+
+async function isAdmin(sock, groupJid, userJid) {
+  try {
+    const meta = await getGroupMetadataCached(sock, groupJid);
+    const part = meta.participants?.find(
+      p => p.id === userJid || p.lid === userJid
+    );
+    return part?.admin === 'admin' || part?.admin === 'superadmin';
+  } catch (err) {
+    console.error('[isAdmin] Erro ao buscar metadata:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Normaliza um JID removendo sufixos de dispositivo.
+ * Exemplos:
+ *   "5511912345678:3@s.whatsapp.net" → "5511912345678"
+ *   "5511912345678@s.whatsapp.net"   → "5511912345678"
+ * @param {string} jid
+ * @returns {string}
+ */
+function normalizeJidBase(jid) {
+  if (!jid || typeof jid !== 'string') return '';
+  return jid.split(':')[0].split('@')[0].toLowerCase();
+}
+
+/**
+ * Verifica se um JID pertence ao próprio bot.
+ * Compara apenas o número base (sem sufixos de dispositivo ou @).
+ * @param {string} jid
+ * @param {string} botJid
+ * @returns {boolean}
+ */
+function isBotJid(jid, botJid) {
+  if (!botJid || !jid) return false;
+  return normalizeJidBase(jid) === normalizeJidBase(botJid);
+}
+
+/**
+ * Retorna true se o alvo for o bot ou um admin.
+ * Usado para proteger esses usuários de ban/mute/reportar.
+ * @param {object} sock
+ * @param {string} groupJid
+ * @param {string} targetJid
+ * @param {string} botJid
+ * @returns {Promise<boolean>}
+ */
+async function isProtectedTarget(sock, groupJid, targetJid, botJid) {
+  if (isBotJid(targetJid, botJid)) return true;
+  return isAdmin(sock, groupJid, targetJid);
+}
+
+/**
+ * Resolve o JID do alvo a partir de menção direta ou reply.
+ * Prioridade: menção (@tag) → reply (participant do quoted).
+ * Tenta resolver @lid para @s.whatsapp.net quando possível.
+ * @param {object} sock
+ * @param {object} msg
+ * @param {object} content
+ * @param {string} jid  JID do grupo
+ * @returns {Promise<string|null>}
+ */
+async function resolveTargetJid(sock, msg, content, jid) {
+  const ctx               = content.extendedTextMessage?.contextInfo;
+  const mentionedJid      = ctx?.mentionedJid || [];
+  const quotedParticipant = ctx?.participant;
+
+  // Sem menção → tenta reply
+  if (mentionedJid.length === 0) {
+    if (!quotedParticipant) return null;
+    // Normaliza (remove sufixo de dispositivo, ex: ":5") aqui, no ponto
+    // único de resolução — via reply o Baileys pode devolver o JID cru
+    // vindo de contextInfo.participant. Assim, todo handler que chama
+    // resolveTargetJid (atual e futuro: !ban, !mute, !desmute, !promover,
+    // !rebaixar) já recebe o JID limpo, sem precisar lembrar de aplicar
+    // normalizarJid(...) manualmente em cada um.
+    return normalizarJid(quotedParticipant) || quotedParticipant;
+  }
+
+  let rawJid = mentionedJid[0];
+
+  // Resolve @lid → @s.whatsapp.net quando o grupo fornece o mapeamento
+  if (rawJid.endsWith('@lid') && jid.endsWith('@g.us')) {
+    try {
+      const meta = await getGroupMetadataCached(sock, jid);
+      const part = meta.participants?.find(
+        p => p.id === rawJid || p.lid === rawJid
+      );
+      if (part?.id && !part.id.endsWith('@lid')) rawJid = part.id;
+    } catch (err) {
+      console.error('[resolveTargetJid] Erro ao resolver @lid:', err.message);
+    }
+  }
+
+  return normalizarJid(rawJid) || rawJid;
+}
+
+/**
+ * Retorna true apenas se o JID for de um grupo.
+ * @param {string} jid
+ * @returns {boolean}
+ */
+function somenteGrupo(jid) {
+  return typeof jid === 'string' && jid.endsWith('@g.us');
+}
+
+/**
+ * Checa se o remetente é admin do grupo.
+ * Se não for, envia aviso e retorna false.
+ * @param {object} sock
+ * @param {object} msg
+ * @param {string} jid
+ * @param {string} [cmd]
+ * @returns {Promise<boolean>}
+ */
+async function checkAdmin(sock, msg, jid, cmd = 'este comando') {
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!await isAdmin(sock, jid, senderJid)) {
+    await sock.sendMessage(
+      jid,
+      { text: `❌ Apenas admins podem usar *!${cmd}*!` },
+      { quoted: msg }
+    );
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Formata milissegundos em texto legível.
+ * Exemplos: "2d 3h" | "5h 20min" | "45min"
+ * @param {number} ms
+ * @returns {string}
+ */
+function formatarTempo(ms) {
+  const dias  = Math.floor(ms / (1000 * 60 * 60 * 24));
+  const horas = Math.floor((ms % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const mins  = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  if (dias > 0)  return `${dias}d ${horas}h`;
+  if (horas > 0) return `${horas}h ${mins}min`;
+  return `${mins}min`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── HELPERS DE MUTE (isolados por grupo) ─────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Verifica se um usuário está mutado num grupo específico.
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {boolean}
+ */
+function isMuted(groupJid, userJid) {
+  return mutedUsers.get(groupJid)?.has(userJid) ?? false;
+}
+
+/**
+ * Muta um usuário num grupo específico.
+ * Cria o Set do grupo se ainda não existir.
+ * @param {string} groupJid
+ * @param {string} userJid
+ */
+function muteUser(groupJid, userJid) {
+  if (!mutedUsers.has(groupJid)) mutedUsers.set(groupJid, new Set());
+  mutedUsers.get(groupJid).add(userJid);
+}
+
+/**
+ * Desmuta um usuário num grupo específico.
+ * @param {string} groupJid
+ * @param {string} userJid
+ * @returns {boolean} true se o usuário estava mutado e foi removido
+ */
+function unmuteUser(groupJid, userJid) {
+  const s = mutedUsers.get(groupJid);
+  if (!s) return false;
+  const deleted = s.delete(userJid);
+  // Limpa o Set vazio para não manter entradas mortas no Map
+  if (s.size === 0) mutedUsers.delete(groupJid);
+  return deleted;
+}
+
+/**
+ * Retorna quantos usuários estão mutados num grupo.
+ * @param {string} groupJid
+ * @returns {number}
+ */
+function mutedCount(groupJid) {
+  return mutedUsers.get(groupJid)?.size ?? 0;
+}
+
+/**
+ * Remove todos os mutes de um grupo específico.
+ * NÃO afeta outros grupos.
+ * @param {string} groupJid
+ */
+function clearMuted(groupJid) {
+  mutedUsers.delete(groupJid);
+}
+
+/**
+ * Retorna uma cópia do Set de mutados de um grupo (ou Set vazio).
+ * Útil para bot.js iterar sem expor a referência interna.
+ * @param {string} groupJid
+ * @returns {Set<string>}
+ */
+function getMutedSet(groupJid) {
+  return new Set(mutedUsers.get(groupJid) ?? []);
+}
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !ban ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleBan(sock, msg, content, jid, botJid, contactNames) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'ban')) return;
+
+  const senderJid  = msg.key.participant || msg.key.remoteJid;
+  const senderBase = normalizeJidBase(senderJid);
+  const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const isAll      = /@all/.test(textCmd);
+
+  // ── Ban em massa (@all) ────────────────────────────────────
+  if (isAll) {
+    let meta;
+    try {
+      meta = await sock.groupMetadata(jid);
+    } catch (err) {
+      console.error('[handleBan @all] Erro ao buscar metadata:', err.message);
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
+    }
+
+    const targets = meta.participants
+      .filter(p => {
+        if (isBotJid(p.id, botJid)) return false;
+        const base    = normalizeJidBase(p.id);
+        const baseLid = normalizeJidBase(p.lid || '');
+        return base !== senderBase && baseLid !== senderBase;
+      })
+      .map(p => p.id);
+
+    if (targets.length === 0) {
+      await sock.sendMessage(jid, { text: '⚠️ Nenhum membro para remover.' }, { quoted: msg });
+      return;
+    }
+
+    await sock.sendMessage(jid, {
+      text: `🔨 *Removendo ${targets.length} membro(s)...*\n_Aguarde um momento._`,
+    }, { quoted: msg });
+
+    let ok = 0, fail = 0;
+
+    for (let i = 0; i < targets.length; i += 5) {
+      const lote = targets.slice(i, i + 5);
+      try {
+        await sock.groupParticipantsUpdate(jid, lote, 'remove');
+        ok += lote.length;
+      } catch {
+        for (const t of lote) {
+          try {
+            await sock.groupParticipantsUpdate(jid, [t], 'remove');
+            ok++;
+          } catch (err) {
+            console.warn('[handleBan @all] Falha ao remover', t, err.message);
+            fail++;
+          }
+        }
+      }
+
+      if (i + 5 < targets.length) await new Promise(r => setTimeout(r, 1500));
+    }
+
+    for (const t of targets) unmuteUser(jid, t);
+
+    await sock.sendMessage(jid, {
+      text:
+        `✅ *Ban em massa concluído!*\n\n` +
+        `🔨 Removidos: *${ok}*` +
+        `${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}\n` +
+        `_(O bot foi preservado)_`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Ban individual ─────────────────────────────────────────
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Marque alguém.\nExemplo: *!ban @fulano* ou *!ban @all*',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (normalizeJidBase(targetJid) === senderBase) {
+    await sock.sendMessage(jid, { text: '🤡 Você não pode banir a si mesmo.' }, { quoted: msg });
+    return;
+  }
+
+  if (isBotJid(targetJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível banir o bot!' }, { quoted: msg });
+    return;
+  }
+
+  try {
+    const promises = [];
+
+    if (fs.existsSync(BAN_IMAGE_PATH)) {
+      promises.push(sock.sendMessage(jid, {
+        image:    fs.readFileSync(BAN_IMAGE_PATH),
+        caption:  `🔨 @${targetJid.split('@')[0]} foi banido(a) do grupo! Tchau! 👋`,
+        mentions: [targetJid],
+      }));
+    }
+
+    if (fs.existsSync(BAN_AUDIO_PATH)) {
+      promises.push(sock.sendMessage(jid, {
+        audio:    fs.readFileSync(BAN_AUDIO_PATH),
+        mimetype: 'audio/mp4',
+        ptt:      false,
+      }));
+    }
+
+    await Promise.all(promises);
+    await sock.groupParticipantsUpdate(jid, [targetJid], 'remove');
+    unmuteUser(jid, targetJid);
+  } catch (err) {
+    console.error('[handleBan] Erro ao remover:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui remover. O bot é admin?',
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !mute ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleMute(sock, msg, content, jid, botJid, contactNames) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'mute')) return;
+
+  const senderJid  = msg.key.participant || msg.key.remoteJid;
+  const senderBase = normalizeJidBase(senderJid);
+  const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const isAll      = /@all/.test(textCmd);
+
+  // ── Mute em massa (@all) ───────────────────────────────────
+  if (isAll) {
+    let meta;
+    try {
+      meta = await sock.groupMetadata(jid);
+    } catch (err) {
+      console.error('[handleMute @all] Erro:', err.message);
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg });
+      return;
+    }
+
+    const targets = meta.participants
+      .filter(p => {
+        if (isBotJid(p.id, botJid)) return false;
+        const base    = normalizeJidBase(p.id);
+        const baseLid = normalizeJidBase(p.lid || '');
+        return base !== senderBase && baseLid !== senderBase;
+      })
+      .map(p => p.id);
+
+    if (targets.length === 0) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Nenhum membro para mutar.',
+      }, { quoted: msg });
+      return;
+    }
+
+    for (const t of targets) muteUser(jid, t);
+
+    await sock.sendMessage(jid, {
+      text: `🔇 *${targets.length} membro(s) mutados!*\n_Se falarem serão removidos em 20s._`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Mute individual ────────────────────────────────────────
+  // resolveTargetJid já devolve o JID normalizado (sem sufixo de
+  // dispositivo) — a normalização agora é responsabilidade dela.
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Marque alguém.\nExemplo: *!mute @fulano* ou *!mute @all*',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (isBotJid(targetJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível mutar o bot.' }, { quoted: msg });
+    return;
+  }
+
+  const tag = `@${targetJid.split('@')[0]}`;
+
+  if (isMuted(jid, targetJid)) {
+    await sock.sendMessage(jid, {
+      text: `ℹ️ *${tag}* já está mutado(a).`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+    return;
+  }
+
+  muteUser(jid, targetJid);
+
+  await sock.sendMessage(jid, {
+    text: `🔇 *${tag}* foi mutado(a)!\n_Se falar será removido(a) em 20s._`,
+    mentions: [targetJid],
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !desmute ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Desmuta um membro (ou todos) do grupo.
+ * O parâmetro legado `_mutedUsers` foi removido da assinatura — atualize
+ * as chamadas no bot.js para não passá-lo.
+ *
+ * @param {object} sock
+ * @param {object} msg
+ * @param {object} content
+ * @param {string} jid
+ * @param {string} botJid
+ * @param {object} contactNames
+ */
+async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'desmute')) return;
+
+  const textCmd = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const isAll   = /@all/.test(textCmd);
+
+  // ── Desmute em massa (@all) ────────────────────────────────
+  if (isAll) {
+    const count = mutedCount(jid);
+    if (count === 0) {
+      await sock.sendMessage(jid, {
+        text: 'ℹ️ Nenhum membro está mutado neste grupo.',
+      }, { quoted: msg });
+      return;
+    }
+
+    clearMuted(jid); // afeta apenas este grupo
+    await sock.sendMessage(jid, {
+      text: `🔊 *${count} membro(s) desmutados!* Podem falar! 🎤`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Desmute individual ─────────────────────────────────────
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Marque alguém.\nExemplo: *!desmute @fulano* ou *!desmute @all*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const nome = contactNames[targetJid] || targetJid.split('@')[0];
+
+  if (!unmuteUser(jid, targetJid)) {
+    await sock.sendMessage(jid, {
+      text: `ℹ️ *${nome}* não está mutado(a) neste grupo.`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // Cancela o timer de ban automático se existir
+  if (global._muteTimers) {
+    const chaveTimer = `mute:${jid}:${normalizarJid(targetJid)}`;
+    const timer = global._muteTimers.get(chaveTimer);
+    if (timer) {
+      clearTimeout(timer);
+      global._muteTimers.delete(chaveTimer);
+    }
+  }
+
+  await sock.sendMessage(jid, {
+    text: `🔊 *${nome}* foi desmutado(a)! Pode falar! 🎤`,
+    mentions: [targetJid],
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !ranking ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+const CarteiraGrupo = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
+const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+function barraProgresso(valor, maximo, tamanho = 10) {
+  if (!maximo || maximo <= 0) return '░'.repeat(tamanho);
+  const filled = Math.min(Math.round((valor / maximo) * tamanho), tamanho);
+  return '█'.repeat(filled) + '░'.repeat(tamanho - filled);
+}
+
+async function handleRanking(sock, msg, jid, msgCount = new Map()) {
+  if (!jid?.endsWith('@g.us')) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Este comando só pode ser usado em grupos.',
+    }, { quoted: msg });
+    return;
+  }
+
+  try {
+    const entradas = [...msgCount.entries()]
+      .filter(([id]) => id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us') || id.endsWith('@lid'))
+      .map(([id, data]) => ({
+        idWhatsApp: id,
+        count: typeof data === 'object' ? (data.count ?? 0) : (data ?? 0),
+      }))
+      .filter(e => e.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    if (!entradas.length) {
+      await sock.sendMessage(jid, {
+        text:
+          `📊 *RANKING DE MENSAGENS — ESTE GRUPO*\n\n` +
+          `📭 Nenhuma mensagem registrada ainda!\n\n` +
+          `_Comece a conversar para aparecer no ranking!_`,
+      }, { quoted: msg });
+      return;
+    }
+
+    const totalMsgs = entradas.reduce((s, e) => s + e.count, 0);
+    const maxCount  = entradas[0].count || 1;
+
+    const linhas = entradas.map((e, i) => {
+      const numero = e.idWhatsApp.split('@')[0].split(':')[0];
+      const pct    = ((e.count / totalMsgs) * 100).toFixed(1);
+      const bar    = barraProgresso(e.count, maxCount);
+      return `${MEDALS[i]} *@${numero}*\n   ${bar} ${e.count} msgs (${pct}%)`;
+    });
+
+    const mentions = entradas.map(e => e.idWhatsApp);
+
+    await sock.sendMessage(jid, {
+      text:
+        `📊 *RANKING DE MENSAGENS — ESTE GRUPO* 📊\n\n` +
+        `${linhas.join('\n\n')}\n\n` +
+        `━━━━━━━━━━━━━━━━\n` +
+        `💬 Total: *${totalMsgs}* mensagens\n` +
+        `👥 Participantes no ranking: *${entradas.length}*\n` +
+        `_Continue conversando para subir no ranking!_`,
+      mentions,
+    }, { quoted: msg });
+
+  } catch (e) {
+    console.error('[Grupo] handleRanking:', e.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Erro ao carregar o ranking. Tente novamente!',
+    }, { quoted: msg });
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !sorteio ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
+  const mentions = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
+
+  // Dedupe by base number (handles device-suffix duplicates too)
+  const seen = new Set();
+  let participantes = mentions.filter(p => {
+    const base = normalizeJidBase(p);
+    if (seen.has(base)) return false;
+    seen.add(base);
+    return true;
+  });
+
+  if (participantes.length === 0 && somenteGrupo(jid)) {
+    try {
+      const meta = await getGroupMetadataCached(sock, jid);
+      participantes = meta.participants
+        .map(p => p.id)
+        .filter(id => !isBotJid(id, botJid)); // bot can't win its own raffle
+    } catch (err) {
+      console.error('[handleSorteio] Erro ao buscar metadata:', err.message);
+    }
+  }
+
+  if (participantes.length < 2) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Preciso de pelo menos *2 participantes*!\nMarque quem vai concorrer ou use em um grupo com mais gente.',
+    }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, {
+    text: `🎰 *SORTEANDO...*\n\nEntre *${participantes.length}* participante(s)...\n\n_Girando a roleta.._ 🌀`,
+  }, { quoted: msg });
+  await new Promise(r => setTimeout(r, 1500));
+
+  const vencedor = participantes[Math.floor(Math.random() * participantes.length)];
+  const nome     = contactNames[vencedor] || `@${normalizeJidBase(vencedor)}`;
+
+  await sock.sendMessage(jid, {
+    text:
+      `🎉🏆 *RESULTADO DO SORTEIO* 🏆🎉\n\n` +
+      `👑 Vencedor: *@${normalizeJidBase(vencedor)}*\n\n` +
+      `🎊 Parabéns, *${nome}*! Você foi sorteado(a) entre *${participantes.length}* participante(s)!\n\n` +
+      `_Boa sorte foi você que teve!_ 🍀`,
+    mentions: [vencedor],
+  }, { quoted: msg });
+}
+// ═══════════════════════════════════════════════════════════════
+// ─── !enquete ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// Usage:
+//   !enquete Pizza ou hambúrguer?
+//   !enquete Pizza ou hambúrguer? | Pizza | Hambúrguer | Sushi
+//   !enquete Quais dias você pode? | Seg | Ter | Qua | multi
+//
+// - No options  -> generic Sim / Não / Talvez poll (still a native poll now,
+//                  not emoji reactions).
+// - "multi" as the last option token turns on multiple-choice voting.
+// - Duplicate options (case-insensitive) are removed, user is told which.
+// - WhatsApp's real limit is 12 selectable options (not 6) — enforced below
+//   with a named constant so it's a one-line change if that ever shifts.
+
+const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
+
+const MAX_POLL_OPTIONS = 12;
+
+// In-memory store mapping poll message key -> { question, options, jid }
+// so incoming vote updates can be matched back to the poll that spawned them.
+// Swap this Map for persistent storage if the bot restarts often and you
+// need tallies to survive that.
+const activePolls = new Map();
+
+// Limpeza periódica — mesmo padrão de _slowModeLastMsg / _antiFloodMsgs:
+// sem isso, activePolls cresce pra sempre enquanto o bot roda, já que
+// nada nunca deleta uma entrada depois que a enquete é criada.
+const POLL_TTL_MS = 24 * 60 * 60 * 1000; // enquetes "expiram" da memória após 24h
+let ultimaLimpezaPolls = 0;
+
+function limparPollsAntigos() {
+  const agora = Date.now();
+  if (agora - ultimaLimpezaPolls < 5 * 60 * 1000) return; // no máx a cada 5min
+  ultimaLimpezaPolls = agora;
+
+  for (const [id, poll] of activePolls.entries()) {
+    if (agora - (poll.createdAt || 0) > POLL_TTL_MS) {
+      activePolls.delete(id);
+    }
+  }
+}
+
+async function handleEnquete(sock, msg, jid, caption) {
+  limparPollsAntigos();
+
+  const texto = caption.replace(/^[!.,\/]enquete\s*/i, '').trim();
+  if (!texto) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Digite a pergunta!\nExemplo: *!enquete Pizza ou hambúrguer?*',
+    }, { quoted: msg });
+    return;
+  }
+
+  const partes = texto.split('|').map(p => p.trim()).filter(Boolean);
+  const pergunta = partes[0];
+  let opcoesBrutas = partes.slice(1);
+
+  // Detect and strip the "multi" flag (case-insensitive, last token)
+  let isMulti = false;
+  if (opcoesBrutas.length && /^multi(pla)?$/i.test(opcoesBrutas[opcoesBrutas.length - 1])) {
+    isMulti = true;
+    opcoesBrutas = opcoesBrutas.slice(0, -1);
+  }
+
+  const avisos = [];
+  let opcoesFinais;
+
+  if (opcoesBrutas.length === 0) {
+    // No custom options: fall back to a generic native poll, not reactions
+    opcoesFinais = ['Sim', 'Não', 'Talvez'];
+  } else {
+    if (opcoesBrutas.length === 1) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Enquete precisa de pelo menos 2 opções (ou nenhuma, para Sim/Não/Talvez).',
+      }, { quoted: msg });
+      return;
+    }
+
+    // Remove duplicates, case-insensitive, keep first occurrence
+    const vistos = new Set();
+    const semDuplicatas = [];
+    const duplicatasRemovidas = [];
+    for (const op of opcoesBrutas) {
+      const chave = op.toLowerCase();
+      if (vistos.has(chave)) {
+        duplicatasRemovidas.push(op);
+      } else {
+        vistos.add(chave);
+        semDuplicatas.push(op);
+      }
+    }
+    if (duplicatasRemovidas.length) {
+      avisos.push(`🔁 Opções duplicadas removidas: ${duplicatasRemovidas.join(', ')}`);
+    }
+
+    // Enforce the real WhatsApp cap, tell the user if we trimmed anything
+    if (semDuplicatas.length > MAX_POLL_OPTIONS) {
+      avisos.push(
+        `✂️ WhatsApp permite no máximo ${MAX_POLL_OPTIONS} opções. ` +
+        `Removidas: ${semDuplicatas.slice(MAX_POLL_OPTIONS).join(', ')}`
+      );
+    }
+    opcoesFinais = semDuplicatas.slice(0, MAX_POLL_OPTIONS);
+
+    if (opcoesFinais.length < 2) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Depois de remover duplicatas, sobrou menos de 2 opções válidas.',
+      }, { quoted: msg });
+      return;
+    }
+  }
+
+  if (avisos.length) {
+    await sock.sendMessage(jid, { text: avisos.join('\n') }, { quoted: msg });
+  }
+
+  const sent = await sock.sendMessage(jid, {
+    poll: {
+      name: pergunta,
+      values: opcoesFinais,
+      selectableCount: isMulti ? opcoesFinais.length : 1,
+    },
+  }, { quoted: msg });
+
+  // Remember this poll so we can decrypt/tally votes as they come in
+  activePolls.set(sent.key.id, {
+    message: sent,          // guarda a mensagem completa (tem o messageSecret)
+    question: pergunta,
+    options: opcoesFinais,
+    jid,
+    tallies: new Map(opcoesFinais.map(o => [o, 0])),
+    createdAt: Date.now(),
+  });
+}
+
+// ─── Vote tallying ────────────────────────────────────────────
+// Register this once, alongside your other sock.ev listeners.
+// Poll votes arrive as encrypted "pollUpdateMessage" entries inside
+// messages.upsert; getAggregateVotesInPollMessage decrypts them against
+// the original poll message + your auth state.
+// Baileys entrega votos via "messages.update" com update.pollUpdates —
+// não via "messages.upsert". E a decriptação exige o objeto de mensagem
+// REAL que o sendMessage devolveu (contém messageContextInfo.messageSecret),
+// não uma reconstrução manual — sem isso, getAggregateVotesInPollMessage
+// não retorna nada.
+function registerPollVoteHandler(sock) {
+  sock.ev.on('messages.update', (updates) => {
+    for (const { key, update } of updates) {
+      if (!update.pollUpdates) continue;
+
+      const poll = activePolls.get(key.id);
+      if (!poll) continue; // voto em enquete que não criamos/rastreamos
+
+      const aggregated = getAggregateVotesInPollMessage({
+        message: poll.message, // objeto original completo retornado por sendMessage
+        pollUpdates: update.pollUpdates,
+      });
+
+      for (const result of aggregated) {
+        poll.tallies.set(result.name, result.voters.length);
+      }
+
+      // console.log(poll.question, Object.fromEntries(poll.tallies));
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !todos ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleTodos(sock, msg, jid, caption) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'todos')) return;
+
+  let meta;
+  try {
+    meta = await sock.groupMetadata(jid);
+  } catch (err) {
+    console.error('[handleTodos] Erro:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros.' }, { quoted: msg }); return;
+  }
+
+  const members = meta.participants.map(p => p.id);
+  const texto   = caption.replace(/^[!.,\/]todos\s*/i, '').trim() || '📢 *Atenção galera!*';
+  const mencoes = members.map(m => `@${m.split('@')[0]}`).join(' ');
+
+  await sock.sendMessage(jid, {
+    text: `${texto}\n\n${mencoes}`,
+    mentions: members,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !fechar / !abrir ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleFecharAbrir(sock, msg, jid, fechar) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, fechar ? 'fechar' : 'abrir')) return;
+
+  try {
+    await sock.groupSettingUpdate(jid, fechar ? 'announcement' : 'not_announcement');
+    await sock.sendMessage(jid, {
+      text: fechar
+        ? '🔒 *Grupo fechado!* Apenas admins podem enviar mensagens.'
+        : '🔓 *Grupo aberto!* Todos podem enviar mensagens.',
+    }, { quoted: msg });
+  } catch (err) {
+    console.error('[handleFecharAbrir] Erro:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui alterar. O bot é admin?' }, { quoted: msg });
+  }
+}
+
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !promover / !rebaixar ─────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, contactNames) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, acao === 'promote' ? 'promover' : 'rebaixar')) return;
+
+  const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
+  const isAll     = /@all\b/i.test(textMsg);
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+
+  if (isAll) {
+    let meta;
+    try {
+      meta = await sock.groupMetadata(jid);
+    } catch (err) {
+      console.error('[handlePromoverRebaixar @all] Erro:', err.message);
+      await sock.sendMessage(jid, { text: '❌ Não consegui buscar membros.' }, { quoted: msg }); return;
+    }
+
+    const alvos = acao === 'promote'
+      // Promover: todos os não-admins exceto o bot
+      ? meta.participants
+          .filter(p => !p.admin && !isBotJid(p.id, botJid))
+          .map(p => p.id)
+      // Rebaixar: todos os admins exceto o bot e o próprio remetente
+      : meta.participants
+          .filter(p =>
+            p.admin &&
+            !isBotJid(p.id, botJid) &&
+            p.id !== senderJid
+          )
+          .map(p => p.id);
+
+    if (alvos.length === 0) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Nenhum membro disponível para esta ação.',
+      }, { quoted: msg }); return;
+    }
+
+    await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
+
+    let ok = 0, fail = 0;
+    for (let i = 0; i < alvos.length; i += 5) {
+      const chunk = alvos.slice(i, i + 5);
+      try {
+        await sock.groupParticipantsUpdate(jid, chunk, acao);
+        ok += chunk.length;
+      } catch { fail += chunk.length; }
+      if (i + 5 < alvos.length) await new Promise(r => setTimeout(r, 800));
+    }
+
+    const emoji = acao === 'promote' ? '⬆️' : '⬇️';
+    await sock.sendMessage(jid, {
+      text:
+        `${emoji} *@all ${acao === 'promote' ? 'promovidos' : 'rebaixados'}!*\n` +
+        `✔️ *${ok}*${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Ação individual ────────────────────────────────────────
+  const targetJid = await resolveTargetJid(sock, msg, content, jid);
+  if (!targetJid) {
+    await sock.sendMessage(jid, { text: '⚠️ Marque alguém ou use @all.' }, { quoted: msg }); return;
+  }
+
+  // ─── Apenas o bot é protegido ────────────────────────────────
+  if (isBotJid(targetJid, botJid)) {
+    await sock.sendMessage(jid, {
+      text: acao === 'promote'
+        ? '🤖 O bot já cuida de si mesmo, obrigado!'
+        : '🤖 Não é possível rebaixar o bot.',
+    }, { quoted: msg }); return;
+  }
+
+  if (acao === 'demote' && targetJid === senderJid) {
+    await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
+  }
+
+  try {
+    await sock.groupParticipantsUpdate(jid, [targetJid], acao);
+    const nome = contactNames[targetJid] || targetJid.split('@')[0];
+    await sock.sendMessage(jid, {
+      text: acao === 'promote'
+        ? `⬆️ *@${targetJid.split('@')[0]}* foi promovido(a) a admin! 👑`
+        : `⬇️ *@${targetJid.split('@')[0]}* perdeu o admin! 📉`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+  } catch (err) {
+    console.error('[handlePromoverRebaixar] Erro:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui alterar. O bot é admin?' }, { quoted: msg });
+  }
+}
+
+module.exports = { handlePromoverRebaixar };
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !tempo ────────────────────────────────────────────────────
+// FIX: usa joinedAt quando disponível; fallback para criação do
+//      grupo com aviso explícito de que é uma estimativa.
+// ═══════════════════════════════════════════════════════════════
+
+async function handleTempo(sock, msg, content, jid, author, contactNames) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+
+  const mentionedJid = content.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  const senderJid    = msg.key.participant || msg.key.remoteJid;
+  const alvoJid      = mentionedJid[0] || senderJid;
+
+  let entradaTexto = '❓ desconhecido';
+  let isFallback   = false;
+
+  try {
+    const meta = await getGroupMetadataCached(sock, jid);
+    const part = meta.participants?.find(p => p.id === alvoJid || p.lid === alvoJid);
+
+    const entradaMs = part?.joinedAt
+      ? part.joinedAt * 1000
+      : (() => { isFallback = true; return (meta.creation || 0) * 1000; })();
+
+    const diffMs = Date.now() - entradaMs;
+    const dias   = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const meses  = Math.floor(dias / 30);
+    const anos   = Math.floor(dias / 365);
+
+    if (anos > 0)       entradaTexto = `há *${anos} ano${anos > 1 ? 's' : ''}*`;
+    else if (meses > 0) entradaTexto = `há *${meses} ${meses > 1 ? 'meses' : 'mês'}*`;
+    else if (dias > 0)  entradaTexto = `há *${dias} dia${dias > 1 ? 's' : ''}*`;
+    else                entradaTexto = `há *menos de 1 dia*`;
+
+    if (isFallback) entradaTexto += ' _(estimativa — desde a criação do grupo)_';
+  } catch (err) {
+    console.error('[handleTempo] Erro:', err.message);
+  }
+
+  const frases = [
+    `⏳ *@${alvoJid.split('@')[0]}* está nesse grupo ${entradaTexto}. Veterano(a) resistente! 🏅`,
+    `📅 *@${alvoJid.split('@')[0]}* aguentou esse grupo ${entradaTexto}. Tem moral! 💪`,
+    `🕰️ *@${alvoJid.split('@')[0]}* sobrevive aqui ${entradaTexto}. Corajoso(a)! 😂`,
+    `📌 *@${alvoJid.split('@')[0]}* faz parte desse grupo ${entradaTexto}. Fidelidade máxima! 🤝`,
+  ];
+
+  await sock.sendMessage(jid, {
+    text: frases[Math.floor(Math.random() * frases.length)],
+    mentions: [alvoJid],
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !antilink ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleAntiLink(sock, msg, content, jid) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'antilink')) return;
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+  const cfg     = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  const ativo   = cfg?.antiLink === true;
+
+  if (textMsg.includes('on') || textMsg.includes('ativ')) {
+    if (ativo) {
+      await sock.sendMessage(jid, { text: 'O anti-link já tá ativado aqui 😅' }, { quoted: msg });
+      return;
+    }
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiLink: true } },
+      { upsert: true }
+    );
+    await sock.sendMessage(jid, {
+      text: '🔗 Anti-link ativado! Quem mandar link leva ban.',
+    }, { quoted: msg });
+
+  } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
+    if (!ativo) {
+      await sock.sendMessage(jid, { text: 'O anti-link já tá desativado 😅' }, { quoted: msg });
+      return;
+    }
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiLink: false } },
+      { upsert: true }
+    );
+    await sock.sendMessage(jid, { text: '🔗 Anti-link desativado.' }, { quoted: msg });
+
+  } else {
+    await sock.sendMessage(jid, {
+      text: `🔗 Anti-link tá ${ativo ? '✅ ativado' : '❌ desativado'} aqui.\n\n_!antilink on para ativar_\n_!antilink off para desativar_`,
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !autosticker ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'autosticker')) return;
+
+  const textMsg = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
+
+  if (textMsg.includes('on') || textMsg.includes('ativ')) {
+    autoStickerGroups.add(jid);
+    saveData();
+    await sock.sendMessage(jid, {
+      text: '🖼️✅ *Auto-Sticker ATIVADO!*\n_Imagens/vídeos viran figurinhas automaticamente._',
+    }, { quoted: msg });
+  } else if (textMsg.includes('off') || textMsg.includes('desativ')) {
+    autoStickerGroups.delete(jid);
+    saveData();
+    await sock.sendMessage(jid, { text: '🖼️❌ *Auto-Sticker DESATIVADO!*' }, { quoted: msg });
+  } else {
+    const status = autoStickerGroups.has(jid) ? '✅ *Ativado*' : '❌ *Desativado*';
+    await sock.sendMessage(jid, {
+      text: `🖼️ *Auto-Sticker* — ${status}\n\n▸ *!autosticker on* → ativar\n▸ *!autosticker off* → desativar`,
+    }, { quoted: msg });
+  }
+}
+
+'use strict';
+
+const Usuario = require('../models/Usuario');
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !reportar ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'reportar')) return;
+
+  const quotedMsg      = content.extendedTextMessage?.contextInfo?.quotedMessage;
+  const reportedJidRaw = content.extendedTextMessage?.contextInfo?.participant;
+  // Normaliza igual ao resto do arquivo (ex: handleDesmute) — o Baileys
+  // costuma já entregar isso normalizado, mas gravar o JID cru no Mongo
+  // pode duplicar o mesmo usuário sob chaves diferentes se algum dia não vier.
+  const reportedJid    = reportedJidRaw ? normalizarJid(reportedJidRaw) : null;
+
+  if (!quotedMsg || !reportedJid) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Responda a uma mensagem com *!reportar* para advertir o usuário.',
+    }, { quoted: msg }); return;
+  }
+
+  const senderJid = normalizarJid(msg.key.participant || msg.key.remoteJid);
+  if (reportedJid === senderJid) {
+    await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
+  }
+
+  // ─── Apenas o bot é protegido ────────────────────────────────
+  if (isBotJid(reportedJid, botJid)) {
+    await sock.sendMessage(jid, { text: '🤖 Não é possível reportar o bot.' }, { quoted: msg }); return;
+  }
+
+  // ─── Incrementa advertência no MongoDB ───────────────────────
+  const groupKey = jid.replace(/\./g, '_');
+
+  const usuario = await Usuario.findOneAndUpdate(
+    { idWhatsApp: reportedJid },
+    { $inc: { [`warnings.${groupKey}`]: 1 } },
+    { upsert: true, new: true },
+  );
+
+  const current = usuario.warnings.get(groupKey) || 0;
+  const nome    = contactNames[reportedJid] || reportedJid.split('@')[0];
+
+  if (current >= 3) {
+    try {
+      await sock.groupParticipantsUpdate(jid, [reportedJid], 'remove');
+
+      await Usuario.updateOne(
+        { idWhatsApp: reportedJid },
+        { $unset: { [`warnings.${groupKey}`]: '' } },
+      );
+
+      await sock.sendMessage(jid, {
+        text: `🚫 *${nome}* foi removido(a)!\n\n_Motivo: 3 advertências acumuladas. Mereceu!_ 👋`,
+        mentions: [reportedJid],
+      });
+    } catch (err) {
+      console.error('[handleReportar] Erro ao remover:', err.message);
+      await sock.sendMessage(jid, {
+        text: `⚠️ *${nome}* chegou a 3 advertências mas não consegui remover.\n_O bot é admin?_`,
+        mentions: [reportedJid],
+      }, { quoted: msg });
+    }
+  } else {
+    const remaining  = 3 - current;
+    const nivelEmoji = current === 1 ? '🟡' : '🟠';
+    const nivelLabel = current === 1 ? 'PRIMEIRA' : 'SEGUNDA';
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ *ADVERTÊNCIA ${nivelLabel}* ⚠️\n\n` +
+        `👤 Usuário: *@${reportedJid.split('@')[0]}*\n` +
+        `${nivelEmoji} Advertências: *${current}/3*\n` +
+        `⏳ Mais *${remaining}* para ser removido!\n\n` +
+        `_Respeite as regras do grupo!_ 📜`,
+      mentions: [reportedJid],
+    });
+  }
+}
+
+module.exports = { handleReportar };
+
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !removerreporte ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// Remove UMA advertência do usuário mencionado ou respondido.
+// Uso:
+//   - Respondendo a uma mensagem:  !removerreporte
+//   - Por menção:                  !removerreporte @pessoa
+//
+// Requer: admin do grupo. Um admin NÃO pode remover a própria
+// advertência — somente outro admin pode fazê-lo.
+// ═══════════════════════════════════════════════════════════════
+
+async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJid) {
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg });
+  }
+
+  if (!await checkAdmin(sock, msg, jid, 'removerreporte')) return;
+
+  const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
+  const senderBase = normalizeJidBase(senderJid);
+
+  // ── Resolve o alvo: reply tem prioridade sobre menção ──
+  // Normaliza igual ao resto do arquivo (ex: handleDesmute, handleReportar)
+  // para gravar/ler sempre a mesma chave no Mongo, independente de o
+  // Baileys entregar o JID com ou sem sufixo de dispositivo.
+  const targetJidRaw =
+    content.extendedTextMessage?.contextInfo?.participant ??
+    content.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ??
+    null;
+  const targetJid = targetJidRaw ? normalizarJid(targetJidRaw) : null;
+
+  if (!targetJid) {
+    return sock.sendMessage(jid, {
+      text:
+        '⚠️ Informe quem terá a advertência removida.\n' +
+        '_Responda a uma mensagem ou mencione o usuário: *!removerreporte @pessoa*_',
+    }, { quoted: msg });
+  }
+
+  // ── Compara pelo número base para evitar falhas com sufixos de dispositivo ──
+  // ex: "5511999@s.whatsapp.net" vs "5511999:3@s.whatsapp.net"
+  if (normalizeJidBase(targetJid) === senderBase) {
+    return sock.sendMessage(jid, {
+      text: '🤡 Você não pode remover sua própria advertência. Peça a outro admin.',
+    }, { quoted: msg });
+  }
+
+  if (isBotJid(targetJid, botJid)) {
+    return sock.sendMessage(jid, {
+      text: '🤖 O bot não possui advertências.',
+    }, { quoted: msg });
+  }
+
+  // ── groupKey idêntico ao usado em handleReportar ──
+  const groupKey = jid.replace(/\./g, '_');
+  const nome     = contactNames[targetJid] || targetJid.split('@')[0];
+
+  // ── Lê advertências atuais ──
+  // .lean() retorna objeto puro — warnings é um objeto JS, não um Map.
+  // Nunca usar .get() após lean(); acessar como propriedade direta.
+  const usuario = await Usuario.findOne({ idWhatsApp: targetJid }).lean();
+  const atual   = Number(usuario?.warnings?.[groupKey] ?? 0);
+
+  if (!usuario || atual <= 0) {
+    return sock.sendMessage(jid, {
+      text: `✅ *${nome}* não possui advertências neste grupo.`,
+      mentions: [targetJid],
+    }, { quoted: msg });
+  }
+
+  // ── Decrementa atomicamente no banco ──
+  const novoValor = atual - 1;
+
+  if (novoValor === 0) {
+    // Limpa a chave para não deixar warnings.groupKey = 0 sobrando
+    await Usuario.updateOne(
+      { idWhatsApp: targetJid },
+      { $unset: { [`warnings.${groupKey}`]: '' } },
+    );
+  } else {
+    await Usuario.updateOne(
+      { idWhatsApp: targetJid },
+      { $set: { [`warnings.${groupKey}`]: novoValor } },
+    );
+  }
+
+  const nivelEmoji  = novoValor === 0 ? '🟢' : novoValor === 1 ? '🟡' : '🟠';
+  const textoStatus = novoValor === 0
+    ? `🎉 *${nome}* está limpo(a)! Sem advertências neste grupo.`
+    : `${nivelEmoji} *${nome}* agora tem *${novoValor}/3* advertência(s).`;
+
+  await sock.sendMessage(jid, {
+    text:
+      `✅ *ADVERTÊNCIA REMOVIDA*\n\n` +
+      `👤 Usuário: *@${targetJid.split('@')[0]}*\n` +
+      `📉 Era: *${atual}/3* → Agora: *${novoValor}/3*\n\n` +
+      textoStatus,
+    mentions: [targetJid],
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !grupinfo ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleGrupInfo(sock, msg, jid) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+
+  let meta;
+  try {
+    meta = await getGroupMetadataCached(sock, jid);
+  } catch (err) {
+    console.error('[handleGrupInfo] Erro:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui buscar as informações do grupo.',
+    }, { quoted: msg }); return;
+  }
+
+  const total   = meta.participants.length;
+  const admins  = meta.participants.filter(p => p.admin).length;
+  const membros = total - admins;
+  const criado  = meta.creation
+    ? new Date(meta.creation * 1000).toLocaleDateString('pt-BR')
+    : '?';
+  const desc    = meta.desc ? meta.desc.slice(0, 200) : '_Sem descrição_';
+  const fechado = meta.announce ? '🔒 Fechado' : '🔓 Aberto';
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const cfgGrupo = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+
+  const slowCfg  = cfgGrupo?.slowModeAtivo
+    ? `✅ *${cfgGrupo.slowModeSegundos}s por msg*`
+    : '❌ Inativo';
+  const floodCfg = cfgGrupo?.antiFloodAtivo
+    ? `✅ *${cfgGrupo.antiFloodLimite} msgs/${cfgGrupo.antiFloodJanelaMs / 1000}s*`
+    : '❌ Inativo';
+  const bvCfg    = bemVindoGroups.has(jid) && bemVindoGroups.get(jid).ativo
+    ? '✅ Ativo'
+    : '❌ Inativo';
+  const muteCfg  = mutedCount(jid) > 0
+    ? `✅ *${mutedCount(jid)} mutado(s)*`
+    : '❌ Nenhum';
+
+  await sock.sendMessage(jid, {
+    text:
+      `📋 *INFORMAÇÕES DO GRUPO*\n\n` +
+      `📌 *Nome:* ${meta.subject}\n` +
+      `📅 *Criado em:* ${criado}\n` +
+      `🔑 *Status:* ${fechado}\n\n` +
+      `👥 *Membros:* ${membros}\n` +
+      `👑 *Admins:* ${admins}\n` +
+      `📊 *Total:* ${total}\n\n` +
+      `⏱️ *Slow Mode:* ${slowCfg}\n` +
+      `🛡️ *Anti-Flood:* ${floodCfg}\n` +
+      `🔇 *Mutados:* ${muteCfg}\n` +
+      `👋 *Boas-vindas:* ${bvCfg}\n\n` +
+      `📝 *Descrição:*\n${desc}`,
+  }, { quoted: msg });
+}
+
+async function handleListaAdm(sock, msg, jid, contactNames) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+
+  let meta;
+  try {
+    meta = await getGroupMetadataCached(sock, jid);
+  } catch (err) {
+    console.error('[handleListaAdm] Erro ao buscar metadados:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros do grupo.' }, { quoted: msg });
+    return;
+  }
+
+  const admins = meta.participants.filter(p => p.admin);
+
+  if (admins.length === 0) {
+    await sock.sendMessage(jid, { text: 'ℹ️ Nenhum administrador encontrado neste grupo.' }, { quoted: msg });
+    return;
+  }
+
+  const mentions = admins.map(p => p.id);
+
+  const linhas = admins.map((p, i) => {
+    const numero = p.id.split('@')[0];
+    const nome   = contactNames?.[p.id] || `@${numero}`;
+    const tipo   = p.admin === 'superadmin' ? '👑 Dono' : '🛡️ Admin';
+    return `${i + 1}. ${nome} — ${tipo}`;
+  }).join('\n');
+
+  await sock.sendMessage(jid, {
+    text: `👑 *ADMINISTRADORES DO GRUPO*\n\n${linhas}\n\n_Total: ${admins.length} admin(s)_`,
+    mentions,
+  }, { quoted: msg });
+}
+
+async function handleListaMembros(sock, msg, jid, contactNames) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+
+  if (!await checkAdmin(sock, msg, jid, 'listamembros')) return;
+
+  let meta;
+  try {
+    meta = await getGroupMetadataCached(sock, jid);
+  } catch (err) {
+    console.error('[handleListaMembros] Erro ao buscar metadados:', err.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui buscar os membros do grupo.' }, { quoted: msg });
+    return;
+  }
+
+  const todos   = meta.participants;
+  const membros = todos.filter(p => !p.admin);
+  const total   = todos.length;
+
+  if (membros.length === 0) {
+    await sock.sendMessage(jid, {
+      text: 'ℹ️ Nenhum membro não-admin encontrado neste grupo.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const MAX = 30;
+  const chunks = [];
+  for (let i = 0; i < membros.length; i += MAX) {
+    chunks.push(membros.slice(i, i + MAX));
+  }
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk    = chunks[ci];
+    const mentions = chunk.map(p => p.id);
+
+    const linhas = chunk.map((p, i) => {
+      const numero = p.id.split('@')[0];
+      const nome   = contactNames?.[p.id] || `@${numero}`;
+      const mutado = isMuted(jid, p.id) ? ' 🔇' : '';
+      const inicio = ci * MAX + i + 1;
+      return `${inicio}. ${nome} (+${numero})${mutado}`;
+    }).join('\n');
+
+    const de  = ci * MAX + 1;
+    const ate = Math.min((ci + 1) * MAX, membros.length);
+
+    await sock.sendMessage(jid, {
+      text: `👥 *MEMBROS DO GRUPO* (${de}–${ate} de ${total})\n\n${linhas}`,
+      mentions,
+    }, { quoted: msg });
+
+    if (ci < chunks.length - 1) await new Promise(r => setTimeout(r, 500));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !bemvindo ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+const BEMVINDO_MENSAGEM_PADRAO =
+  `👋 Bem-vindo(a) ao grupo, {nome}!\n\n` +
+  `📌 Para começar, que tal se *apresentar* para a galera?\n\n` +
+  `Conta pra gente:\n` +
+  `• 👤 *Nome:*\n` +
+  `• 🎂 *Idade:*\n` +
+  `• 📍 *De onde é:*\n` +
+  `• 📷 *Foto do semblante:*\n` +
+  `• 🎯 *O que te trouxe aqui:*\n\n` +
+  `_Seja bem vindo!! 😄_`;
+
+async function handleBemVindo(sock, msg, jid, caption) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'bemvindo')) return;
+
+  const args      = caption.replace(/^[!.,\/]bemvindo\s*/i, '').trim();
+  const argsLower = args.toLowerCase();
+
+  // ── Desativar ─────────────────────────────────────────────────
+  if (argsLower === 'off' || argsLower === 'desativar') {
+    if (!bemVindoGroups.get(jid)?.ativo) {
+      await sock.sendMessage(jid, { text: '😅 Boas-vindas já está desativado.' }, { quoted: msg });
+      return;
+    }
+    bemVindoGroups.delete(jid);
+    await sock.sendMessage(jid, { text: '👋 Boas-vindas desativado com sucesso.' }, { quoted: msg });
+    return;
+  }
+
+  // ── Status ────────────────────────────────────────────────────
+  if (argsLower === 'status') {
+    const cfg = bemVindoGroups.get(jid);
+    if (!cfg?.ativo) {
+      await sock.sendMessage(jid, {
+        text: 'ℹ️ Boas-vindas está *desativado* neste grupo.\n\n_Use *!bemvindo on* para ativar com a mensagem padrão._',
+      }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, {
+        text: `✅ Boas-vindas está *ativo*!\n\n📝 Mensagem atual:\n\n${cfg.mensagem}`,
+      }, { quoted: msg });
+    }
+    return;
+  }
+
+  // ── Ativar com mensagem padrão ────────────────────────────────
+  if (argsLower === 'on' || argsLower === 'ativar' || args === '') {
+    const mensagem = BEMVINDO_MENSAGEM_PADRAO;
+    bemVindoGroups.set(jid, { ativo: true, mensagem });
+    await sock.sendMessage(jid, {
+      text:
+        `✅ Boas-vindas ativado com a mensagem padrão!\n\n${mensagem}\n\n` +
+        `_Use *!bemvindo [sua mensagem]* para personalizar._\n` +
+        `_Use *{nome}* para mencionar quem entrou._\n` +
+        `_Use *!bemvindo off* para desativar._`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Personalizar mensagem ─────────────────────────────────────
+  bemVindoGroups.set(jid, { ativo: true, mensagem: args });
+  await sock.sendMessage(jid, {
+    text:
+      `✅ Mensagem de boas-vindas personalizada!\n\n${args}\n\n` +
+      `_Use *{nome}* para mencionar quem entrou._\n` +
+      `_Use *!bemvindo off* para desativar._`,
+  }, { quoted: msg });
+}
+
+// ─── Chamado pelo bot.js ao detectar novo membro ──────────────
+async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
+  const cfg = bemVindoGroups.get(jid);
+
+  const numero  = novoMembro.split('@')[0].split(':')[0];
+  const mencao  = numero ? `@${numero}` : nomeDisplay;
+  const mensagem = (cfg?.ativo ? cfg.mensagem : BEMVINDO_MENSAGEM_PADRAO)
+    .replace(/\{nome\}/gi, mencao);
+
+  const joinImagePath = path.join(__dirname, '..', '..', 'Audio-Image', 'imagejoin3.jpg');
+
+  try {
+    if (fs.existsSync(joinImagePath)) {
+      await sock.sendMessage(jid, {
+        image:    fs.readFileSync(joinImagePath),
+        caption:  mensagem,
+        mentions: [novoMembro],
+      });
+    } else {
+      await sock.sendMessage(jid, {
+        text:     mensagem,
+        mentions: [novoMembro],
+      });
+    }
+  } catch (e) {
+    console.error('[processarBemVindo] Erro ao enviar:', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !linkgrupo ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+async function handleLinkGrupo(sock, msg, jid) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'linkgrupo')) return;
+
+  try {
+    const code = await sock.groupInviteCode(jid);
+    await sock.sendMessage(jid, {
+      text:
+        `🔗 *Link de convite do grupo:*\n\n` +
+        `https://chat.whatsapp.com/${code}\n\n` +
+        `⚠️ _Compartilhe com cuidado! Qualquer pessoa com este link pode entrar no grupo._`,
+    }, { quoted: msg });
+  } catch (err) {
+    console.error('[handleLinkGrupo] Erro ao obter link:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui obter o link do grupo. Verifique se o bot é administrador.',
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !apagarmsg ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleApagarMsg(sock, msg, content, jid) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'apagarmsg')) return;
+
+  const contextInfo = content?.extendedTextMessage?.contextInfo
+                   || msg?.message?.extendedTextMessage?.contextInfo;
+
+  const quotedKey  = contextInfo?.stanzaId;
+  const quotedUser = contextInfo?.participant;
+
+  if (!quotedKey) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Responda a uma mensagem com *!apagarmsg* para deletá-la.',
+    }, { quoted: msg });
+    return;
+  }
+
+  try {
+    await sock.sendMessage(jid, {
+      delete: {
+        remoteJid:   jid,
+        fromMe:      false,
+        id:          quotedKey,
+        participant: quotedUser,
+      },
+    });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+  } catch (err) {
+    console.error('[handleApagarMsg] Erro ao apagar mensagem:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui apagar a mensagem. Verifique se o bot é administrador.',
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !slowmode ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// Cache em memória só para os timestamps das últimas mensagens — não precisa persistir
+if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
+
+// As chaves reais são "jid:userJid" — um simples .delete(jid) nunca bate
+// com nada e não limpa nada de fato. Isso remove todas as entradas de
+// um grupo específico, varrendo pelo prefixo.
+function limparSlowModeDoGrupo(jid) {
+  const prefixo = `${jid}:`;
+  for (const chave of global._slowModeLastMsg.keys()) {
+    if (chave.startsWith(prefixo)) global._slowModeLastMsg.delete(chave);
+  }
+}
+
+async function handleSlowMode(sock, msg, jid, caption) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'slowmode')) return;
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const arg = caption.replace(/^[!.,\/]slowmode\s*/i, '').trim().toLowerCase();
+
+  if (arg === 'off' || arg === '0') {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.slowModeAtivo) {
+      await sock.sendMessage(jid, { text: '⏱️ O Slow Mode já está desativado.' }, { quoted: msg });
+      return;
+    }
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { slowModeAtivo: false } },
+      { upsert: true }
+    );
+    limparSlowModeDoGrupo(jid);
+    await sock.sendMessage(jid, { text: '⏱️❌ *Slow Mode desativado!*' }, { quoted: msg });
+    return;
+  }
+
+  if (arg === 'status') {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.slowModeAtivo) {
+      await sock.sendMessage(jid, { text: 'ℹ️ Slow Mode está *desativado* neste grupo.' }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, {
+        text: `ℹ️ Slow Mode está *ativo*!\n_Intervalo: 1 mensagem a cada *${cfg.slowModeSegundos}s* por usuário._`,
+      }, { quoted: msg });
+    }
+    return;
+  }
+
+  const seg = parseInt(arg, 10);
+  if (isNaN(seg) || seg < 1 || seg > 3600) {
+    await sock.sendMessage(jid, {
+      text:
+        '⚠️ Informe o intervalo em segundos (1–3600).\n\n' +
+        '📌 Exemplos:\n' +
+        '• *!slowmode 30* → 1 mensagem a cada 30s\n' +
+        '• *!slowmode status* → ver status atual\n' +
+        '• *!slowmode off* → desativar',
+    }, { quoted: msg });
+    return;
+  }
+
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { slowModeAtivo: true, slowModeSegundos: seg } },
+    { upsert: true }
+  );
+  // Limpa cache de timestamps ao mudar configuração
+  limparSlowModeDoGrupo(jid);
+  await sock.sendMessage(jid, {
+    text: `⏱️✅ *Slow Mode ativado!*\n_Intervalo: 1 mensagem a cada *${seg}s* por usuário._`,
+  }, { quoted: msg });
+}
+
+// ─── Verificação de slow mode ─────────────────────────────────
+
+// Cache de configs de slowmode para evitar query no banco a cada mensagem
+// Atualizado quando admin usa !slowmode — TTL de 60s para auto-refresh
+if (!global._slowModeCache) global._slowModeCache = new Map();
+
+async function verificarSlowMode(jid, userJid) {
+  const GrupoConfig = require('../models/GrupoConfig');
+
+  // Verifica cache local antes de ir ao banco
+  const agora = Date.now();
+  let cfgCache = global._slowModeCache.get(jid);
+
+  if (!cfgCache || agora - cfgCache.fetchedAt > 60_000) {
+    const doc = await GrupoConfig.findOne({ idGrupo: jid }, { slowModeAtivo: 1, slowModeSegundos: 1 }).lean();
+    cfgCache = {
+      ativo:     doc?.slowModeAtivo    ?? false,
+      segundos:  doc?.slowModeSegundos ?? 30,
+      fetchedAt: agora,
+    };
+    global._slowModeCache.set(jid, cfgCache);
+  }
+
+  if (!cfgCache.ativo) return true;
+
+  if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
+  const chave  = `${jid}:${userJid}`;
+  const ultimo = global._slowModeLastMsg.get(chave) || 0;
+
+  if (agora - ultimo < cfgCache.segundos * 1000) return false;
+  global._slowModeLastMsg.set(chave, agora);
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !antiflood ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+// Timestamps de mensagens por grupo/usuário — só em memória, não precisa persistir
+if (!global._antiFloodMsgs)        global._antiFloodMsgs        = new Map();
+if (!global._antiFloodUltimaLimp)  global._antiFloodUltimaLimp  = new Map();
+if (!global._antiFloodCache)       global._antiFloodCache        = new Map();
+
+async function handleAntiFlood(sock, msg, jid, caption) {
+  if (!jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'antiflood')) return;
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const arg = caption.replace(/^[!.,\/]antiflood\s*/i, '').trim().toLowerCase();
+
+  if (arg === 'off') {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.antiFloodAtivo) {
+      await sock.sendMessage(jid, { text: '🛡️ O Anti-Flood já está desativado.' }, { quoted: msg });
+      return;
+    }
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { antiFloodAtivo: false } },
+      { upsert: true }
+    );
+    global._antiFloodMsgs.delete(jid);
+    global._antiFloodCache.delete(jid);
+    await sock.sendMessage(jid, { text: '🛡️❌ *Anti-Flood desativado!*' }, { quoted: msg });
+    return;
+  }
+
+  if (arg === 'status') {
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    if (!cfg?.antiFloodAtivo) {
+      await sock.sendMessage(jid, { text: 'ℹ️ Anti-Flood está *desativado* neste grupo.' }, { quoted: msg });
+    } else {
+      await sock.sendMessage(jid, {
+        text:
+          `ℹ️ Anti-Flood está *ativo*!\n` +
+          `_Limite: *${cfg.antiFloodLimite} msgs* a cada *${cfg.antiFloodJanelaMs / 1000}s*._`,
+      }, { quoted: msg });
+    }
+    return;
+  }
+
+  const match  = arg.match(/^(\d+)\/(\d+)$/);
+  const limite = match ? parseInt(match[1], 10) : NaN;
+  const janela = match ? parseInt(match[2], 10) * 1000 : NaN;
+
+  if (isNaN(limite) || isNaN(janela) || limite < 2 || limite > 50 || janela < 2000) {
+    await sock.sendMessage(jid, {
+      text:
+        '⚠️ Formato: *!antiflood [msgs]/[segundos]*\n\n' +
+        '📌 Exemplos:\n' +
+        '• *!antiflood 5/10* → max 5 msgs em 10s\n' +
+        '• *!antiflood status* → ver status atual\n' +
+        '• *!antiflood off* → desativar\n\n' +
+        '_Limite: 2–50 msgs | Janela mínima: 2s_',
+    }, { quoted: msg });
+    return;
+  }
+
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { antiFloodAtivo: true, antiFloodLimite: limite, antiFloodJanelaMs: janela } },
+    { upsert: true }
+  );
+  global._antiFloodMsgs.delete(jid);
+  global._antiFloodCache.delete(jid);
+  await sock.sendMessage(jid, {
+    text:
+      `🛡️✅ *Anti-Flood ativado!*\n` +
+      `_Limite: *${limite} msgs* a cada *${janela / 1000}s*._\n` +
+      `_Quem ultrapassar será removido automaticamente!_`,
+  }, { quoted: msg });
+}
+
+// ─── Verificação de anti-flood ────────────────────────────────
+
+async function verificarAntiFlood(sock, jid, userJid, botJid) {
+  const GrupoConfig = require('../models/GrupoConfig');
+
+  if (isBotJid(userJid, botJid)) return false;
+  if (await isAdmin(sock, jid, userJid).catch(() => false)) return false;
+
+  // Cache de config com TTL de 60s
+  const agora = Date.now();
+  let cfgCache = global._antiFloodCache.get(jid);
+
+  if (!cfgCache || agora - cfgCache.fetchedAt > 60_000) {
+    const doc = await GrupoConfig.findOne(
+      { idGrupo: jid },
+      { antiFloodAtivo: 1, antiFloodLimite: 1, antiFloodJanelaMs: 1 }
+    ).lean();
+    cfgCache = {
+      ativo:     doc?.antiFloodAtivo    ?? false,
+      limite:    doc?.antiFloodLimite   ?? 5,
+      janelaMs:  doc?.antiFloodJanelaMs ?? 10000,
+      fetchedAt: agora,
+    };
+    global._antiFloodCache.set(jid, cfgCache);
+  }
+
+  if (!cfgCache.ativo) return false;
+
+  // Limpeza periódica a cada 5 minutos
+  const ultimaLimp = global._antiFloodUltimaLimp.get(jid) || 0;
+  if (agora - ultimaLimp > 5 * 60 * 1000) {
+    const msgsGrupo = global._antiFloodMsgs.get(jid);
+    if (msgsGrupo) {
+      for (const [uid, timestamps] of msgsGrupo.entries()) {
+        const filtrado = timestamps.filter(t => agora - t < cfgCache.janelaMs);
+        if (filtrado.length === 0) msgsGrupo.delete(uid);
+        else msgsGrupo.set(uid, filtrado);
+      }
+    }
+    global._antiFloodUltimaLimp.set(jid, agora);
+  }
+
+  if (!global._antiFloodMsgs.has(jid)) global._antiFloodMsgs.set(jid, new Map());
+  const msgsGrupo = global._antiFloodMsgs.get(jid);
+  const lista = (msgsGrupo.get(userJid) || []).filter(t => agora - t < cfgCache.janelaMs);
+  lista.push(agora);
+  msgsGrupo.set(userJid, lista);
+
+  return lista.length > cfgCache.limite;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !avisar ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleAvisar(sock, msg, jid, caption) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Este comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'avisar')) return;
+
+  const aviso = caption.replace(/^[!.,\/]*avisar\s*/i, '').trim();
+  if (!aviso) {
+    await sock.sendMessage(jid, {
+      text:
+        `⚠️ *Digite o aviso!*\n\n` +
+        `Exemplo: *!avisar Reunião hoje às 20h!*`,
+    }, { quoted: msg });
+    return;
+  }
+
+  // ── Salva no histórico de avisos do grupo ──
+  if (!grupoAvisosMap.has(jid)) grupoAvisosMap.set(jid, []);
+  const lista = grupoAvisosMap.get(jid);
+  lista.push({ texto: aviso, data: Date.now() });
+  if (lista.length > 10) lista.shift();
+
+  // ── Busca membros do grupo ──
+  let members = [];
+  try {
+    const meta = await sock.groupMetadata(jid);
+    members = meta.participants.map(p => p.id);
+  } catch (err) {
+    console.error('[handleAvisar] Erro ao buscar membros:', err.message);
+  }
+
+  const agora    = new Date();
+  const dataStr  = agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const horaStr  = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const numAviso = lista.length;
+
+  // ── Monta a lista de menções (precisa estar no texto p/ todos serem notificados) ──
+  const mencoes = members.map(m => `@${m.split('@')[0].split(':')[0]}`).join(' ');
+
+  await sock.sendMessage(jid, {
+    text:
+      `📢 ═══ *AVISO DO GRUPO* ═══ 📢\n\n` +
+      `${aviso}\n\n` +
+      `━━━━━━━━━━━━━━━━\n` +
+      `📅 ${dataStr} às ${horaStr}\n` +
+      `📋 Aviso nº ${numAviso}\n\n` +
+      `${mencoes}`,
+    mentions: members,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !fixargrupo ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleFixarGrupo(sock, msg, content, jid, caption) {
+  if (!somenteGrupo(jid)) {
+    await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'fixargrupo')) return;
+
+  const args = caption.replace(/^[!.,\/]fixargrupo\s*/i, '').trim();
+
+  if (args === 'ver') {
+    const lista = grupoAvisosMap.get(jid) || [];
+    if (lista.length === 0) {
+      await sock.sendMessage(jid, { text: 'ℹ️ Nenhum aviso salvo.' }, { quoted: msg }); return;
+    }
+    const ultimo = lista[lista.length - 1];
+    const data   = new Date(ultimo.data).toLocaleString('pt-BR');
+    await sock.sendMessage(jid, {
+      text: `📌 *AVISO FIXADO*\n\n${ultimo.texto}\n\n_Publicado em: ${data}_`,
+    }, { quoted: msg });
+    return;
+  }
+
+  const quotedMsg = content.extendedTextMessage?.contextInfo?.quotedMessage;
+  if (!quotedMsg) {
+    await sock.sendMessage(jid, {
+      text:
+        '⚠️ Responda uma mensagem com *!fixargrupo* para fixá-la.\n' +
+        'Ou use *!fixargrupo ver* para ver o último aviso.',
+    }, { quoted: msg }); return;
+  }
+
+  const texto = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '<mídia>';
+  if (!grupoAvisosMap.has(jid)) grupoAvisosMap.set(jid, []);
+  const lista = grupoAvisosMap.get(jid);
+  lista.push({ texto, data: Date.now() });
+  if (lista.length > 10) lista.shift();
+
+  await sock.sendMessage(jid, {
+    text: `📌 *Aviso fixado com sucesso!*\n\nUse *!fixargrupo ver* para visualizar a qualquer momento.`,
+  }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !adv / !advertencia ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//
+// Mostra quantas advertências o PRÓPRIO usuário que executou o
+// comando tem no grupo atual (não funciona em PV).
+// ═══════════════════════════════════════════════════════════════
+
+async function handleAdvertencia(sock, msg, jid) {
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(
+      jid,
+      { text: '⚠️ Esse comando só funciona em grupos.' },
+      { quoted: msg }
+    );
+  }
+
+  const senderJidRaw = msg.key.participant || msg.key.remoteJid;
+  const senderJid     = senderJidRaw ? normalizarJid(senderJidRaw) : null;
+  if (!senderJid) return;
+
+  const groupKey = jid.replace(/\./g, '_');
+
+  let usuario;
+  try {
+    usuario = await Usuario.findOne(
+      { idWhatsApp: senderJid },
+      { warnings: 1 } // projection — evita trazer o documento inteiro
+    ).lean();
+  } catch (err) {
+    console.error('[handleAdvertencia] Erro ao buscar usuário:', err.message);
+    return sock.sendMessage(
+      jid,
+      { text: '❌ Erro ao consultar suas advertências. Tente novamente.' },
+      { quoted: msg }
+    );
+  }
+
+  // .lean() retorna objeto puro — warnings vem como objeto, não Map
+  const atual = Math.max(0, Number(usuario?.warnings?.[groupKey] ?? 0));
+
+  if (atual === 0) {
+    return sock.sendMessage(
+      jid,
+      { text: '✅ Você está limpo(a)! Sem advertências neste grupo.' },
+      { quoted: msg }
+    );
+  }
+
+  const nivelEmoji = atual >= 3 ? '🔴' : atual === 2 ? '🟠' : '🟡';
+  const restantes  = Math.max(0, 3 - atual);
+  const statusMsg  = restantes === 0
+    ? '🚨 *Você está no limite!* Qualquer nova advertência pode resultar em remoção.'
+    : `⏳ Mais *${restantes}* e você será removido(a)!`;
+
+  return sock.sendMessage(
+    jid,
+    {
+      text:
+        `${nivelEmoji} *SUAS ADVERTÊNCIAS NESTE GRUPO*\n\n` +
+        `⚠️ Você tem *${atual}/3* advertência(s).\n` +
+        `${statusMsg}\n\n` +
+        `_Respeite as regras do grupo!_ 📜`,
+    },
+    { quoted: msg }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !menuadm ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleMenuAdm(sock, msg, jid, getPrefix) {
+  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+
+  const menu =
+    `🛡️ *MENU DE ADMINISTRAÇÃO* 🛡️\n\n` +
+
+    `👤 *MEMBROS*\n` +
+    `▸ ${P}ban @fulano — Banir membro\n` +
+    `▸ ${P}ban @all — Banir todos não-admins\n` +
+    `▸ ${P}mute @fulano — Mutar membro\n` +
+    `▸ ${P}mute @all — Mutar todos\n` +
+    `▸ ${P}desmute @fulano — Desmutar membro\n` +
+    `▸ ${P}desmute @all — Desmutar todos\n` +
+    `▸ ${P}promover @fulano — Tornar admin\n` +
+    `▸ ${P}rebaixar @fulano — Remover admin\n` +
+    `▸ ${P}listamembros — Listar membros\n` +
+    `▸ ${P}listaadm — Listar admins\n` +
+    `▸ ${P}tempo [@fulano] — Tempo no grupo\n\n` +
+
+    `📋 *GRUPO*\n` +
+    `▸ ${P}grupinfo — Informações do grupo\n` +
+    `▸ ${P}fechar — Fechar grupo (só admins falam)\n` +
+    `▸ ${P}abrir — Abrir grupo (todos falam)\n` +
+    `▸ ${P}linkgrupo — Gerar link de convite\n` +
+    `▸ ${P}todos [msg] — Mencionar todos\n` +
+    `▸ ${P}enquete [pergunta|op1|op2] — Criar enquete\n` +
+    `▸ ${P}sorteio [@membros] — Sortear vencedor\n\n` +
+
+    `⚙️ *CONFIGURAÇÕES*\n` +
+    `▸ ${P}antilink on/off — Anti-link\n` +
+    `▸ ${P}autosticker on/off — Auto-sticker\n` +
+    `▸ ${P}slowmode [seg] — Slow mode (1–3600s)\n` +
+    `▸ ${P}antiflood [msgs]/[seg] — Anti-flood\n` +
+    `▸ ${P}bemvindo on — Ativar boas-vindas\n` +
+    `▸ ${P}bemvindo [msg] — Ativar com msg customizada\n` +
+    `▸ ${P}bemvindo off — Desativar boas-vindas\n` +
+    `▸ ${P}pet on/off — Spawn de pets selvagens\n` +
+    `▸ ${P}pet status — Ver status do spawn de pets\n\n` +
+
+    `🔔 *COMUNICAÇÃO*\n` +
+    `▸ ${P}avisar [texto] — Avisar e mencionar @todos\n` +
+    `▸ ${P}fixargrupo — Fixar mensagem (reply)\n` +
+    `▸ ${P}fixargrupo ver — Ver último aviso fixado\n` +
+    `▸ ${P}apagarmsg — Apagar mensagem (reply)\n` +
+    `▸ ${P}reportar — Advertir usuário (reply)\n` +
+    `▸ ${P}removerreporte — Remover 1 advertência (reply/@)\n` +
+    `▸ ${P}adv / ${P}advertencia — Ver suas próprias advertências\n\n` +
+
+    `📊 *JOGO / ECONOMIA*\n` +
+    `▸ ${P}rankgold — Ranking de Gold deste grupo`;
+
+  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── !bot on/off ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
+  // Só funciona em grupos
+  if (!somenteGrupo(jid)) {
+    return sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+  }
+
+  if (!isAdminUser) {
+    return sock.sendMessage(jid, { text: '❌ Apenas admins podem usar esse comando.' }, { quoted: msg });
+  }
+
+  const acao = (args || '').trim().toLowerCase();
+  if (!['on', 'off'].includes(acao)) {
+    return sock.sendMessage(jid, {
+      text:
+        '🤖 *Bot on/off*\n\n' +
+        '▸ *!bot on* — ligar o bot neste grupo\n' +
+        '▸ *!bot off* — desligar o bot neste grupo\n\n' +
+        '_Apenas admins podem usar este comando._',
+    }, { quoted: msg });
+  }
+
+  const GrupoConfig = require('../models/GrupoConfig');
+  const ativo    = acao === 'on';
+  const cfgAtual = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+
+  // Se o documento não existe ainda, considera botAtivo = true (padrão)
+  const jaAtivo = cfgAtual ? cfgAtual.botAtivo !== false : true;
+
+  if (ativo && jaAtivo) {
+    return sock.sendMessage(jid, {
+      text: '🤖 O bot já está *ligado* neste grupo!\n_Use *!bot off* para desligar._',
+    }, { quoted: msg });
+  }
+
+  if (!ativo && !jaAtivo) {
+    return sock.sendMessage(jid, {
+      text: '🔕 O bot já está *desligado* neste grupo!\n_Use *!bot on* para ligar._',
+    }, { quoted: msg });
+  }
+
+  try {
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { botAtivo: ativo } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error('[handleBotToggle] Erro ao atualizar GrupoConfig:', err.message);
+    return sock.sendMessage(jid, {
+      text: '❌ Erro ao salvar configuração. Tente novamente.',
+    }, { quoted: msg });
+  }
+
+  if (ativo) {
+    return sock.sendMessage(jid, {
+      text: '✅ *Bot ligado!* Estou de volta, pode mandar comandos. 🤖',
+    }, { quoted: msg });
+  } else {
+    return sock.sendMessage(jid, {
+      text:
+        '🔕 *Bot desligado!*\n\n' +
+        'Não responderei mais comandos neste grupo.\n' +
+        '_Use *!bot on* para reativar._',
+    }, { quoted: msg });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ─── EXPORTS ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+module.exports = {
+  // Moderação de membros
+  handleBan,
+  handleMute,
+  handleDesmute,
+  handleReportar,
+  handlePromoverRebaixar,
+
+  // Informação e listas
+  handleRanking,
+  handleGrupInfo,
+  handleListaAdm,
+  handleListaMembros,
+  handleTempo,
+
+  // Interação com o grupo
+  handleSorteio,
+  handleEnquete,
+  registerPollVoteHandler, // chame 1x no bot.js: registerPollVoteHandler(sock)
+  activePolls,             // opcional: útil pra um !resultado mostrar a apuração
+  handleTodos,
+  handleFecharAbrir,
+  handleLinkGrupo,
+  handleApagarMsg,
+
+  // Configurações
+  handleAntiLink,
+  handleAutoSticker,
+  handleSlowMode,
+  handleAntiFlood,
+  handleBemVindo,
+
+  // Comunicação
+  handleAvisar,
+  handleFixarGrupo,
+  handleMenuAdm,
+
+  // Helpers para bot.js
+  processarBemVindo,
+  verificarSlowMode,
+  verificarAntiFlood,
+  isMuted,       // exportado para bot.js verificar antes de processar msg
+  isAdmin,
+  handleRemoverReporte,
+  handleAdvertencia,
+  setBemVindo,
+  handleBotToggle,
+};

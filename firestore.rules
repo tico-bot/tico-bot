@@ -1,0 +1,449 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function activeUser() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return signedIn()
+        && (!exists(userPath) || get(userPath).data.get('isBlocked', false) != true);
+    }
+
+    function chatParticipant(chatId) {
+      let chatPath = /databases/$(database)/documents/chats/$(chatId);
+      return chatId == 'global'
+        || (exists(chatPath)
+          && request.auth.uid in get(chatPath).data.get('participantUids', []));
+    }
+
+    function validDisplayName(name) {
+      return name is string && name.size() >= 2 && name.size() <= 24;
+    }
+
+    function cosmeticPrice(itemId) {
+      return itemId == 'frame_aurora' ? 1299
+        : itemId == 'title_lucky' ? 799
+        : itemId == 'frame_neon' ? 1999
+        : itemId == 'frame_gold' ? 2499
+        : itemId == 'title_highroller' ? 1499
+        : itemId == 'frame_emerald' ? 1699
+        : itemId == 'title_champion' ? 2999
+        : itemId == 'frame_royal' ? 3999
+        : itemId == 'title_jucineia' ? 1250000
+        : itemId == 'title_donizete' ? 1000000
+        : itemId == 'title_erasmo' ? 1500000
+        : itemId == 'title_milena' ? 1100000
+        : itemId == 'avatar_hair_wave' ? 999
+        : itemId == 'avatar_hair_curls' ? 1299
+        : itemId == 'avatar_hair_silver' ? 899
+        : itemId == 'avatar_skin_sun' ? 699
+        : itemId == 'avatar_skin_cocoa' ? 699
+        : itemId == 'avatar_top_hoodie' ? 1299
+        : itemId == 'avatar_top_jacket' ? 1499
+        : itemId == 'avatar_glasses_round' ? 799
+        : itemId == 'avatar_crown_neon' ? 1999
+        : -1;
+    }
+
+    function cosmeticName(itemId) {
+      return itemId == 'frame_aurora' ? 'Moldura Aurora'
+        : itemId == 'title_lucky' ? 'Título: Sorte Grande'
+        : itemId == 'frame_neon' ? 'Moldura Neon'
+        : itemId == 'frame_gold' ? 'Moldura Dourada'
+        : itemId == 'title_highroller' ? 'Título: Alto Rolo'
+        : itemId == 'frame_emerald' ? 'Moldura Esmeralda'
+        : itemId == 'title_champion' ? 'Título: Campeão'
+        : itemId == 'frame_royal' ? 'Moldura Real'
+        : itemId == 'title_jucineia' ? 'Título: Jucineia'
+        : itemId == 'title_donizete' ? 'Título: Donizete'
+        : itemId == 'title_erasmo' ? 'Título: Erasmo'
+        : itemId == 'title_milena' ? 'Título: Milena'
+        : itemId == 'avatar_hair_wave' ? 'Cabelo Ondulado'
+        : itemId == 'avatar_hair_curls' ? 'Cachos'
+        : itemId == 'avatar_hair_silver' ? 'Cor Prateada'
+        : itemId == 'avatar_skin_sun' ? 'Tom Solar'
+        : itemId == 'avatar_skin_cocoa' ? 'Tom Cacau'
+        : itemId == 'avatar_top_hoodie' ? 'Moletom Neon'
+        : itemId == 'avatar_top_jacket' ? 'Jaqueta Aurora'
+        : itemId == 'avatar_glasses_round' ? 'Óculos Redondos'
+        : itemId == 'avatar_crown_neon' ? 'Coroa Neon'
+        : '';
+    }
+
+    function validCosmeticInventory(oldUser, newUser, itemId) {
+      let oldInventory = oldUser.get('inventory', []);
+      let newInventory = newUser.get('inventory', []);
+      return oldInventory is list
+        && newInventory is list
+        && newInventory.size() == oldInventory.size() + 1
+        && newInventory.hasAll(oldInventory)
+        && newInventory.hasAny([itemId])
+        && !(itemId in oldInventory);
+    }
+
+    function validCosmeticPurchase(userId, purchaseId) {
+      let purchase = getAfter(/databases/$(database)/documents/users/$(userId)/purchases/$(purchaseId)).data;
+      let oldUser = get(/databases/$(database)/documents/users/$(userId)).data;
+      let newUser = getAfter(/databases/$(database)/documents/users/$(userId)).data;
+      let ledger = getAfter(/databases/$(database)/documents/users/$(userId)/transactions/$(purchaseId)).data;
+      let newRank = getAfter(/databases/$(database)/documents/leaderboard/$(userId)).data;
+      let itemId = purchase.itemId;
+      let price = cosmeticPrice(itemId);
+      return activeUser()
+        && request.auth.uid == userId
+        && purchaseId is string
+        && purchaseId.size() >= 16
+        && purchase.uid == userId
+        && price > 0
+        && purchase.amountCents == price
+        && purchase.createdAt == request.time
+        && oldUser.balanceInitialized == true
+        && oldUser.balanceCents >= price
+        && newUser.balanceCents == oldUser.balanceCents - price
+        && validCosmeticInventory(oldUser, newUser, itemId)
+        && newUser.lastPurchaseId == purchaseId
+        && newRank.balanceCents == newUser.balanceCents
+        && ledger.itemId == itemId
+        && ledger.deltaCents == -price
+        && ledger.description == 'Loja · ' + cosmeticName(itemId)
+        && ledger.createdAt == request.time;
+    }
+
+    function validInitialProfile(userId) {
+      return activeUser()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasAll([
+          'uid', 'displayName', 'email', 'balanceCents', 'balanceInitialized', 'level',
+          'avatarUrl', 'avatarAsProfilePhoto', 'equippedAvatarItems', 'username', 'profileSetupComplete', 'pixKey', 'pixKeyType', 'pixKeyHash', 'gamesPlayed', 'wins',
+          'inventory', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'balanceCents', 'balanceInitialized', 'level',
+          'avatarUrl', 'avatarAsProfilePhoto', 'equippedAvatarItems', 'username', 'profileSetupComplete', 'pixKey', 'pixKeyType', 'pixKeyHash', 'gamesPlayed', 'wins',
+          'inventory', 'createdAt'
+        ])
+        && request.resource.data.uid == userId
+        && validDisplayName(request.resource.data.displayName)
+        && request.resource.data.email is string
+        && request.resource.data.balanceCents == 50000
+        && request.resource.data.balanceInitialized == true
+        && request.resource.data.level == 1
+        && request.resource.data.avatarAsProfilePhoto == false
+        && request.resource.data.equippedAvatarItems is list
+        && request.resource.data.equippedAvatarItems.size() == 0
+        && request.resource.data.username == ''
+        && request.resource.data.profileSetupComplete == false
+        && request.resource.data.gamesPlayed == 0
+        && request.resource.data.wins == 0
+        && request.resource.data.inventory is list
+        && request.resource.data.inventory.size() == 0
+        && request.resource.data.pixKey == ''
+        && request.resource.data.pixKeyType == ''
+        && request.resource.data.pixKeyHash == ''
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function isOneTimeBalanceInitialization() {
+      return resource.data.get('balanceInitialized', false) != true
+        && request.resource.data.balanceInitialized == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'balanceCents', 'balanceInitialized', 'avatarAsProfilePhoto', 'equippedAvatarItems'
+        ])
+        && (
+          request.resource.data.balanceCents == resource.data.get('balanceCents', 0)
+          || (request.resource.data.balanceCents == 50000
+            && (!('balanceCents' in resource.data) || resource.data.balanceCents == 0)
+            && (!('gamesPlayed' in resource.data) || resource.data.gamesPlayed == 0)
+            && (!('wins' in resource.data) || resource.data.wins == 0))
+        )
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarAsProfilePhoto'])
+          || (!('avatarAsProfilePhoto' in resource.data)
+            && request.resource.data.avatarAsProfilePhoto == false))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['equippedAvatarItems'])
+          || (!('equippedAvatarItems' in resource.data)
+            && request.resource.data.equippedAvatarItems is list
+            && request.resource.data.equippedAvatarItems.size() == 0));
+    }
+
+      function isAvatarDefaultsMigration() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        return changed.size() > 0
+          && changed.hasOnly(['avatarAsProfilePhoto', 'equippedAvatarItems'])
+          && request.resource.data.avatarAsProfilePhoto is bool
+          && request.resource.data.equippedAvatarItems is list
+          && request.resource.data.equippedAvatarItems.size() == 0
+          && (!('avatarAsProfilePhoto' in resource.data)
+            ? request.resource.data.avatarAsProfilePhoto == false
+            : !changed.hasAny(['avatarAsProfilePhoto']))
+          && (!('equippedAvatarItems' in resource.data)
+            ? request.resource.data.equippedAvatarItems.size() == 0
+            : !changed.hasAny(['equippedAvatarItems']));
+      }
+
+    match /users/{userId} {
+      allow read: if activeUser() && request.auth.uid == userId;
+      allow create: if validInitialProfile(userId);
+      allow delete: if false;
+      allow update: if activeUser()
+        && request.auth.uid == userId
+        && (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+            && validDisplayName(request.resource.data.displayName))
+          || isOneTimeBalanceInitialization()
+          || isAvatarDefaultsMigration()
+          || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balanceCents', 'inventory', 'lastPurchaseId'])
+            && request.resource.data.diff(resource.data).affectedKeys().size() == 3
+            && validCosmeticPurchase(userId, request.resource.data.get('lastPurchaseId', ''))
+          )
+        );
+
+      match /transactions/{transactionId} {
+        allow read: if activeUser() && request.auth.uid == userId;
+        allow create: if request.resource.data.keys().hasOnly(['description', 'deltaCents', 'itemId', 'createdAt'])
+          && validCosmeticPurchase(userId, transactionId);
+        allow update, delete: if false;
+      }
+
+      match /purchases/{purchaseId} {
+        allow read: if activeUser() && request.auth.uid == userId;
+        allow create: if request.resource.data.keys().hasOnly(['uid', 'itemId', 'amountCents', 'createdAt'])
+          && validCosmeticPurchase(userId, purchaseId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /leaderboard/{userId} {
+      allow read: if activeUser();
+      allow create: if activeUser()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'balanceCents', 'level', 'avatarUrl', 'username',
+          'avatarAsProfilePhoto', 'equippedAvatarItems', 'equippedFrame'
+        ])
+        && request.resource.data.avatarUrl is string
+        && request.resource.data.username is string
+        && request.resource.data.avatarAsProfilePhoto is bool
+        && request.resource.data.equippedAvatarItems is list
+        && request.resource.data.get('equippedFrame', '') == ''
+        && request.resource.data.username
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.username
+        && request.resource.data.displayName
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.displayName
+        && request.resource.data.balanceCents
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.balanceCents
+        && request.resource.data.level
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.level
+        && request.resource.data.avatarUrl
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.avatarUrl
+        && request.resource.data.avatarAsProfilePhoto
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.avatarAsProfilePhoto
+        && request.resource.data.equippedAvatarItems
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.equippedAvatarItems;
+      allow delete: if false;
+      allow update: if activeUser()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'balanceCents', 'username', 'level', 'avatarUrl',
+          'avatarAsProfilePhoto', 'equippedAvatarItems', 'equippedFrame'
+        ])
+        && validDisplayName(request.resource.data.displayName)
+        && request.resource.data.displayName
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.displayName
+        && request.resource.data.balanceCents
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.balanceCents
+        && request.resource.data.username
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.username
+        && request.resource.data.level
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.level
+        && request.resource.data.avatarUrl
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.avatarUrl
+        && request.resource.data.avatarAsProfilePhoto
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.avatarAsProfilePhoto
+        && request.resource.data.equippedAvatarItems
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.equippedAvatarItems
+        && request.resource.data.get('equippedFrame', '')
+          == getAfter(/databases/$(database)/documents/users/$(userId)).data.get('equippedFrame', '');
+    }
+
+    match /usernames/{username} {
+      allow read, write: if false;
+    }
+
+    match /userPresence/{userId} {
+      allow read: if activeUser();
+      allow create, update: if activeUser()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'uid', 'online', 'lastSeenAt', 'activeGame', 'typingChatId'
+        ])
+        && request.resource.data.uid == userId
+        && request.resource.data.online is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.activeGame is string
+        && request.resource.data.activeGame.size() <= 40
+        && request.resource.data.typingChatId is string
+        && request.resource.data.typingChatId.size() <= 160;
+      allow delete: if activeUser() && request.auth.uid == userId;
+    }
+
+    match /pixKeys/{keyHash} {
+      allow read, write: if false;
+    }
+
+    match /transfers/{transferId} {
+      allow read: if activeUser()
+        && (resource.data.senderUid == request.auth.uid
+          || resource.data.recipientUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    match /chats/{chatId} {
+      allow get: if activeUser()
+        && (chatId == 'global' || request.auth.uid in resource.data.get('participantUids', []));
+      allow list: if activeUser()
+        && request.auth.uid in resource.data.participantUids;
+      allow create: if activeUser()
+        && chatId != 'global'
+        && request.resource.data.keys().hasOnly([
+          'participantUids', 'lastMessage', 'lastMessageAt', 'lastMessageId',
+          'lastMessageSenderUid', 'createdAt'
+        ])
+        && request.resource.data.participantUids is list
+        && request.resource.data.participantUids.size() == 2
+        && request.auth.uid in request.resource.data.participantUids
+        && request.resource.data.participantUids[0] < request.resource.data.participantUids[1]
+        && chatId == request.resource.data.participantUids[0] + '_' + request.resource.data.participantUids[1]
+        && exists(/databases/$(database)/documents/leaderboard/$(request.resource.data.participantUids[0]))
+        && exists(/databases/$(database)/documents/leaderboard/$(request.resource.data.participantUids[1]))
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 500
+        && request.resource.data.lastMessageId is string
+        && request.resource.data.lastMessageId.size() == 36
+        && request.resource.data.lastMessageSenderUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastMessageAt == request.time;
+      allow update: if activeUser()
+        && resource.data.get('type', 'direct') == 'direct'
+        && request.auth.uid in resource.data.participantUids
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'lastMessage', 'lastMessageAt', 'lastMessageId', 'lastMessageSenderUid'
+        ])
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 500
+        && request.resource.data.lastMessageId is string
+        && request.resource.data.lastMessageId.size() == 36
+        && request.resource.data.lastMessageSenderUid == request.auth.uid
+        && request.resource.data.lastMessageAt == request.time;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if activeUser()
+          && (chatId == 'global'
+              || !exists(/databases/$(database)/documents/chats/$(chatId))
+            || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantUids);
+        allow create: if activeUser()
+          && request.resource.data.keys().hasOnly([
+            'senderUid', 'senderName', 'senderUsername', 'senderAvatarUrl', 'senderAvatarItems',
+            'senderAvatarAsProfilePhoto', 'senderEquippedFrame', 'text', 'createdAt',
+            'replyToId', 'replyToName', 'replyToText', 'forwarded',
+            'type', 'audioUrl', 'audioPublicId', 'audioDurationMs'
+          ])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.senderName
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName
+          && request.resource.data.senderUsername
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username
+          && request.resource.data.senderAvatarUrl
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.avatarUrl
+          && request.resource.data.senderAvatarItems
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.equippedAvatarItems
+          && request.resource.data.senderAvatarAsProfilePhoto
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.avatarAsProfilePhoto
+          && request.resource.data.senderEquippedFrame
+            == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('equippedFrame', '')
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 500
+          && (request.resource.data.text.size() >= 1
+            || ('audioUrl' in request.resource.data
+              && request.resource.data.audioUrl is string
+              && request.resource.data.audioPublicId is string
+              && request.resource.data.audioDurationMs is int))
+          && (!('audioUrl' in request.resource.data) || (
+            request.resource.data.keys().hasAll(['type', 'audioUrl', 'audioPublicId', 'audioDurationMs'])
+            && request.resource.data.type == 'audio'
+            && request.resource.data.audioUrl.matches('^https://res\\.cloudinary\\.com/vwctfu9u/video/upload/.+')
+            && request.resource.data.audioPublicId == messageId
+            && request.resource.data.audioUrl.matches(
+              '^https://res\\.cloudinary\\.com/vwctfu9u/video/upload/.*' + messageId + '\\.m4a$')
+            && request.resource.data.audioDurationMs >= 500
+            && request.resource.data.audioDurationMs <= 60000))
+          && request.resource.data.createdAt == request.time
+          && (!('forwarded' in request.resource.data) || request.resource.data.forwarded == true)
+          && (!('replyToId' in request.resource.data) || (
+            request.resource.data.keys().hasAll(['replyToId', 'replyToName', 'replyToText'])
+            && request.resource.data.replyToId is string
+            && request.resource.data.replyToName is string
+            && request.resource.data.replyToText is string
+            && request.resource.data.replyToText.size() <= 200))
+          && (chatId == 'global'
+            || request.auth.uid in getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participantUids);
+        allow update: if activeUser()
+          && (chatId == 'global'
+            || request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantUids)
+          && (
+            (resource.data.senderUid == request.auth.uid
+              && resource.data.get('deletedForAll', false) != true
+              && request.resource.data.diff(resource.data).affectedKeys().hasAll(['text', 'editedAt'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+              && request.resource.data.text is string
+              && request.resource.data.text.size() >= 1
+              && request.resource.data.text.size() <= 500
+              && request.resource.data.editedAt == request.time)
+            ||
+            (resource.data.senderUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedForAll', 'text'])
+              && request.resource.data.deletedForAll == true
+              && request.resource.data.text == '')
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedFor'])
+              && request.resource.data.deletedFor is list
+              && request.resource.data.deletedFor.hasAll(resource.data.get('deletedFor', []))
+              && request.resource.data.deletedFor.size() <= resource.data.get('deletedFor', []).size() + 1
+              && request.auth.uid in request.resource.data.deletedFor)
+          );
+        allow delete: if false;
+      }
+
+      match /readReceipts/{readerUid} {
+        allow read: if activeUser() && chatParticipant(chatId);
+        allow create, update: if activeUser()
+          && request.auth.uid == readerUid
+          && chatParticipant(chatId)
+          && request.resource.data.keys().hasAll(['lastReadMessageId', 'lastReadAt'])
+          && request.resource.data.keys().hasOnly(['lastReadMessageId', 'lastReadAt'])
+          && request.resource.data.lastReadMessageId is string
+          && request.resource.data.lastReadMessageId.size() <= 128
+          && request.resource.data.lastReadAt == request.time;
+        allow delete: if false;
+      }
+    }
+
+    match /jokenpoQueue/{userId} {
+      allow get: if activeUser() && request.auth.uid == userId;
+      allow list, write: if false;
+    }
+
+    match /jokenpoMatches/{matchId} {
+      allow get: if activeUser()
+        && request.auth.uid in resource.data.get('playerUids', []);
+      allow list, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "596503051520",
+    "project_id": "zeca-2aa75",
+    "storage_bucket": "zeca-2aa75.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:596503051520:android:6de668aaad8aa629f2c7e5",
+        "android_client_info": {
+          "package_name": "com.example.zeca"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "596503051520-90ta4v72cvbfr64ah0d3kfnkm4rttjms.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.zeca",
+            "certificate_hash": "a9819f705d573f04818ef1f9e0fb98067c31d044"
+          }
+        },
+        {
+          "client_id": "596503051520-800pjuiec5tjtcrg3vsmpt0ik50g92ff.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlCjXd7__PTIqdQWfX8FLEdGsKBU1rEyA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "596503051520-800pjuiec5tjtcrg3vsmpt0ik50g92ff.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

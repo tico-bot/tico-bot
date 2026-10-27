@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: piroquinhas-bot
+    runtime: node
+    buildCommand: npm run build
+    startCommand: node src/bot.js
+    envVars:
+      - key: ZECA_API_URL
+        value: https://zeca-jvic.onrender.com
+      - key: WHATSAPP_LINK_SECRET
+        sync: false
+      - key: MONGO_URI
+        sync: false

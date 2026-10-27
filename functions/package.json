@@ -1,0 +1,29 @@
+{
+  "name": "zeca-server",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "lint": "node --check server.js && node --check callable.js && node --check index.js && node --check game-logic.js && node --check profile-logic.js && node --check chat-logic.js && node --check avatar-logic.js && node --check sports-logic.js && node --check tug-logic.js && node --check social-logic.js && node --check scripts/grant-initial-bonus.js && node --check scripts/grant-admin.js",
+    "test": "node --test game-logic.test.js profile-logic.test.js chat-logic.test.js avatar-logic.test.js sports-logic.test.js tug-logic.test.js social-logic.test.js index.test.js",
+    "test:rules": "npx --yes firebase-tools@latest emulators:exec --project demo-zeca --only firestore \"node --test firestore-rules.test.js\"",
+    "grant:initial-bonus": "node scripts/grant-initial-bonus.js",
+    "grant:users": "node scripts/grant-initial-bonus.js",
+    "grant:admin": "node scripts/grant-admin.js"
+  },
+  "dependencies": {
+    "cloudinary": "^2.11.0",
+    "express": "^4.21.2",
+    "firebase-admin": "^14.5.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0"
+  }
+}
