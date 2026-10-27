@@ -5,7 +5,7 @@
 O arquivo `diversao.js` foi dividido em 5 módulos menores e organizados dentro da pasta `diversao/`:
 
 ### 1. **brincadeiras.js** (Funções Divertidas)
-- Métricas: `!gay`, `!sexo`, `!nazista`, `!lesbica`, `!aura`
+- Métricas: `!gay`, `!sexo`, `!lesbica`, `!aura`
 - Jogos: `!dado`, `!moeda`, `!8ball`
 - Interativos: `!verdadeoudesafio`, `!confissao`, `!julgamento`, `!compatibilidade`
 - Diversão: `!podre`, `!frango`, `!maldizer`, `!fortuna`

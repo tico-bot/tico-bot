@@ -107,44 +107,6 @@ async function handleGay(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// ─── !nazista
-async function handleNazista(sock, msg, content, jid, author, contactNames) {
-  const contextInfo = content.extendedTextMessage?.contextInfo;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
-  const pct = Math.floor(Math.random() * 101);
-
-  let emoji, frase;
-  if (pct <= 10)      { emoji = '🕊️'; frase = 'Pacifista total! Abraça árvore e chora com filme de cachorro.'; }
-  else if (pct <= 30) { emoji = '📰'; frase = 'Só reclama nas redes sociais mas não faz nada. O terrorismo doméstico é postar story.'; }
-  else if (pct <= 50) { emoji = '⚖️'; frase = 'Equilibrado(a) na teoria, mas fica com raiva quando cortam na fila. Perigoso(a) em dia ruim.'; }
-  else if (pct <= 70) { emoji = '😤'; frase = 'Autoritário(a) pra caralho! Manda no grupo da família com mão de ferro. Ninguém discute.'; }
-  else if (pct <= 89) { emoji = '⚔️'; frase = 'RADICAL DEMAIS! Quer ser ditador(a) do condomínio. O vizinho já tem medo de fazer barulho.'; }
-  else if (pct <= 99) { emoji = '🦅'; frase = 'Quase um ditador(a) declarado(a)! Só falta o bigodinho e o discurso de 3 horas.'; }
-  else                { emoji = '💀'; frase = '100% NAZISTA CONFIRMADO(A)! Tá fichado(a) na história. Que vergonha da humanidade! ☠️'; }
-
-  const barra   = buildBar(pct, '🟥');
-  const display = mentionedJid ? nome : author;
-  const caption = `${emoji} *NAZÔMETRO DE ${display.toUpperCase()}*\n\n${barra} *${pct}%*\n\n_${frase}_`;
-
-  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagenaz2.webp');
-
-
-  try {
-    const imageBuffer = fs.readFileSync(imagemPath);
-    await sock.sendMessage(jid, {
-      image: imageBuffer,
-      caption,
-      mentions: mentionedJid ? [alvoJid] : [],
-    }, { quoted: msg });
-  } catch {
-    await sock.sendMessage(jid, {
-      text: caption,
-      mentions: mentionedJid ? [alvoJid] : [],
-    }, { quoted: msg });
-  }
-}
-
 // ─── !lesbica
 async function handleLesbica(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
@@ -2877,7 +2839,6 @@ module.exports = {
   handleMiniGame,
   handleGay,
   handleGado,
-  handleNazista,
   handleLesbica,
   handleAura,
   handleDado,

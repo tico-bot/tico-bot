@@ -15,7 +15,7 @@ try {
   console.log('✓ Testando módulo brincadeiras.js...');
   const brincadeiras = require('../handlers/diversao/brincadeiras');
   console.log(`  Exportações: ${Object.keys(brincadeiras).length} funções`);
-  console.log(`  Principais: handleGay, handleSexo, handleNazista, handleCompatibilidade\n`);
+  console.log(`  Principais: handleGay, handleSexo, handleCompatibilidade\n`);
   
   // Teste 2: Verificar economia.js
   console.log('✓ Testando módulo economia.js...');
@@ -56,7 +56,7 @@ try {
   // Teste 7: Verificar funções críticas
   console.log('✓ Verificando funções críticas...');
   const funcoesCriticas = [
-    'handleGay', 'handleSexo', 'handleNazista',
+    'handleGay', 'handleSexo',
     'handleGold', 'handleComprar', 'handleVender',
     'handleBrincadeiras', 'handleMenuGold',
     'handleOfertar', 'handleBuy', 'getSaldoAtual', 'changeGold',
