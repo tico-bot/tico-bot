@@ -396,23 +396,32 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'meupainel') || matchCmd(cmdWord, 'painel') || matchCmd(cmdWord, 'site') || matchCmd(cmdWord, 'link'))
     { await require('./handlers/painel').handleMeuPainel(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'recuperar') || matchCmd(cmdWord, 'recuperarsenha') || matchCmd(cmdWord, 'token') || matchCmd(cmdWord, 'codigo')) {
-    const rawNum = senderJid ? senderJid.split(':')[0].split('@')[0] : '';
-    if (!rawNum) return;
+    // Em grupos, o WhatsApp pode entregar participant como @lid. Prefira
+    // participantPn para obter o telefone real; use LidMapping como fallback.
+    const senderBase = String(senderJid || '').replace(/:\d+(?=@)/, '').toLowerCase();
+    let pnInformado = String(msg.key.participantPn || '').replace(/:\d+(?=@)/, '').toLowerCase();
+    if (!pnInformado.endsWith('@s.whatsapp.net')) pnInformado = '';
+    let mapaLid = null;
+    if (!pnInformado && senderBase.endsWith('@lid')) {
+      mapaLid = await LidMapping.findOne({ lid: senderBase }).lean();
+      pnInformado = String(mapaLid?.pn || '').toLowerCase();
+    }
+    if (senderBase.endsWith('@lid') && !pnInformado) {
+      await sock.sendMessage(jid, { text: '❌ Não consegui identificar seu número do WhatsApp. Envie uma mensagem no grupo novamente e tente !recuperar.' }, { quoted: msg });
+      return;
+    }
+    const rawNum = (pnInformado || senderBase).split('@')[0].replace(/\D/g, '');
+    if (!rawNum || rawNum.length < 8 || rawNum.length > 15) return;
 
-    const codigo = String(Math.floor(100000 + Math.random() * 900000));
+    const codigo = String(require('crypto').randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
     const OtpCadastro = require('./models/OtpCadastro');
-    await OtpCadastro.findOneAndUpdate(
-      { idWhatsApp: senderJid },
-      { codigo, expiresAt, usado: false },
-      { upsert: true }
-    );
-
     const pnJid = `${rawNum}@s.whatsapp.net`;
-    if (pnJid !== senderJid) {
+    const mapaAtual = mapaLid || await LidMapping.findOne({ pn: pnJid }).lean();
+    const idsOtp = [...new Set([senderBase, pnJid, mapaAtual?.lid].filter(Boolean))];
+    for (const idOtp of idsOtp) {
       await OtpCadastro.findOneAndUpdate(
-        { idWhatsApp: pnJid },
+        { idWhatsApp: idOtp },
         { codigo, expiresAt, usado: false },
         { upsert: true }
       );

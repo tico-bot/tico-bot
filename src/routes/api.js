@@ -2098,21 +2098,21 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
 // Body: { idWhatsApp, codigo, novaSenha }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
+  let otpClaimId = null;
   try {
     const { idWhatsApp, codigo, novaSenha } = req.body || {};
 
     if (!idWhatsApp || !codigo || !novaSenha)
       return res.status(400).json({ error: 'Número do WhatsApp, código e nova senha são obrigatórios.' });
 
-    if (novaSenha.length < 6 || novaSenha.length > 128)
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    if (typeof novaSenha !== 'string' || novaSenha.length < 6 || novaSenha.length > 128)
+      return res.status(400).json({ error: 'Nova senha deve ter entre 6 e 128 caracteres.' });
 
     const digitosBase = String(idWhatsApp).split('@')[0].replace(/\D/g, '');
     if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
       return res.status(400).json({ error: 'Número de WhatsApp inválido.' });
 
     const variantesPn = gerarVariantesNumero(digitosBase).map(d => `${d}@s.whatsapp.net`);
-
     const [lidMap, usuario] = await Promise.all([
       LidMapping.findOne({ pn: { $in: variantesPn } }).lean(),
       Usuario.findOne({ idWhatsApp: { $in: variantesPn } }),
@@ -2124,29 +2124,38 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
     if (!usuarioFinal)
       return res.status(404).json({ error: 'Perfil não encontrado. Digite !recuperar em um grupo no WhatsApp primeiro.' });
 
-    const jidsAceitos = [usuarioFinal.idWhatsApp, ...variantesPn];
-    const otpValido = await OtpCadastro.findOne({
-      idWhatsApp: { $in: jidsAceitos },
-      codigo: String(codigo).trim(),
-      usado: false,
-      expiresAt: { $gt: new Date() },
-    });
-
+    // O comando pode gravar o OTP usando PN (@s.whatsapp.net) ou LID (@lid).
+    // Aceite todas as identidades vinculadas ao mesmo número.
+    const jidsAceitos = [...new Set([
+      usuarioFinal.idWhatsApp,
+      lidMap?.lid,
+      ...variantesPn,
+    ].filter(Boolean).map(jid => String(jid).trim().toLowerCase()))];
+    const otpValido = await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: { $in: jidsAceitos }, codigo: String(codigo).trim(), usado: false, expiresAt: { $gt: new Date() } },
+      { $set: { usado: true } },
+      { new: true, sort: { createdAt: -1 } }
+    );
     if (!otpValido)
       return res.status(400).json({ error: 'Código inválido ou expirado. Digite !recuperar em um grupo no WhatsApp para gerar um novo código.' });
-
-    otpValido.usado = true;
-    await otpValido.save();
+    otpClaimId = otpValido._id;
 
     const passwordHash = await bcrypt.hash(novaSenha, 12);
     usuarioFinal.passwordHash = passwordHash;
-    if (!usuarioFinal.telefone && digitosBase) {
-      usuarioFinal.telefone = digitosBase;
-    }
+    if (!usuarioFinal.telefone && digitosBase) usuarioFinal.telefone = digitosBase;
     await usuarioFinal.save();
+    otpClaimId = null;
 
     return res.json({ ok: true, message: 'Senha redefinida com sucesso! Faça login com a nova senha.' });
   } catch (err) {
+    if (otpClaimId) {
+      try {
+        await OtpCadastro.updateOne(
+          { _id: otpClaimId, usado: true, expiresAt: { $gt: new Date() } },
+          { $set: { usado: false } }
+        );
+      } catch {}
+    }
     console.error('[API] POST /auth/recuperar:', err);
     return res.status(500).json({ error: 'Erro interno ao redefinir senha.' });
   }
