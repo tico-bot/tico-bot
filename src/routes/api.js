@@ -13,6 +13,22 @@ const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
 
+// Converte campos Map do Mongoose e objetos comuns para JSON simples.
+// Usado por /user/me, inventário, histórico de XP e rotas administrativas.
+function mapParaObjeto(valor) {
+  if (valor == null) return {};
+  if (valor instanceof Map) return Object.fromEntries(valor.entries());
+  if (typeof valor.toObject === 'function') {
+    const convertido = valor.toObject();
+    if (convertido && typeof convertido === 'object') return convertido;
+  }
+  if (typeof valor.entries === 'function') {
+    try { return Object.fromEntries(valor.entries()); } catch { /* usa fallback abaixo */ }
+  }
+  if (typeof valor === 'object' && !Array.isArray(valor)) return { ...valor };
+  return {};
+}
+
 // Helpers usados pelas rotas públicas de ranking e grupos.
 // Mantêm a fórmula de nível igual à usada no site.
 function calcularLevel(xp = 0) {
