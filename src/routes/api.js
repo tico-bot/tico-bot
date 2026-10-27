@@ -2065,14 +2065,32 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/login', rateLimitAdmin, async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { identifier, username, password } = req.body || {};
+    const identificador = String(identifier ?? username ?? '').trim();
 
-    if (!username || !password)
-      return res.status(400).json({ error: 'username e password são obrigatórios.' });
+    if (!identificador || typeof password !== 'string' || !password)
+      return res.status(400).json({ error: 'Email, telefone ou nome de usuário e senha são obrigatórios.' });
 
-    const usuario = await Usuario.findOne({ username: username.toLowerCase() }).lean();
+    const emailOuUsuario = identificador.toLowerCase();
+    const digitos = identificador.replace(/\\D/g, '');
+    const variantesTelefone = digitos.length >= 8 && digitos.length <= 15
+      ? gerarVariantesNumero(digitos)
+      : [];
+    const idsWhatsApp = variantesTelefone.map(n => `${n}@s.whatsapp.net`);
+
+    const usuario = await Usuario.findOne({
+      $or: [
+        { username: emailOuUsuario },
+        { email: emailOuUsuario },
+        ...(variantesTelefone.length ? [
+          { telefone: { $in: variantesTelefone } },
+          { idWhatsApp: { $in: idsWhatsApp } },
+        ] : []),
+      ],
+    }).lean();
+
     if (!usuario || !usuario.passwordHash)
-      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+      return res.status(401).json({ error: 'Email, telefone, usuário ou senha inválidos.' });
 
     const senhaCorreta = await bcrypt.compare(password, usuario.passwordHash);
     if (!senhaCorreta)
