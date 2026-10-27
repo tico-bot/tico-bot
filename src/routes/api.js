@@ -2019,36 +2019,65 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 
     const idWhatsAppReal = usuarioFinal.idWhatsApp;
 
-    // ── Verifica se já tem conta ──────────────────────────────────────────────
-    if (usuarioFinal.username && usuarioFinal.passwordHash)
-      return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
+    // Recriar a conta do site preserva o documento do WhatsApp e todo o progresso.
+    // O contador vive no próprio registro do usuário e não pode ser resetado trocando email/username.
+    const recriandoConta = Boolean(usuarioFinal.username && usuarioFinal.passwordHash);
+    const recriacoesUsadas = Math.max(0, Number(usuarioFinal.recriacoesContaSite) || 0);
+    if (recriandoConta && recriacoesUsadas >= 3)
+      return res.status(429).json({ error: 'Você já usou as 3 recriações permitidas para este número.' });
 
-    // ── Verifica disponibilidade do username (case-insensitive) ───────────────
-    const usernameEmUso = await Usuario.exists({ username: usernameLimpo });
+    // Não considerar o próprio registro como conflito ao recriar com o mesmo email/username.
+    const usernameEmUso = await Usuario.exists({
+      username: usernameLimpo,
+      _id: { $ne: usuarioFinal._id },
+    });
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
-    // ── Salva email se fornecido ──────────────────────────────────────────────
     const { email } = req.body || {};
     const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : null;
     if (emailLimpo) {
-      const emailEmUso = await Usuario.exists({ email: emailLimpo });
+      const emailEmUso = await Usuario.exists({
+        email: emailLimpo,
+        _id: { $ne: usuarioFinal._id },
+      });
       if (emailEmUso)
         return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
     }
 
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
+    const credenciais = {
+      username: usernameLimpo,
+      passwordHash,
+      ...(digitosBase && { telefone: digitosBase }),
+      ...(emailLimpo && { email: emailLimpo }),
+    };
 
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: idWhatsAppReal },
-      { $set: {
-          username:     usernameLimpo,
-          passwordHash,
-          ...(digitosBase && { telefone: digitosBase }),
-          ...(emailLimpo  && { email: emailLimpo }),
-      }},
-      { new: true }
-    );
+    if (recriandoConta) {
+      // Atualização atômica: requisições simultâneas não podem ultrapassar o limite de 3.
+      const atualizado = await Usuario.findOneAndUpdate(
+        {
+          _id: usuarioFinal._id,
+          username: { $exists: true, $nin: [null, ''] },
+          passwordHash: { $exists: true, $nin: [null, ''] },
+          $or: [
+            { recriacoesContaSite: { $lt: 3 } },
+            { recriacoesContaSite: { $exists: false } },
+            { recriacoesContaSite: null },
+          ],
+        },
+        { $set: credenciais, $inc: { recriacoesContaSite: 1 } },
+        { new: true }
+      );
+      if (!atualizado)
+        return res.status(429).json({ error: 'Você já usou as 3 recriações permitidas para este número.' });
+    } else {
+      await Usuario.findOneAndUpdate(
+        { _id: usuarioFinal._id },
+        { $set: credenciais, $setOnInsert: { recriacoesContaSite: 0 } },
+        { new: true }
+      );
+    }
 
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 
