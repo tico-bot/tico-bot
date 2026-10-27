@@ -194,17 +194,16 @@ async function ensureYtDlpBinary() {
 
   log.info('yt-dlp não encontrado — baixando binário do GitHub...');
   try {
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(tmpPath);
-      require('https').get(
-        'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp',
-        (res) => {
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-          res.pipe(file);
-          file.on('finish', () => file.close(resolve));
-        }
-      ).on('error', (err) => { try { fs.unlinkSync(tmpPath); } catch {} reject(err); });
-    });
+    // O endpoint "releases/latest/download" redireciona para um asset versionado.
+    // fetch segue redirects automaticamente; https.get não seguia e retornava 302.
+    const response = await fetch(
+      'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp',
+      { redirect: 'follow', signal: AbortSignal.timeout(60000) }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 1024 * 1024) throw new Error('O arquivo baixado parece incompleto.');
+    fs.writeFileSync(tmpPath, bytes, { mode: 0o755 });
     fs.chmodSync(tmpPath, 0o755);
     log.info('✅ yt-dlp baixado em', tmpPath);
     return tmpPath;
@@ -253,6 +252,8 @@ async function getYtDlpPath() {
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'Scripts', 'yt-dlp.exe'),
     'C:\\Python312\\Scripts\\yt-dlp.exe',
   ] : [
+    path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
+    path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp3'),
     '/usr/local/bin/yt-dlp',
     '/usr/bin/yt-dlp',
     '/home/user/.venv/bin/yt-dlp',
@@ -327,10 +328,15 @@ async function getYtDlpPath() {
     if (downloaded) { _cachedYtDlpPath = downloaded; return downloaded; }
   }
 
-  return 'yt-dlp';
+  log.error('yt-dlp não está disponível: instalação, PATH e download automático falharam.');
+  return null;
 }
 
 function ytDlp(ytdlp, args, timeout = 120000) {
+  if (!ytdlp) {
+    log.warn('yt-dlp err: executável não encontrado; verifique o log de build do Render e a instalação do yt-dlp.');
+    return Promise.resolve({ ok: false, stdout: '', stderr: 'yt-dlp executable not found' });
+  }
   const { execFile } = require('child_process');
   return new Promise((resolve) => {
     execFile(ytdlp, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
