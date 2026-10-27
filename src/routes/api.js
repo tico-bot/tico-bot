@@ -2108,7 +2108,7 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
       : [];
     const idsWhatsApp = variantesTelefone.map(n => `${n}@s.whatsapp.net`);
 
-    const usuario = await Usuario.findOne({
+    let usuario = await Usuario.findOne({
       $or: [
         { username: emailOuUsuario },
         { email: emailOuUsuario },
@@ -2118,6 +2118,15 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
         ] : []),
       ],
     }).lean();
+
+    // Alguns usuários do WhatsApp têm um JID @lid em vez do número @s.whatsapp.net.
+    // A recuperação já resolve esse vínculo; o login por telefone também precisa fazê-lo.
+    if (!usuario && idsWhatsApp.length) {
+      const lidMap = await LidMapping.findOne({ pn: { $in: idsWhatsApp } }).select('lid').lean();
+      if (lidMap?.lid) {
+        usuario = await Usuario.findOne({ idWhatsApp: lidMap.lid }).lean();
+      }
+    }
 
     if (!usuario || !usuario.passwordHash)
       return res.status(401).json({ error: 'Email, telefone, usuário ou senha inválidos.' });
