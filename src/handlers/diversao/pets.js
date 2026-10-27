@@ -1,4 +1,5 @@
 const path          = require('path');
+const fs            = require('fs');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
@@ -16,17 +17,55 @@ const CONFIG = {
   COOLDOWN_CURAR:     60 * 60 * 1000,  // 1 hora
 };
 
-// ─── CATÁLOGO DE PETS ─────────────────────────────────────────────────────────
-const PET_SYSTEM = {
-  gato:      { nome: 'Gato',      emoji: '🐱', rarity: 'COMUM',      desc: 'Independente e misterioso.',   xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
-  cachorro:  { nome: 'Cachorro',  emoji: '🐶', rarity: 'COMUM',      desc: 'Leal e cheio de energia.',     xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
-  coelho:    { nome: 'Coelho',    emoji: '🐰', rarity: 'COMUM',      desc: 'Fofo e saltitante.',           xpMult: 1.1, pontMult: 1.0, catchRate: 0.70 },
-  papagaio:  { nome: 'Papagaio',  emoji: '🦜', rarity: 'RARO',       desc: 'Repete tudo que você fala.',   xpMult: 1.2, pontMult: 1.1, catchRate: 0.50 },
-  raposa:    { nome: 'Raposa',    emoji: '🦊', rarity: 'RARO',       desc: 'Esperta e curiosa.',           xpMult: 1.3, pontMult: 1.2, catchRate: 0.45 },
-  lobo:      { nome: 'Lobo',      emoji: '🐺', rarity: 'ULTRA-RARO', desc: 'Feroz e solitário.',           xpMult: 1.5, pontMult: 1.4, catchRate: 0.30 },
-  dragao:    { nome: 'Dragão',    emoji: '🐲', rarity: 'LENDÁRIO',   desc: 'Criatura mística das lendas.', xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
-  unicornio: { nome: 'Unicórnio', emoji: '🦄', rarity: 'LENDÁRIO',   desc: 'Puro e cheio de magia.',       xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
-};
+// ─── CATÁLOGO DE PERSONAGENS ──────────────────────────────────────────────────
+// Os nomes e imagens vêm de /image/Pet. A raridade é sorteada no spawn.
+const PET_IMAGE_DIR = path.resolve(__dirname, '..', '..', '..', 'image', 'Pet');
+const PERSONAGENS = [
+  { type: 'arrogante', nome: 'Arrogante', arquivo: 'Arrogante.png' },
+  { type: 'bolsonaro', nome: 'Bolsonaro', arquivo: 'Bolsonaro.png' },
+  { type: 'douglas', nome: 'Douglas', arquivo: 'Douglas.png' },
+  { type: 'flavio-bolsonaro', nome: 'Flávio Bolsonaro', arquivo: 'FlávioBolsonaro.jpeg' },
+  { type: 'lula', nome: 'Lula', arquivo: 'Lula.jpeg' },
+  { type: 'manoel-gomes-judeo', nome: 'Manoel Gomes Judeo', arquivo: 'Manoel Gomes Judeo.png' },
+  { type: 'oruam', nome: 'Oruam', arquivo: 'Oruam.png' },
+  { type: 'rodney', nome: 'Rodney', arquivo: 'Rodney.png' },
+  { type: 'seu-ze', nome: 'Seu Zé', arquivo: 'SeuZé.png' },
+  { type: 'mbappeditador', nome: 'Mbappé Ditador', arquivo: 'mbappeditador.png' },
+  { type: 'yuri22', nome: 'Yuri 22', arquivo: 'yuri22.png' },
+];
+const RARIDADES_PET = [
+  { rarity: 'COMUM', peso: 45, xpMult: 1.0, pontMult: 1.0, catchRate: 0.75 },
+  { rarity: 'RARO', peso: 30, xpMult: 1.2, pontMult: 1.1, catchRate: 0.50 },
+  { rarity: 'ULTRA-RARO', peso: 18, xpMult: 1.5, pontMult: 1.4, catchRate: 0.30 },
+  { rarity: 'LENDÁRIO', peso: 7, xpMult: 2.0, pontMult: 2.0, catchRate: 0.12 },
+];
+const PET_SYSTEM = Object.fromEntries(PERSONAGENS.map(personagem => [personagem.type, {
+  ...personagem, emoji: '🐾', desc: `Personagem ${personagem.nome}.`, rarity: 'COMUM',
+  xpMult: 1.0, pontMult: 1.0, catchRate: 0.75,
+}]));
+function getPersonagem(petOrType) {
+  const type = typeof petOrType === 'string' ? petOrType : petOrType?.type;
+  if (PET_SYSTEM[type]) return PET_SYSTEM[type];
+  const nome = String(typeof petOrType === 'object' ? (petOrType?.name || petOrType?.nome || '') : '');
+  const normalizar = valor => valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const match = PERSONAGENS.find(p => normalizar(p.nome) === normalizar(nome));
+  if (match) return PET_SYSTEM[match.type];
+  const key = type || nome || 'personagem';
+  const hash = [...key].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 0);
+  return PET_SYSTEM[PERSONAGENS[hash % PERSONAGENS.length].type];
+}
+function getPetImage(personagem) {
+  return fs.readFileSync(path.join(PET_IMAGE_DIR, personagem.arquivo));
+}
+function sortearRaridadePet() {
+  const total = RARIDADES_PET.reduce((sum, item) => sum + item.peso, 0);
+  let roll = Math.random() * total;
+  for (const item of RARIDADES_PET) {
+    roll -= item.peso;
+    if (roll < 0) return item;
+  }
+  return RARIDADES_PET[0];
+}
 
 const RARITY_EMOJI = {
   'COMUM':      '⭐',
@@ -225,15 +264,9 @@ async function clearPet(userId, idGrupo) {
  * @returns {object} dados do spawn
  */
 function spawnNovoPet(jid) {
-  const tipos = Object.keys(PET_SYSTEM);
-  const type  = tipos[Math.floor(Math.random() * tipos.length)];
-  const def   = PET_SYSTEM[type];
-
-  const spawn = {
-    type,
-    rarity:    def.rarity,
-    spawnedAt: Date.now(),
-  };
+  const raridade = sortearRaridadePet();
+  const personagem = PERSONAGENS[Math.floor(Math.random() * PERSONAGENS.length)];
+  const spawn = { type: personagem.type, rarity: raridade.rarity, spawnedAt: Date.now() };
 
   spawnedPets.set(jid, spawn);
 
@@ -295,6 +328,7 @@ async function handleCapturarPet(sock, msg, jid) {
   }
 
   const def = PET_SYSTEM[spawn.type];
+  const rarityDef = RARIDADES_PET.find(r => r.rarity === spawn.rarity) || RARIDADES_PET[0];
   if (!def) {
     console.error(`[capturar] Tipo de pet desconhecido: ${spawn.type}`);
     return reply(sock, jid, msg, '❌ Erro interno: tipo de pet inválido.');
@@ -321,8 +355,8 @@ async function handleCapturarPet(sock, msg, jid) {
 
   // 3. Sistema de taxa de captura
   const taxasRaridade = { 'COMUM': 0.75, 'RARO': 0.50, 'ULTRA-RARO': 0.30, 'LENDÁRIO': 0.12 };
-  const chanceSucesso = def.catchRate ?? taxasRaridade[spawn.rarity] ?? 0.50;
-  
+  const chanceSucesso = rarityDef.catchRate ?? taxasRaridade[spawn.rarity] ?? 0.50;
+
   if (Math.random() > chanceSucesso) {
     return reply(
       sock, jid, msg,
@@ -333,8 +367,10 @@ async function handleCapturarPet(sock, msg, jid) {
   // 4. Instanciação do novo pet capturado
   const novoPet = {
     type:            spawn.type,
-    name:            `${def.nome} Selvagem`,
+    name:            def.nome,
     rarity:          spawn.rarity,
+    xpMult:          rarityDef.xpMult,
+    pontMult:        rarityDef.pontMult,
     level:           1,
     xp:              0,
     happiness:       50,
@@ -348,7 +384,7 @@ async function handleCapturarPet(sock, msg, jid) {
     await savePet(userId, jid, novoPet);
   } catch (err) {
     console.error('[capturar] Erro ao salvar pet:', err);
-    spawnedPets.set(jid, spawn); 
+    spawnedPets.set(jid, spawn);
     return reply(sock, jid, msg, '❌ Erro de banco de dados ao guardar o pet na mochila. Tente novamente!');
   }
 
@@ -510,7 +546,7 @@ async function handleBrincarPet(sock, msg, jid) {
   const nivelAtual = pet.level ?? 1;
   const xpAtual    = pet.xp    ?? 0;
   const xpParaSubir = nivelAtual * 100;
-  const xpGanho    = Math.round(20 * def.xpMult);
+  const xpGanho    = Math.round(20 * (pet.xpMult ?? def.xpMult ?? 1.0));
   const xpNovo     = xpAtual + xpGanho;
 
   const podeSubir  = nivelAtual < CONFIG.NIVEL_MAX && xpNovo >= xpParaSubir;
@@ -750,7 +786,7 @@ async function handleRenomearPet(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '❌ Erro interno ao renomear. Tente novamente!');
   }
 
-  const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
+  const def = getPersonagem(pet);
 
   return reply(sock, jid, msg,
     `✅ *Pet renomeado com sucesso!*\n\n` +
@@ -820,7 +856,7 @@ const membrosAtuais = new Set(
       const numero  = fullJid.split('@')[0].split(':')[0];
       mentions.push(fullJid);
 
-      const def   = PET_SYSTEM[entry.pet.type] ?? { emoji: '🐾' };
+      const def   = getPersonagem(entry.pet);
       const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
       const nivel = entry.pet.level ?? 1;
       const xp    = entry.pet.xp    ?? 0;
@@ -853,12 +889,7 @@ async function handlePets(sock, msg, jid, caption = '') {
   const prefixMatch = caption.match(/^([!.,/])/);
   const prefix      = prefixMatch ? prefixMatch[1] : '!';
 
-  const grupos = { 'COMUM': [], 'RARO': [], 'ULTRA-RARO': [], 'LENDÁRIO': [] };
-
-  for (const [, pet] of Object.entries(PET_SYSTEM)) {
-    if (!pet.rarity || !grupos[pet.rarity]) continue; // ignora raridade desconhecida
-    grupos[pet.rarity].push(`  ${pet.emoji} *${pet.nome}* — _${pet.desc}_`);
-  }
+  const grupos = { 'PERSONAGENS (RARIDADE ALEATÓRIA)': PERSONAGENS.map(p => `  🐾 *${p.nome}*`) };
 
   // Mostra o spawn ativo do grupo, se houver
   const spawnAtivo  = getSpawnAtivo(jid);
@@ -866,12 +897,11 @@ async function handlePets(sock, msg, jid, caption = '') {
     ? `\n🌿 *UM PET ESTÁ APARECIDO AGORA!* Use *${prefix}capturar* rápido!\n`
     : '';
 
-  let texto = `🐾 *PETS DA NATUREZA* 🐾\n${spawnAviso}\n`;
+  let texto = `🐾 *PERSONAGENS PET* 🐾\n${spawnAviso}\n`;
 
   for (const [rar, lista] of Object.entries(grupos)) {
     if (!lista.length) continue; // omite raridade sem nenhum pet
-    const re = RARITY_EMOJI[rar] ?? '';
-    texto += `${re} *${rar}* (${lista.length})\n${lista.join('\n')}\n\n`;
+    texto += `🎲 *${rar}* (${lista.length})\n${lista.join('\n')}\n\n`;
   }
 
   texto += `💡 _Um pet selvagem aparece a cada hora. Use *${prefix}capturar* na hora certa!_`;
@@ -961,7 +991,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return reply(sock, jid, msg, '❌ Erro interno ao enviar pet ao abrigo. Tente novamente!');
     }
 
-    const def = PET_SYSTEM[pet.type] ?? { emoji: '🐾' };
+    const def = getPersonagem(pet);
     const re  = RARITY_EMOJI[pet.rarity] ?? '⭐';
     const nomeCmdPegar = pet.name.includes(' ') ? `"${pet.name}"` : pet.name;
 
@@ -1007,7 +1037,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
           .map(u => {
             const p = u.petShelter?.shelteredPet;
             if (!p?.name) return null;
-            const def = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
+            const def = getPersonagem(p);
             const re  = RARITY_EMOJI[p.rarity] ?? '⭐';
             return `${def.emoji} *${p.name}* ${re}`;
           })
@@ -1087,7 +1117,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return reply(sock, jid, msg, '❌ Erro interno ao adotar o pet. Tente novamente!');
     }
 
-    const def    = PET_SYSTEM[petAdotado.type] ?? { emoji: '🐾' };
+    const def    = getPersonagem(petAdotado);
     const re     = RARITY_EMOJI[petAdotado.rarity] ?? '⭐';
     const numero = donoOriginal.split('@')[0].split(':')[0].replace(/\D/g, '');
     const dono   = ehSeuProprio ? '_era seu próprio pet_' : `_de @${numero}_`;
@@ -1132,7 +1162,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
 
     validos.forEach((u, i) => {
       const p      = u.petShelter.shelteredPet;
-      const def    = PET_SYSTEM[p.type] ?? { emoji: '🐾' };
+      const def    = getPersonagem(p);
       const re     = RARITY_EMOJI[p.rarity] ?? '⭐';
       const humor  = getHumor(p);
       const numero = u.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
@@ -1199,12 +1229,12 @@ async function triggerSpawn(sock, groupJid) {
 
   try {
     await sock.sendMessage(groupJid, {
-      text:
+      image: getPetImage(def),
+      caption:
         `${abertura}\n\n` +
-        `${def.emoji} *${def.nome}* ${re} (${spawn.rarity})\n` +
-        `_"${def.desc}"_\n\n` +
+        `*${def.nome}* ${re} (${spawn.rarity})\n\n` +
         `⚡ Digite *!capturar* para tentar pegar!\n` +
-        `📊 Taxa de captura: *${Math.round((def.catchRate ?? 0.5) * 100)}%*\n` +
+        `📊 Taxa de captura: *${Math.round((RARIDADES_PET.find(r => r.rarity === spawn.rarity)?.catchRate ?? 0.5) * 100)}%*\n` +
         `⏳ Desaparece em *1 hora*.\n\n` +
         `_Seja rápido — só um jogador pode capturá-lo!_`,
     });
@@ -1449,7 +1479,7 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
   }
 
   // ── Dados do pet ──────────────────────────────────────────
-  const def   = PET_SYSTEM[pet.type] ?? { emoji: '🐾', nome: '?', desc: '?', rarity: '?' };
+  const def   = getPersonagem(pet);
   const re    = RARITY_EMOJI[pet.rarity] ?? '⭐';
   const humor = getHumor(pet);
   const nivel = pet.level ?? 1;
@@ -1500,8 +1530,8 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
   }
 
   // ── Montar resposta ───────────────────────────────────────
-  return reply(sock, jid, msg,
-    `${def.emoji} *${pet.name}* ${re}\n` +
+  const statusTexto =
+    `🐾 *${PET_SYSTEM[pet.type] ? (pet.name || def.nome) : def.nome}* ${re}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `📋 *Tipo    :* ${def.nome} (${pet.rarity ?? '?'})\n` +
     `🎭 *Humor   :* ${humor}\n` +
@@ -1522,8 +1552,8 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
     (alertaTexto ? '' : '\n') +
     `📌 *Comandos:*\n` +
     `  *${prefix}alimentar* | *${prefix}brincar* | *${prefix}curar*\n` +
-    `  *${prefix}renomearpet* | *${prefix}abrigo deixar*`
-  );
+    `  *${prefix}renomearpet* | *${prefix}abrigo deixar*`;
+  return sock.sendMessage(jid, { image: getPetImage(def), caption: statusTexto }, { quoted: msg });
 }
 
 // ─── !pet on / !pet off ───────────────────────────────────────────────────────

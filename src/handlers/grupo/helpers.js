@@ -2,6 +2,7 @@
 
 const { normalizarJid } = require('../../utils/jid');
 const LidMapping = require('../../models/LidMapping');
+const { isOwnerJid } = require('../extras/_shared');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL COMPARTILHADO (em memória) ──────────────────
@@ -74,7 +75,15 @@ function normalizeJidBase(jid) {
 
 async function isAdmin(sock, groupJid, userJid) {
   if (!groupJid || !userJid) return false;
+  // O dono global do bot tem permissão administrativa mesmo sem ser admin do grupo.
+  if (isOwnerJid(userJid)) return true;
   try {
+    // O WhatsApp pode entregar o remetente como @lid; resolve para o número
+    // antes de decidir se ele é um dos donos globais.
+    if (String(userJid).endsWith('@lid')) {
+      const mapping = await LidMapping.findOne({ lid: normalizarJid(userJid) || userJid }).lean().catch(() => null);
+      if (mapping?.pn && isOwnerJid(mapping.pn)) return true;
+    }
     const meta = await getGroupMetadataCached(sock, groupJid);
     if (!meta?.participants) return false;
 
