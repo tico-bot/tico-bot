@@ -1558,7 +1558,7 @@ const CORRIDA_RATE_JANELA = 60 * 1000;
 const corridaRateLimit = rateLimit({
   windowMs:     CORRIDA_RATE_JANELA,
   max:          CORRIDA_RATE_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip),
   handler: (req, res) => {
     return res.status(429).json({ error: 'Muitas apostas! Aguarde antes de tentar novamente.' });
   },
@@ -1919,7 +1919,7 @@ const bcrypt = require('bcryptjs');
 const rateLimitCadastro = rateLimit({
   windowMs:     60 * 60 * 1000,
   max:          5,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip) ?? 'desconhecido',
   handler: (req, res) =>
     res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
 });
@@ -1932,7 +1932,7 @@ const OtpCadastro = require('../models/OtpCadastro');
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip) ?? 'desconhecido',
   handler: (req, res) =>
     res.status(429).json({ error: 'Muitas tentativas. Aguarde 5 minutos.' }),
 });
