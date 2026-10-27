@@ -69,6 +69,7 @@ const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp: { type: String, required: true, unique: true, trim: true, lowercase: true },
   nome:         { type: String, default: null,  trim: true },
+  displayName:  { type: String, default: null, trim: true, maxlength: 40 },
   telefone:     { type: String, default: null,  trim: true },
   uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
@@ -79,7 +80,7 @@ const usuarioSchema = new mongoose.Schema({
   // ainda conta como "existe" e quebra o unique index assim que o segundo
   // usuário sem username/email é criado. Sem default, o Mongoose não grava
   // o campo quando ele não é informado, e o sparse index volta a funcionar.
-  username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
+  username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30, unique: true, sparse: true },
   passwordHash: { type: String, default: null },
   email:        { type: String, trim: true, lowercase: true },
 
