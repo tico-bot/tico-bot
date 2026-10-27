@@ -10,6 +10,7 @@ const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const rateLimit      = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 
 // Helpers usados pelas rotas públicas de ranking e grupos.
 // Mantêm a fórmula de nível igual à usada no site.
@@ -1385,7 +1386,7 @@ const CASSINO_JANELA = 60 * 1000;
 const cassinoRateLimit = rateLimit({
   windowMs:     CASSINO_JANELA,
   max:          CASSINO_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitos giros! Aguarde antes de tentar novamente.'
