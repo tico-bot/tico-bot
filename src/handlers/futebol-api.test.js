@@ -122,3 +122,28 @@ test('API URL can be configured for local and hosted environments', () => {
   if (before === undefined) delete process.env.FUTEBOL_API_URL;
   else process.env.FUTEBOL_API_URL = before;
 });
+
+
+test('network failure uses configured provider fallback for international competitions', async () => {
+  const { spawnSync } = require('node:child_process');
+  const script = String.raw`
+    const assert = require('node:assert/strict');
+    const football = require('./src/handlers/futebol-api');
+    process.env.FOOTBALL_DATA_API_KEY = 'unit-test-key';
+    process.env.FUTEBOL_API_URL = 'https://unreachable.invalid';
+    let calls = 0;
+    global.fetch = async (url, options) => {
+      calls++;
+      if (String(url).startsWith('https://unreachable.invalid/')) throw new TypeError('fetch failed');
+      assert.equal(String(url), 'https://api.football-data.org/v4/competitions/PL/standings');
+      assert.equal(options.headers['X-Auth-Token'], 'unit-test-key');
+      return { ok: true, status: 200, json: async () => ({ competition: { name: 'Premier League' }, standings: [{ table: [{ position: 1, team: { name: 'Arsenal' }, points: 3 }] }] }) };
+    };
+    football.requestApi('/api/futebol/competitions/PL/standings').then(data => {
+      assert.equal(data.competition.name, 'Premier League');
+      assert.equal(calls, 2);
+    }).catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});

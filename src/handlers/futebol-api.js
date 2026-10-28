@@ -72,10 +72,10 @@ async function requestFootballDataDirect(endpoint) {
 }
 
 async function requestApi(endpoint) {
-  const url = new URL(endpoint, getApiBaseUrl() + '/');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   try {
+    const url = new URL(endpoint, getApiBaseUrl() + '/');
     const response = await fetch(url, { headers: getApiHeaders(), signal: controller.signal });
     const payload = await response.json().catch(() => null);
     if (!response.ok || payload?.success !== true) {
@@ -89,6 +89,17 @@ async function requestApi(endpoint) {
     }
     return payload.data;
   } catch (error) {
+    // If the public API host is unreachable from the bot's runtime, try the
+    // international provider directly. Brazilian tables remain tied to our API.
+    if (endpoint.startsWith('/api/futebol/') && !endpoint.endsWith('/competitions') &&
+        (error.name !== 'AbortError') && (!error.code || error.code === 'FOOTBALL_API_UNAVAILABLE')) {
+      try {
+        return await requestFootballDataDirect(endpoint);
+      } catch (fallbackError) {
+        if (fallbackError.code) throw fallbackError;
+        throw apiError('Não consegui conectar nem à nossa API nem ao provedor internacional de futebol.', 'FOOTBALL_API_UNAVAILABLE');
+      }
+    }
     if (error.name === 'AbortError') {
       throw apiError('A API demorou para responder. Tente novamente em instantes.', 'FOOTBALL_API_TIMEOUT');
     }
