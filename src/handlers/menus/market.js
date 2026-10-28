@@ -1,7 +1,9 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleMenuMarket(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
       🛒 MARKETPLACE
@@ -24,7 +26,7 @@ async function handleMenuMarket(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuMarket };

@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="index.css" />
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 <body>
 
@@ -81,7 +82,7 @@
     <span class="cassino-card-icon">🎰</span>
     <div class="cassino-card-text">
       <strong>Cassino</strong>
-      <span>Aposte seu gold nos slots</span>
+      <span>Aposte sua Plata nos slots</span>
     </div>
     <span class="cassino-card-arrow">›</span>
   </a>
@@ -122,7 +123,7 @@
       </div>
       <div class="sort-group" role="group" aria-label="Ordenar por">
         <button class="sort-chip active" data-tab="global" data-sort="xp">XP</button>
-        <button class="sort-chip" data-tab="global" data-sort="gold">Gold</button>
+        <button class="sort-chip" data-tab="global" data-sort="gold">Plata</button>
         <button class="sort-chip" data-tab="global" data-sort="mensagens">Msgs</button>
       </div>
     </div>
@@ -165,7 +166,7 @@
       </div>
       <div class="sort-group" role="group" aria-label="Ordenar por">
         <button class="sort-chip active" data-tab="grupo" data-sort="xp">XP</button>
-        <button class="sort-chip" data-tab="grupo" data-sort="gold">Gold</button>
+        <button class="sort-chip" data-tab="grupo" data-sort="gold">Plata</button>
         <button class="sort-chip" data-tab="grupo" data-sort="mensagens">Msgs</button>
       </div>
     </div>
@@ -217,7 +218,7 @@
     <span class="modal-stat-val" id="modal-msgs">—</span>
   </div>
   <div class="modal-stat">
-    <span class="modal-stat-label">Gold</span>
+    <span class="modal-stat-label">Plata</span>
     <span class="modal-stat-val gold" id="modal-gold">—</span>
   </div>
   <div class="modal-stat">
@@ -264,7 +265,7 @@
 <script>
   const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:3000/api'
-    : 'https://whatsappbot2-130c.onrender.com/api';
+    : 'https://tico-bot-6jpn.onrender.com/api';
 
   (function checkTokenAutoLogin() {
     const params = new URLSearchParams(window.location.search);

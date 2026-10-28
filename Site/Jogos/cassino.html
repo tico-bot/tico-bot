@@ -7,8 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="index.css" />
+  <link rel="stylesheet" href="../index.css" />
   <link rel="stylesheet" href="cassino.css" />
+  <link rel="stylesheet" href="../ios-glass.css" />
 </head>
 
 <body>
@@ -54,7 +55,7 @@
 <section class="hero">
   <p class="hero-eyebrow">Tico Bot · Cassino</p>
   <h1 class="hero-title">Cassino 🎰</h1>
-  <p class="hero-sub">Aposte seu gold e tente a sorte nos slots — resultados salvos no grupo.</p>
+  <p class="hero-sub">Aposte sua Plata e tente a sorte nos slots — resultados salvos no grupo.</p>
 </section>
 
 <!-- ══════════ MAIN ══════════ -->
@@ -84,7 +85,7 @@
       </div>
       <div class="saldo-chip" id="saldo-chip" style="display:none">
         <span>💰 Saldo disponível</span>
-        <strong id="saldo-val">— gold</strong>
+        <strong id="saldo-val">— Plata</strong>
       </div>
     </div>
 
@@ -164,11 +165,11 @@
         </div>
         <div class="session-stat pos" id="stat-ganhos">
           <span>Ganhos</span>
-          <strong id="stat-ganhos-val">0 gold</strong>
+          <strong id="stat-ganhos-val">0 Plata</strong>
         </div>
         <div class="session-stat neg" id="stat-perdas">
           <span>Perdas</span>
-          <strong id="stat-perdas-val">0 gold</strong>
+          <strong id="stat-perdas-val">0 Plata</strong>
         </div>
       </div>
 
@@ -208,7 +209,7 @@
 <footer>Tico-bot · cassino · powered by Node.js + MongoDB</footer>
 
 <script>
-const API = 'https://whatsappbot2-130c.onrender.com/api';
+const API = 'https://tico-bot-6jpn.onrender.com/api';
 
 /* ══════════════════════════════════════════════════════
    UTILS
@@ -301,8 +302,8 @@ function atualizarSessao(lucroLiq, aposta) {
 
   $('session-stats').style.display = 'grid';
   $('stat-rodadas-val').textContent = sessaoRodadas;
-  $('stat-ganhos-val').textContent  = fmtNum(sessaoGanhos) + ' gold';
-  $('stat-perdas-val').textContent  = fmtNum(sessaoPerdas) + ' gold';
+  $('stat-ganhos-val').textContent  = fmtNum(sessaoGanhos) + ' Plata';
+  $('stat-perdas-val').textContent  = fmtNum(sessaoPerdas) + ' Plata';
 
   ultimaAposta = aposta;
   const btnRepeat = $('btn-repeat');
@@ -385,7 +386,7 @@ function onGrupoChange() {
     slotMachine.style.display = 'block';
     paytable.style.display    = 'block';
     histCard.style.display    = 'block';
-    $('saldo-val').textContent = fmtNum(saldoAtual) + ' gold';
+    $('saldo-val').textContent = fmtNum(saldoAtual) + ' Plata';
     btnSpin.disabled = false;
     $('slot-status').textContent = 'Defina sua aposta e gire!';
     $('slot-status').className   = 'slot-status';
@@ -472,10 +473,10 @@ function mostrarResultado(data) {
   };
   titleEl.textContent = labels[tipo] || '—';
 
-  $('result-aposta').textContent  = fmtNum(aposta) + ' gold';
+  $('result-aposta').textContent  = fmtNum(aposta) + ' Plata';
   $('result-mult').textContent    = mult > 0 ? mult + 'x' : '—';
-  $('result-premio').textContent  = premio > 0 ? '+' + fmtNum(premio) + ' gold' : '—';
-  $('result-saldo').textContent   = fmtNum(saldoFinal) + ' gold';
+  $('result-premio').textContent  = premio > 0 ? '+' + fmtNum(premio) + ' Plata' : '—';
+  $('result-saldo').textContent   = fmtNum(saldoFinal) + ' Plata';
 
   /* Cor do prêmio */
   const premioWrap = $('result-premio-wrap');
@@ -486,8 +487,8 @@ function mostrarResultado(data) {
   /* Status */
   const statusEl = $('slot-status');
   statusEl.textContent = isWin
-    ? `+${fmtNum(lucroLiq)} gold 🎉`
-    : `-${fmtNum(aposta)} gold 😢`;
+    ? `+${fmtNum(lucroLiq)} Plata 🎉`
+    : `-${fmtNum(aposta)} Plata 😢`;
   statusEl.className = 'slot-status ' + (isWin ? 'win' : 'lose');
 
   /* Rolos — cor de borda */
@@ -502,7 +503,7 @@ function mostrarResultado(data) {
 
   /* Atualiza saldo exibido */
   saldoAtual = saldoFinal;
-  $('saldo-val').textContent = fmtNum(saldoFinal) + ' gold';
+  $('saldo-val').textContent = fmtNum(saldoFinal) + ' Plata';
 
   /* Atualiza option do select */
   const sel = $('grupo-select');
@@ -549,7 +550,7 @@ function addHistory(r1, r2, r3, lucroLiq) {
     <div class="history-item">
       <span class="history-symbols">${h.r1} ${h.r2} ${h.r3}</span>
       <span class="history-val ${h.lucroLiq >= 0 ? 'pos' : 'neg'}">
-        ${h.lucroLiq >= 0 ? '+' : ''}${fmtNum(h.lucroLiq)} gold
+        ${h.lucroLiq >= 0 ? '+' : ''}${fmtNum(h.lucroLiq)} Plata
       </span>
     </div>
   `).join('');
@@ -614,7 +615,7 @@ async function girar() {
   const aposta = parseInt($('aposta-input').value, 10);
 
   if (!aposta || aposta < 10) {
-    showToast('Aposta mínima: 10 gold!');
+    showToast('Aposta mínima: 10 Plata!');
     return;
   }
   if (aposta > saldoAtual) {
@@ -622,7 +623,7 @@ async function girar() {
     return;
   }
   if (aposta > 100_000) {
-    showToast('Aposta máxima: 100.000 gold');
+    showToast('Aposta máxima: 100.000 Plata');
     return;
   }
 
@@ -694,8 +695,8 @@ async function girar() {
   const isWin = apiData.lucroLiq > 0;
   showToast(
     isWin
-      ? `+${fmtNum(apiData.lucroLiq)} gold! 🎉`
-      : `-${fmtNum(apiData.aposta)} gold 😢`,
+      ? `+${fmtNum(apiData.lucroLiq)} Plata! 🎉`
+      : `-${fmtNum(apiData.aposta)} Plata 😢`,
     isWin ? 'win' : 'lose'
   );
 }

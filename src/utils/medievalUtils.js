@@ -242,6 +242,31 @@ const CLASSES = [
     armasPermitidas: ['Cajado', 'Cajado de Madeira', 'Arco', 'Arco Simples', 'Ramo Druídico', 'Cajado da Floresta', 'Arco Élfico', 'Arco da Tempestade', 'Cetro da Natureza', 'Cajado Ancestral', 'Arco do Julgamento'],
   },
   {
+    nome: 'Bárbaro', emoji: '🪓', descricao: 'Guerreiro brutal que troca técnica por força devastadora',
+    ataque: 19, defesa: 7, hp: 145, mana: 35,
+    armasPermitidas: ['Machado', 'Machado de Guerra', 'Machado Sombrio', 'Machado do Colosso', 'Martelo de Guerra', 'Espada', 'Espada Longa'],
+  },
+  {
+    nome: 'Berserker', emoji: '🔥', descricao: 'Lutador implacável que avança sem temer ferimentos',
+    ataque: 21, defesa: 4, hp: 115, mana: 40,
+    armasPermitidas: ['Machado', 'Machado de Guerra', 'Machado do Colosso', 'Lâminas Gêmeas', 'Espada Longa', 'Espada do Dragão'],
+  },
+  {
+    nome: 'Monge', emoji: '🥋', descricao: 'Combatente disciplinado que une agilidade e energia interior',
+    ataque: 14, defesa: 11, hp: 110, mana: 85,
+    armasPermitidas: ['Bastão de Bambu', 'Bordão Sagrado', 'Cajado', 'Manoplas do Dragão', 'Cajado de Madeira'],
+  },
+  {
+    nome: 'Bardo', emoji: '🎻', descricao: 'Artista místico que inspira aliados e confunde adversários',
+    ataque: 12, defesa: 7, hp: 95, mana: 125,
+    armasPermitidas: ['Alaúde Encantado', 'Cajado de Madeira', 'Cajado', 'Cetro Enferrujado', 'Faca de Caça'],
+  },
+  {
+    nome: 'Engenheiro Arcano', emoji: '⚙️', descricao: 'Inventor que combina engenhocas, runas e magia',
+    ataque: 15, defesa: 9, hp: 105, mana: 100,
+    armasPermitidas: ['Besta Mecânica', 'Martelo de Guerra', 'Cajado de Cristal', 'Cajado', 'Lança Simples', 'Besta Rúnica'],
+  },
+  {
     nome: 'Necromante',
     emoji: '💀',
     descricao: 'Domina a magia negra e os mortos',
@@ -374,6 +399,19 @@ const ARMAS = [
   { nome: 'Arco do Julgamento',  emoji: '🏹',  bonusAtaque: 24, preco: 1850, raridade: 'lendário', nivelMinimo: 12 },
   { nome: 'Espada Celestial',    emoji: '✨',  bonusAtaque: 26, preco: 2000, raridade: 'lendário', nivelMinimo: 12, bonusMana: 30 },
   { nome: 'Punhal Eterno',       emoji: '🗡️',  bonusAtaque: 27, preco: 2100, raridade: 'lendário', nivelMinimo: 12 },
+  // Novas armas — níveis 1 a 12
+  { nome: 'Bastão de Bambu',       emoji: '🎋', bonusAtaque: 7,  preco: 260,  raridade: 'comum',    nivelMinimo: 1 },
+  { nome: 'Besta Mecânica',        emoji: '🏹', bonusAtaque: 11, preco: 520,  raridade: 'incomum',  nivelMinimo: 3 },
+  { nome: 'Martelo de Guerra',     emoji: '🔨', bonusAtaque: 14, preco: 580,  raridade: 'incomum',  nivelMinimo: 4 },
+  { nome: 'Alaúde Encantado',      emoji: '🎻', bonusAtaque: 8,  preco: 620,  raridade: 'incomum',  nivelMinimo: 4, bonusMana: 35 },
+  { nome: 'Manoplas do Dragão',    emoji: '🐉', bonusAtaque: 16, preco: 820,  raridade: 'incomum',  nivelMinimo: 5 },
+  { nome: 'Machado do Colosso',    emoji: '🪓', bonusAtaque: 21, preco: 1250, raridade: 'raro',     nivelMinimo: 7 },
+  { nome: 'Lâminas Gêmeas',        emoji: '⚔️', bonusAtaque: 19, preco: 1180, raridade: 'raro',     nivelMinimo: 7 },
+  { nome: 'Besta Rúnica',          emoji: '🔱', bonusAtaque: 20, preco: 1320, raridade: 'raro',     nivelMinimo: 8 },
+  { nome: 'Espada do Dragão',      emoji: '🐲', bonusAtaque: 24, preco: 1650, raridade: 'raro',     nivelMinimo: 10 },
+  { nome: 'Cajado Estelar',        emoji: '🌠', bonusAtaque: 20, preco: 1700, raridade: 'raro',     nivelMinimo: 10, bonusMana: 95 },
+  { nome: 'Besta Celestial',       emoji: '🌌', bonusAtaque: 27, preco: 2050, raridade: 'lendário', nivelMinimo: 12 },
+  { nome: 'Orbe do Infinito',      emoji: '🔮', bonusAtaque: 23, preco: 2150, raridade: 'lendário', nivelMinimo: 12, bonusMana: 120 },
 ];
 
 // ── Poções ───────────────────────────────────────────────────────────────────
@@ -386,6 +424,12 @@ const POCOES = [
   { nome: 'Elixir do Arcano',     emoji: '🌀', tipo: 'mana',  valor: 300, preco: 450, raridade: 'raro'     },
   { nome: 'Poção de Batalha',     emoji: '⚗️', tipo: 'ambos', valor: 80,  preco: 250, raridade: 'raro'     },
   { nome: 'Poção Lendária',       emoji: '🌟', tipo: 'ambos', valor: 200, preco: 600, raridade: 'lendário' },
+  { nome: 'Tônico do Berserker',   emoji: '🩸', tipo: 'hp',    valor: 90,  preco: 160, raridade: 'incomum' },
+  { nome: 'Essência Vital',        emoji: '🌱', tipo: 'hp',    valor: 180, preco: 300, raridade: 'raro' },
+  { nome: 'Gota de Mana',          emoji: '💧', tipo: 'mana',  valor: 35,  preco: 65,  raridade: 'comum' },
+  { nome: 'Frasco Arcano',         emoji: '🧿', tipo: 'mana',  valor: 220, preco: 340, raridade: 'raro' },
+  { nome: 'Elixir do Equilíbrio',  emoji: '☯️', tipo: 'ambos', valor: 130, preco: 420, raridade: 'raro' },
+  { nome: 'Lágrima da Fênix',      emoji: '🔥', tipo: 'ambos', valor: 320, preco: 850, raridade: 'lendário' },
 ];
 
 // ── Armaduras ────────────────────────────────────────────────────────────────
@@ -422,6 +466,14 @@ const ARMADURAS = [
   { nome: 'Manto Celestial',      emoji: '✨', bonusDefesa: 20, preco: 1700, raridade: 'lendário', nivelMinimo: 12, bonusMana: 80 },
   { nome: 'Armadura do Caos',     emoji: '🌪️', bonusDefesa: 23, preco: 1800, raridade: 'lendário', nivelMinimo: 12 },
   { nome: 'Veste do Além',        emoji: '🌌', bonusDefesa: 18, preco: 1600, raridade: 'lendário', nivelMinimo: 12, bonusMana: 100 },
+  { nome: 'Braçadeiras de Ferro',   emoji: '🦾', bonusDefesa: 6,  preco: 260,  raridade: 'comum',    nivelMinimo: 1 },
+  { nome: 'Manto do Bardo',         emoji: '🎼', bonusDefesa: 5,  preco: 280,  raridade: 'comum',    nivelMinimo: 1, bonusMana: 25 },
+  { nome: 'Couraça do Berserker',   emoji: '🩸', bonusDefesa: 9,  preco: 620,  raridade: 'incomum',  nivelMinimo: 3 },
+  { nome: 'Túnica do Monge',        emoji: '🥋', bonusDefesa: 8,  preco: 580,  raridade: 'incomum',  nivelMinimo: 3, bonusMana: 20 },
+  { nome: 'Armadura de Escamas',    emoji: '🐉', bonusDefesa: 15, preco: 900,  raridade: 'incomum',  nivelMinimo: 5 },
+  { nome: 'Manto das Constelações', emoji: '🌌', bonusDefesa: 11, preco: 980,  raridade: 'raro',     nivelMinimo: 7, bonusMana: 55 },
+  { nome: 'Armadura do Colosso',    emoji: '🗿', bonusDefesa: 24, preco: 1450, raridade: 'raro',     nivelMinimo: 10 },
+  { nome: 'Égide do Infinito',      emoji: '♾️', bonusDefesa: 27, preco: 1950, raridade: 'lendário', nivelMinimo: 12, bonusMana: 35 },
 ];
 
 // ── Missões ──────────────────────────────────────────────────────────────────
@@ -553,12 +605,20 @@ function narrarCombate(atacante, defensor, dano, critico, habilidade = null) {
       `⚡ *${atacante.nome}* invoca *${habilidade}* e libera ${cor} sobre *${defensor.nome}*, causando *${dano}* de dano!`,
       `💥 Os céus tremem enquanto *${atacante.nome}* desencadeia *${habilidade}* sobre *${defensor.nome}* — *${dano}* de dano!`,
       `🌀 *${habilidade}* ressoa pelo campo de batalha! *${defensor.nome}* sofre *${dano}* de dano colossal!`,
+      `🌪️ *${atacante.nome}* concentra seu poder e dispara *${habilidade}*! O impacto atinge *${defensor.nome}* em cheio: *${dano}* de dano!`,
+      `🔮 Runas brilham ao redor de *${atacante.nome}*, que conjura *${habilidade}* contra *${defensor.nome}* — *${dano}* de dano!`,
+      `⚡ Uma onda de poder explode quando *${atacante.nome}* usa *${habilidade}*! *${defensor.nome}* recebe *${dano}* de dano!`,
+      `💢 *${atacante.nome}* transforma energia em destruição com *${habilidade}*, atingindo *${defensor.nome}* por *${dano}*!`,
     ];
   } else if (critico) {
     pool = [
       `💥 *GOLPE CRÍTICO!* *${atacante.nome}* desfere um ataque devastador com ${cor}, causando *${dano}* de dano em *${defensor.nome}*!`,
       `⚡ Incrível! *${atacante.nome}* encontrou a brecha perfeita e causou *${dano}* de dano em *${defensor.nome}*!`,
       `🔥 *${atacante.nome}* canalizou ${cor} num golpe certeiro — *${dano}* de dano crítico em *${defensor.nome}*!`,
+      `☄️ *${atacante.nome}* encontrou um ponto fraco e acertou em cheio! *${defensor.nome}* sofre *${dano}* de dano crítico!`,
+      `🩸 A defesa de *${defensor.nome}* falhou por um instante: *${atacante.nome}* aproveitou e causou *${dano}* de dano!`,
+      `🌟 Um movimento perfeito! *${atacante.nome}* desferiu um crítico de *${dano}* contra *${defensor.nome}*!`,
+      `💢 O golpe de *${atacante.nome}* rompe a guarda de *${defensor.nome}* e causa *${dano}* de dano devastador!`,
     ];
   } else {
     pool = [
@@ -566,6 +626,12 @@ function narrarCombate(atacante, defensor, dano, critico, habilidade = null) {
       `🗡️ *${atacante.nome}* avança com ${cor} e atinge *${defensor.nome}* por *${dano}* de dano!`,
       `🔥 *${atacante.nome}* lança ${cor} em direção a *${defensor.nome}*, causando *${dano}* de dano!`,
       `💫 Com precisão, *${atacante.nome}* usa ${cor} contra *${defensor.nome}* — *${dano}* de dano!`,
+      `🛡️ *${atacante.nome}* encontra uma abertura na defesa de *${defensor.nome}* e causa *${dano}* de dano!`,
+      `⚔️ As armas se chocam! *${atacante.nome}* leva a melhor e atinge *${defensor.nome}* por *${dano}*!`,
+      `💨 Num movimento rápido, *${atacante.nome}* surpreende *${defensor.nome}* e causa *${dano}* de dano!`,
+      `🗡️ *${atacante.nome}* muda de estratégia e acerta *${defensor.nome}* em cheio: *${dano}* de dano!`,
+      `🔥 O combate esquenta! *${atacante.nome}* avança com ${cor} e retira *${dano}* HP de *${defensor.nome}*!`,
+      `💥 Um impacto ecoa pela arena: *${defensor.nome}* recebe *${dano}* de dano de *${atacante.nome}*!`,
     ];
   }
 

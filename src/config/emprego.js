@@ -3,7 +3,7 @@
 const HORARIO = {
   INICIO_MIN: 8 * 60,  // 08:00
   FIM_MIN:    23 * 60, // 23:00
-  FUSO:       'America/Sao_Paulo',
+  FUSO:       'America/Cuiaba',
 };
 
 const COOLDOWN_WORK_MS = 40 * 60 * 1000; // 40 minutos entre turnos

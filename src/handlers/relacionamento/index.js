@@ -31,7 +31,7 @@ const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-const FUSO = 'America/Sao_Paulo';
+const FUSO = 'America/Cuiaba';
 
 /** Número puro de um JID (sem sufixo de dispositivo nem domínio). */
 function numeroDe(jid) {
@@ -475,7 +475,32 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  if (getRelacionamento(jid, senderJid, alvoJid, relacionamentos)) {
+  const relacionamentoAtual = getRelacionamento(jid, senderJid, alvoJid, relacionamentos);
+
+  if (tipo === 'casamento') {
+    const tresDiasMs = 3 * 24 * 60 * 60 * 1000;
+    if (!relacionamentoAtual || relacionamentoAtual.tipo !== 'namoro') {
+      await sock.sendMessage(jid, {
+        text: `💍 Calma lá! Antes de casar, vocês precisam estar namorando há pelo menos *3 dias*. Use *${prefixo(jid)}namorar @${alvoJid.split('@')[0]}* primeiro.`,
+        mentions: [alvoJid],
+      }, { quoted: msg });
+      return;
+    }
+
+    const inicioNamoro = Number(relacionamentoAtual.desde) || new Date(relacionamentoAtual.desde).getTime();
+    const tempoNamoro = Date.now() - inicioNamoro;
+    if (!Number.isFinite(inicioNamoro) || tempoNamoro < tresDiasMs) {
+      const restanteMs = tresDiasMs - Math.max(0, tempoNamoro);
+      const horasRestantes = Math.ceil(restanteMs / (60 * 60 * 1000));
+      await sock.sendMessage(jid, {
+        text: `⏳ Pedido de casamento bloqueado! Vocês precisam namorar por *3 dias completos*. Ainda faltam aproximadamente *${horasRestantes} hora(s)*. 💕`,
+        mentions: [alvoJid],
+      }, { quoted: msg });
+      return;
+    }
+  }
+
+  if (relacionamentoAtual && tipo !== 'casamento') {
     const frases = [
       `😂 Vocês já tão juntos, mas quer fazer um evento de renovação de votos? Que romântico... ou dramático!`,
       `😒 Tá querendo propor NOVAMENTE? Já era pra ter pedido em outro lugar!`,
@@ -543,7 +568,9 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     `@${alvoJid.split('@')[0]}, você aceita ${tipoVerbo} com *${author}*? 🥺\n\n` +
     `Use *${prefixo(jid)}euaceito* ou *${prefixo(jid)}eurecuso*\n_⏰ Expira em 5 minutos_`;
 
-  const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
+  const imagemNome = tipo === 'casamento'
+    ? 'pedidocasamento.jpeg'
+    : ['imagecasal.jpg', 'imagecasal2.jpg', 'imagecasal3.jpg'][Math.floor(Math.random() * 3)];
   const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', imagemNome);
 
   try {
@@ -614,7 +641,9 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   const idx     = tipo === 'namoro' ? [1, 3][Math.floor(Math.random() * 2)] : [0, 2][Math.floor(Math.random() * 2)];
   const caption = frases[idx] + '\n\n💪 *Ganhem XP juntos com os comandos! Um casal fraco não vira lenda!*';
 
-  const imagemNome = Date.now() % 2 === 0 ? 'imagecasal.jpg' : 'imagecasal2.jpg';
+  const imagemNome = (tipo || 'casamento') === 'casamento'
+    ? 'casado.jpeg'
+    : ['imagecasal.jpg', 'imagecasal2.jpg', 'imagecasal3.jpg'][Math.floor(Math.random() * 3)];
   const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', imagemNome);
 
   try {
@@ -654,7 +683,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
   ];
 
   const caption = frases[Math.floor(Math.random() * frases.length)];
-  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagecasal4.jpg');
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagemcasalrecusar.jpeg');
 
   try {
     const imageBuffer = fs.readFileSync(imagemPath);
@@ -703,11 +732,20 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
     `😭 ${tagParc} acabou de tomar um pé na bunda de ${tagSelf}! Que vexame! 🤡`,
   ];
 
-  await sock.sendMessage(jid, {
-    text: frases[Math.floor(Math.random() * frases.length)] +
-      `\n\n⏳ Ambos ficam bloqueados por *10 minutos* antes de se comprometer novamente.`,
-    mentions: [senderNorm, parcJid],
-  }, { quoted: msg });
+  const caption = frases[Math.floor(Math.random() * frases.length)] +
+    `\n\n⏳ Ambos ficam bloqueados por *10 minutos* antes de se comprometer novamente.`;
+  const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagecasal4.jpg');
+
+  try {
+    const imageBuffer = fs.readFileSync(imagemPath);
+    await sock.sendMessage(jid, {
+      image: imageBuffer,
+      caption,
+      mentions: [senderNorm, parcJid],
+    }, { quoted: msg });
+  } catch {
+    await sock.sendMessage(jid, { text: caption, mentions: [senderNorm, parcJid] }, { quoted: msg });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

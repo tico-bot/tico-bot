@@ -164,7 +164,7 @@ async function handleGarimpar(sock, msg, jid) {
 
       let carteira;
       if (contaVinculada) {
-        // Conta vinculada: o ouro vai para o saldo do app (1 gold = 1 centavo da moeda da conta,
+        // Conta vinculada: o ouro vai para o saldo do app (1 unidade de Plata equivale à unidade interna da carteira vinculada,
         // mesma regra do !pix). Missões ainda não suportam conta vinculada, então ficam de fora.
         const saldo = await adjustWalletLocal(
           userId,
@@ -259,7 +259,7 @@ async function handleGarimpar(sock, msg, jid) {
       console.error('⚠️ Erro handleGarimpar:', e.message);
       await sock.sendMessage(jid, {
         text: resultadoIncerto
-          ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!reais* antes de tentar de novo.'
+          ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!plata* antes de tentar de novo.'
           : '⚠️ Erro ao garimpar! Tente novamente.',
       }, { quoted: msg });
     }

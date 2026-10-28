@@ -1,14 +1,16 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleMenuJogos(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
    🎮 MENU JOGOS & DIVERSÃO
 ╚══════════════════════╝
 
 💰 *ECONOMIA*
-  ▸ ${P}menugold — economia em Reais
+  ▸ ${P}menuplata — economia em Plata
   ▸ ${P}missao
   ▸ ${P}garimpar
   ▸ ${P}extrato
@@ -38,16 +40,16 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
   ▸ ${P}ranklevel
   ▸ ${P}level
 
-⚽ *COPA DO MUNDO*
-  ▸ ${P}worldcup — Tabela da Copa 2026 🏆
+⚽ *FUTEBOL*
+  ▸ ${P}brasileirao [A/B/C/D] — Tabelas do Brasileirão 🇧🇷
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleBrincadeiras(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
       🎮 BRINCADEIRAS
@@ -91,7 +93,7 @@ async function handleBrincadeiras(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuJogos, handleBrincadeiras };

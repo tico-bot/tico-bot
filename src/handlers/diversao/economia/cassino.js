@@ -8,7 +8,7 @@ const {
   localMinorUnitsToBrlCents,
 } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 const { resolveGlobalId } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
-const { randomUUID } = require('crypto');
+const { randomUUID, randomInt } = require('crypto');
 
 // Credita o prêmio com um requestId fixo: se a 1ª chamada tiver sido aplicada
 // e a resposta se perder, a 2ª é reconhecida pelo servidor e não credita em dobro.
@@ -41,6 +41,18 @@ const SLOTS_SIMBOLOS = [
 
 const SLOTS_POOL = SLOTS_SIMBOLOS.flatMap(s => Array(s.peso).fill(s.emoji));
 
+// Aceita apenas valores inteiros positivos, sem aceitar entradas como '10abc' ou '1.5'.
+function parseAposta(valor) {
+  const texto = String(valor ?? '').trim();
+  if (!/^\d+$/.test(texto)) return null;
+  const numero = Number(texto);
+  return Number.isSafeInteger(numero) && numero > 0 ? numero : null;
+}
+
+function argumento(caption, indice) {
+  return typeof caption === 'string' ? caption.trim().split(/\s+/)[indice] : undefined;
+}
+
 const SLOTS_MULTIPLICADORES = {
   '💎': { tres: 50, dois: 5  },
   '7️⃣':  { tres: 25, dois: 3  },
@@ -62,7 +74,7 @@ const SLOTS_FRAMES_ANIM = [
 const SLOTS_FRAME_DELAY = 320;
 
 function sortearSlots() {
-  const pick = () => SLOTS_POOL[Math.floor(Math.random() * SLOTS_POOL.length)];
+  const pick = () => SLOTS_POOL[randomInt(SLOTS_POOL.length)];
   return [pick(), pick(), pick()];
 }
 
@@ -126,11 +138,12 @@ function buildResultado(r1, r2, r3, aposta, mult, label, lucroLiq, saldoFinal, w
 }
 
 async function handleSlots(sock, msg, jid, senderJid, caption) {
-  const args       = caption.trim().split(/\s+/);
-  let aposta       = parseInt(args[1]);
+  if (!jid || !senderJid) return;
+  const args       = (typeof caption === 'string' ? caption : '').trim().split(/\s+/);
+  let aposta       = parseAposta(args[1]);
   const senderNorm = jidNormalizedUser(senderJid);
 
-  if (!aposta || isNaN(aposta) || aposta <= 0) {
+  if (aposta === null) {
     await sock.sendMessage(jid, {
       text:
         `🎰 *CASSINO Tico* 🎰\n\n` +
@@ -152,7 +165,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
       return;
     }
   }
-  const saldo    = carteira?.gold ?? 0;
+  const saldo    = Number.isSafeInteger(carteira?.gold) && carteira.gold >= 0 ? carteira.gold : 0;
 
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
@@ -224,18 +237,21 @@ const CORRIDA_PISTA_LEN   = 12;
 
 function sortearVencedor() {
   const pool = CORRIDA_BICHOS.flatMap((b, i) => Array(b.velocidade).fill(i));
-  return pool[Math.floor(Math.random() * pool.length)];
+  return pool[randomInt(pool.length)];
 }
 
 async function handleCorrida(sock, msg, jid, senderJid, caption) {
-  const args       = caption.trim().split(/\s+/);
-  const escolha    = parseInt(args[1]);
-  let aposta       = parseInt(args[2]);
+  if (!jid || !senderJid) return;
+  const args       = (typeof caption === 'string' ? caption : '').trim().split(/\s+/);
+  const escolhaRaw = argumento(caption, 1);
+  const apostaRaw  = argumento(caption, 2);
+  const escolha    = /^\d+$/.test(String(escolhaRaw ?? '')) ? Number(escolhaRaw) : NaN;
+  let aposta       = parseAposta(apostaRaw);
   const senderNorm = jidNormalizedUser(senderJid);
 
   const escolhaValida = escolha >= 1 && escolha <= CORRIDA_BICHOS.length;
 
-  if (!escolha || !aposta || isNaN(escolha) || isNaN(aposta) || !escolhaValida || aposta <= 0) {
+  if (!Number.isSafeInteger(escolha) || !escolhaValida || aposta === null) {
     await sock.sendMessage(jid, {
       text:
         `🏁 *CORRIDA DE BICHOS* 🏁\n\n` +
@@ -256,7 +272,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
       return;
     }
   }
-  const saldo    = carteira?.gold ?? 0;
+  const saldo    = Number.isSafeInteger(carteira?.gold) && carteira.gold >= 0 ? carteira.gold : 0;
 
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
@@ -311,8 +327,8 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
   ];
 
   const statusTxt = venceu
-    ? `🎉 *VITÓRIA!*\n${FRASES_VITORIA_CORRIDA[Math.floor(Math.random() * FRASES_VITORIA_CORRIDA.length)]}`
-    : `❌ *DERROTA!*\n${FRASES_DERROTA_CORRIDA[Math.floor(Math.random() * FRASES_DERROTA_CORRIDA.length)]}`;
+    ? `🎉 *VITÓRIA!*\n${FRASES_VITORIA_CORRIDA[randomInt(FRASES_VITORIA_CORRIDA.length)]}`
+    : `❌ *DERROTA!*\n${FRASES_DERROTA_CORRIDA[randomInt(FRASES_DERROTA_CORRIDA.length)]}`;
 
   const resultadoLinha = venceu
     ? `📈 Ganho líquido: *+${formatWalletAmount(lucroLiq, carteira)}* _(prêmio de ${formatWalletAmount(premio, carteira)} pelas odds ${bichoEscolha.odds}x)_`
@@ -336,11 +352,12 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
 // ═══════════════════════════════════════════════════════════════
 
 async function handleApostar(sock, msg, jid, senderJid, caption) {
-  const args       = caption.trim().split(/\s+/);
-  let aposta       = parseInt(args[1]);
+  if (!jid || !senderJid) return;
+  const args       = (typeof caption === 'string' ? caption : '').trim().split(/\s+/);
+  let aposta       = parseAposta(args[1]);
   const senderNorm = jidNormalizedUser(senderJid);
 
-  if (!aposta || isNaN(aposta) || aposta <= 0) {
+  if (aposta === null) {
     await sock.sendMessage(jid, {
       text: '🎲 Uso: *!apostar <valor>*\nExemplo: *!apostar 50*',
     }, { quoted: msg });
@@ -355,7 +372,7 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
       return;
     }
   }
-  const saldo    = carteira?.gold ?? 0;
+  const saldo    = Number.isSafeInteger(carteira?.gold) && carteira.gold >= 0 ? carteira.gold : 0;
 
   if (saldo < aposta) {
     await sock.sendMessage(jid, {
@@ -380,10 +397,10 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
     'A moeda rolou, rolou... e não deu essa.',
   ];
 
-  const venceu = Math.random() < 0.5;
+  const venceu = randomInt(2) === 0;
 
   if (venceu) {
-    const frase = FRASES_VITORIA[Math.floor(Math.random() * FRASES_VITORIA.length)];
+    const frase = FRASES_VITORIA[randomInt(FRASES_VITORIA.length)];
     const carteiraAtualizada = await alterarGold(senderNorm, jid, aposta, 'Aposta (Vitória)', { allowLinked: true });
     const novoSaldo = carteiraAtualizada?.gold ?? (saldo + aposta);
 
@@ -397,7 +414,7 @@ async function handleApostar(sock, msg, jid, senderJid, caption) {
         `_Quer arriscar de novo? !apostar <valor>_`,
     }, { quoted: msg });
   } else {
-    const frase = FRASES_DERROTA[Math.floor(Math.random() * FRASES_DERROTA.length)];
+    const frase = FRASES_DERROTA[randomInt(FRASES_DERROTA.length)];
     const carteiraAtualizada = await alterarGold(senderNorm, jid, -aposta, 'Aposta (Derrota)', { allowLinked: true });
     const novoSaldo = carteiraAtualizada?.gold ?? (saldo - aposta);
 

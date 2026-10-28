@@ -334,7 +334,7 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
 
     await sock.sendMessage(jid, {
       text:
-        `✅ *${item.emoji} ${item.nome}* equipado!\n\n` +
+        `${sortearAleatorio([`✅ *${item.emoji} ${item.nome}* equipado!`, `⚔️ *${item.nome}* agora faz parte do seu equipamento!`, `✨ Você se prepara: *${item.nome}* está pronto para uso!`, `🛡️ Equipamento atualizado — *${item.nome}* está equipado!`])}\n\n` +
         (arma ? `⚔️ Bônus de ataque: +${item.bonusAtaque}` : `🛡️ Bônus de defesa: +${item.bonusDefesa}`) +
         (item.bonusMana ? `\n💧 Bônus de mana: +${item.bonusMana}` : '') +
         `\n\n_Use *!ficha* para ver seus status!_`,
@@ -521,7 +521,7 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
 
     await sock.sendMessage(jid, {
       text:
-        `${pocao.emoji} *${pocao.nome}* usada!\n\n` +
+        `${sortearAleatorio([`${pocao.emoji} *${pocao.nome}* usada!`, `✨ O efeito de *${pocao.nome}* começa a agir!`, `🧪 Você consome *${pocao.nome}* e sente a energia percorrer o corpo!`, `💫 *${pocao.nome}* foi consumida — seus efeitos estão ativos!`])}\n\n` +
         linhasEfeito.join('\n') +
         `\n\n_Restam: ${qtdAntes - 1}x ${pocao.nome}_`,
     }, { quoted: msg });

@@ -43,6 +43,7 @@
       --radius-lg:  20px;
     }
   </style>
+  <link rel="stylesheet" href="../ios-glass.css" />
 </head>
 
 <body>
@@ -123,7 +124,7 @@
       </div>
       <div class="saldo-chip" id="saldo-chip" style="display:none">
         <span>💰 Saldo disponível</span>
-        <strong id="saldo-val">— gold</strong>
+        <strong id="saldo-val">— Plata</strong>
       </div>
     </div>
 
@@ -212,11 +213,11 @@
         </div>
         <div class="session-stat pos">
           <span>Ganhos</span>
-          <strong id="stat-ganhos-val">0 gold</strong>
+          <strong id="stat-ganhos-val">0 Plata</strong>
         </div>
         <div class="session-stat neg">
           <span>Perdas</span>
-          <strong id="stat-perdas-val">0 gold</strong>
+          <strong id="stat-perdas-val">0 Plata</strong>
         </div>
       </div>
     </div>
@@ -245,7 +246,7 @@
 <footer>Tico-bot · corrida de bichos · powered by Node.js + MongoDB</footer>
 
 <script>
-const API = 'https://whatsappbot2-130c.onrender.com/api';
+const API = 'https://tico-bot-6jpn.onrender.com/api';
 
 const BICHOS = [
   { idx: 0, nome: '🐎 Cavalo',    emoji: '🐎', odds: 2.0, velocidade: 9, cor: '#2de2ff' },
@@ -460,10 +461,10 @@ function mostrarResultado(data) {
     ? `🎉 Vitória! ${vencedor.emoji} ${vencedor.nome.replace(/^\S+\s/, '')} venceu! (${escolha.odds}x)`
     : `❌ Derrota! ${vencedor.emoji} ${vencedor.nome.replace(/^\S+\s/, '')} venceu.`;
 
-  $('result-aposta').textContent = fmtNum(aposta) + ' gold';
+  $('result-aposta').textContent = fmtNum(aposta) + ' Plata';
   $('result-odds').textContent   = escolha.odds + 'x';
-  $('result-premio').textContent = premio > 0 ? '+' + fmtNum(premio) + ' gold' : '—';
-  $('result-saldo').textContent  = fmtNum(saldoFinal) + ' gold';
+  $('result-premio').textContent = premio > 0 ? '+' + fmtNum(premio) + ' Plata' : '—';
+  $('result-saldo').textContent  = fmtNum(saldoFinal) + ' Plata';
 
   const premioWrap = $('result-premio-wrap');
   premioWrap.className = 'corrida-result-item ' + (premio > 0 ? 'mint-val' : 'red-val');
@@ -474,12 +475,12 @@ function mostrarResultado(data) {
 
   const statusEl = $('corrida-status');
   statusEl.textContent = ganhou
-    ? `${sinal}${fmtNum(lucroLiq)} gold 🎉`
-    : `-${fmtNum(aposta)} gold 😢`;
+    ? `${sinal}${fmtNum(lucroLiq)} Plata 🎉`
+    : `-${fmtNum(aposta)} Plata 😢`;
   statusEl.className = 'corrida-status ' + (ganhou ? 'win' : 'lose');
 
   saldoAtual = saldoFinal;
-  $('saldo-val').textContent = fmtNum(saldoFinal) + ' gold';
+  $('saldo-val').textContent = fmtNum(saldoFinal) + ' Plata';
 
   const sel = $('grupo-select');
   if (sel.selectedIndex >= 0) {
@@ -514,7 +515,7 @@ function addHistory(data) {
     <div class="history-item">
       <span class="history-symbols">Aposta: ${h.escolha} · Venceu: ${h.vencedor}</span>
       <span class="history-val ${h.lucroLiq >= 0 ? 'pos' : 'neg'}">
-        ${h.lucroLiq >= 0 ? '+' : ''}${fmtNum(h.lucroLiq)} gold
+        ${h.lucroLiq >= 0 ? '+' : ''}${fmtNum(h.lucroLiq)} Plata
       </span>
     </div>
   `).join('');
@@ -530,8 +531,8 @@ function atualizarSessao(lucroLiq, aposta) {
 
   $('session-stats').style.display = 'grid';
   $('stat-corridas-val').textContent = sessaoCorridas;
-  $('stat-ganhos-val').textContent   = fmtNum(sessaoGanhos) + ' gold';
-  $('stat-perdas-val').textContent   = fmtNum(sessaoPerdas) + ' gold';
+  $('stat-ganhos-val').textContent   = fmtNum(sessaoGanhos) + ' Plata';
+  $('stat-perdas-val').textContent   = fmtNum(sessaoPerdas) + ' Plata';
 
   ultimaAposta = aposta;
   const btnRepeat = $('btn-repeat');
@@ -605,9 +606,9 @@ async function apostar() {
   const inp  = $('aposta-input');
 
   if (escolha === null) { showToast('Escolha um bicho antes de apostar!'); return; }
-  if (aposta < 10)      { hint.textContent = 'Mínimo: 10 gold'; inp.classList.add('err'); return; }
+  if (aposta < 10)      { hint.textContent = 'Mínimo: 10 Plata'; inp.classList.add('err'); return; }
   if (aposta > saldoAtual) { hint.textContent = 'Saldo insuficiente'; inp.classList.add('err'); return; }
-  if (aposta > 100_000) { hint.textContent = 'Máximo: 100.000 gold'; inp.classList.add('err'); return; }
+  if (aposta > 100_000) { hint.textContent = 'Máximo: 100.000 Plata'; inp.classList.add('err'); return; }
   hint.textContent = ''; inp.classList.remove('err');
 
   correndo = true;
@@ -660,8 +661,8 @@ async function apostar() {
 
   showToast(
     apiData.ganhou
-      ? `+${fmtNum(apiData.lucroLiq)} gold! 🎉`
-      : `-${fmtNum(apiData.aposta)} gold 😢`,
+      ? `+${fmtNum(apiData.lucroLiq)} Plata! 🎉`
+      : `-${fmtNum(apiData.aposta)} Plata 😢`,
     apiData.ganhou ? 'win' : 'lose'
   );
 }
@@ -726,7 +727,7 @@ function onGrupoChange() {
     const btnRepeat = $('btn-repeat');
     if (btnRepeat) btnRepeat.style.display = 'none';
 
-    $('saldo-val').textContent = fmtNum(saldoAtual) + ' gold';
+    $('saldo-val').textContent = fmtNum(saldoAtual) + ' Plata';
     $('btn-correr').disabled   = true;
     $('corrida-status').textContent = 'Escolha um bicho e aposte para começar!';
     $('corrida-status').className   = 'corrida-status';

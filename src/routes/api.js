@@ -68,12 +68,24 @@ const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token ausente.' });
   try {
-    req.user = jwt.verify(token, getJwtSecret());
+    const payload = jwt.verify(token, getJwtSecret());
+    if (!payload.idWhatsApp) return res.status(401).json({ error: 'Sessão inválida.' });
+    const conta = await Usuario.findOne({ idWhatsApp: payload.idWhatsApp })
+      .select('idWhatsApp username passwordHash tokenVersion')
+      .lean();
+    if (!conta || Number(payload.tokenVersion || 0) !== Number(conta.tokenVersion || 0)) {
+      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+    }
+    // Tokens de link do WhatsApp permitem abrir o perfil, mas não são login de conta.
+    if (payload.tokenType !== 'profile' && (!conta.username || !conta.passwordHash)) {
+      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+    }
+    req.user = payload;
     next();
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -101,7 +113,7 @@ const LOGIN_JANELA_MS = 15 * 60 * 1000;
 const rateLimitAdmin = rateLimit({
   windowMs:     LOGIN_JANELA_MS,
   max:          LOGIN_MAX,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitas tentativas. Tente novamente mais tarde.'
@@ -132,8 +144,11 @@ router.post('/auth/token', async (req, res) => {
       return res.status(410).json({ error: 'Token expirado.' });
     }
 
+    const usuarioToken = await Usuario.findOne({ idWhatsApp: registro.idWhatsApp })
+      .select('tokenVersion').lean();
+    if (!usuarioToken) return res.status(404).json({ error: 'Perfil não encontrado.' });
     const sessionJwt = jwt.sign(
-      { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp },
+      { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp, tokenType: 'profile', tokenVersion: Number(usuarioToken.tokenVersion || 0) },
       getJwtSecret(),
       { expiresIn: '2h' }
     );
@@ -1363,7 +1378,7 @@ const CASSINO_JANELA = 60 * 1000;
 const cassinoRateLimit = rateLimit({
   windowMs:     CASSINO_JANELA,
   max:          CASSINO_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitos giros! Aguarde antes de tentar novamente.'
@@ -1535,7 +1550,7 @@ const CORRIDA_RATE_JANELA = 60 * 1000;
 const corridaRateLimit = rateLimit({
   windowMs:     CORRIDA_RATE_JANELA,
   max:          CORRIDA_RATE_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({ error: 'Muitas apostas! Aguarde antes de tentar novamente.' });
   },
@@ -1894,11 +1909,19 @@ const bcrypt = require('bcryptjs');
 
 // Rate limit específico pro cadastro — evita criação em massa
 const rateLimitCadastro = rateLimit({
-  windowMs:     60 * 60 * 1000,
-  max:          5,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
-  handler: (req, res) =>
-    res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
+  windowMs: 60 * 60 * 1000, max: 5,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
+});
+const rateLimitRecuperacao = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 5,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de recuperação. Aguarde 15 minutos.' }),
+});
+const rateLimitLogin = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de login. Aguarde 15 minutos.' }),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1909,7 +1932,7 @@ const OtpCadastro = require('../models/OtpCadastro');
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => ipKeyGenerator(req) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) =>
     res.status(429).json({ error: 'Muitas tentativas. Aguarde 5 minutos.' }),
 });
@@ -1939,7 +1962,10 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     if (usuarioFinal.username && usuarioFinal.passwordHash)
       return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
-    const codigo    = String(Math.floor(100000 + Math.random() * 900000));
+    const { sock: botSock } = require('../bot');
+    if (!botSock) return res.status(503).json({ error: 'Bot não conectado. Tente novamente em instantes.' });
+
+    const codigo    = String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await OtpCadastro.findOneAndUpdate(
@@ -1956,14 +1982,15 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     }
 
     // Envia código via WhatsApp
-    const { sock: botSock } = require('../bot');
-    if (!botSock)
-      return res.status(503).json({ error: 'Bot não conectado. Tente novamente em instantes.' });
-
     const numeroDestino = `${digitosBase}@s.whatsapp.net`;
-    await botSock.sendMessage(numeroDestino, {
-      text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
-    });
+    try {
+      await botSock.sendMessage(numeroDestino, {
+        text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
+      });
+    } catch (sendError) {
+      await OtpCadastro.updateMany({ idWhatsApp: usuarioFinal.idWhatsApp, codigo }, { $set: { usado: true } });
+      throw sendError;
+    }
 
     return res.json({ ok: true, message: 'Código enviado no seu WhatsApp!' });
   } catch (err) {
@@ -1973,14 +2000,16 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
 });
 
 router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
+  let otpCadastroClaimId = null;
   try {
-    const { idWhatsApp, username, password } = req.body || {};
+    const { idWhatsApp, username, password, codigo } = req.body || {};
 
     // ── Validação de presença ─────────────────────────────────────────────────
     if (!idWhatsApp || typeof idWhatsApp !== 'string' ||
         !username   || typeof username   !== 'string' ||
-        !password   || typeof password   !== 'string')
-      return res.status(400).json({ error: 'idWhatsApp, username e password são obrigatórios.' });
+        !password   || typeof password   !== 'string' ||
+        !codigo || typeof codigo !== 'string')
+      return res.status(400).json({ error: 'WhatsApp, usuário, senha e código de verificação são obrigatórios.' });
 
     // ── Sanitização básica ────────────────────────────────────────────────────
     const usernameLimpo = username.trim().toLowerCase();
@@ -2027,15 +2056,24 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 
     // ── Salva email se fornecido ──────────────────────────────────────────────
     const { email } = req.body || {};
-    const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : null;
+    const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!emailLimpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo))
+      return res.status(400).json({ error: 'Digite um email válido.' });
     if (emailLimpo) {
       const emailEmUso = await Usuario.exists({ email: emailLimpo });
       if (emailEmUso)
         return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
     }
 
-    const passwordHash = await bcrypt.hash(passwordLimpa, 12);
+    const jidsOtpCadastro = [...new Set([usuarioFinal.idWhatsApp, ...variantesPn, lidMap?.lid].filter(Boolean).map(v => String(v).trim().toLowerCase()))];
+    const otpCadastro = await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: { $in: jidsOtpCadastro }, codigo: String(codigo).trim(), usado: false, expiresAt: { $gt: new Date() } },
+      { $set: { usado: true } }, { new: true, sort: { createdAt: -1 } }
+    );
+    if (!otpCadastro) return res.status(400).json({ error: 'Código inválido ou expirado. Solicite um novo código pelo WhatsApp.' });
+    otpCadastroClaimId = otpCadastro._id;
 
+    const passwordHash = await bcrypt.hash(passwordLimpa, 12);
     await Usuario.findOneAndUpdate(
       { idWhatsApp: idWhatsAppReal },
       { $set: {
@@ -2047,9 +2085,18 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
       { new: true }
     );
 
+    otpCadastroClaimId = null;
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 
   } catch (err) {
+    if (otpCadastroClaimId) {
+      try { await OtpCadastro.updateOne({ _id: otpCadastroClaimId, usado: true, expiresAt: { $gt: new Date() } }, { $set: { usado: false } }); } catch {}
+    }
+    if (err?.code === 11000) {
+      const campo = Object.keys(err.keyPattern || {})[0];
+      const mensagem = campo === 'email' ? 'Este email já está sendo usado por outra conta.' : 'Este nome de usuário já está em uso.';
+      return res.status(409).json({ error: mensagem });
+    }
     console.error('[API] POST /auth/cadastrar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
@@ -2060,14 +2107,17 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 // Login com usuário e senha. Retorna JWT de sessão.
 // Body: { username, password }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/auth/login', rateLimitAdmin, async (req, res) => {
+router.post('/auth/login', rateLimitLogin, async (req, res) => {
   try {
     const { username, password } = req.body || {};
 
-    if (!username || !password)
-      return res.status(400).json({ error: 'username e password são obrigatórios.' });
+    if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password)
+      return res.status(400).json({ error: 'username/email e password são obrigatórios.' });
+    if (username.length > 254 || password.length > 128)
+      return res.status(400).json({ error: 'Credenciais inválidas.' });
 
-    const usuario = await Usuario.findOne({ username: username.toLowerCase() }).lean();
+    const identificador = username.trim().toLowerCase();
+    const usuario = await Usuario.findOne({ $or: [{ username: identificador }, { email: identificador }] }).lean();
     if (!usuario || !usuario.passwordHash)
       return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
 
@@ -2076,7 +2126,7 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
       return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
 
     const sessionJwt = jwt.sign(
-      { idWhatsApp: usuario.idWhatsApp, telefone: usuario.telefone },
+      { idWhatsApp: usuario.idWhatsApp, telefone: usuario.telefone, tokenVersion: Number(usuario.tokenVersion || 0) },
       getJwtSecret(),
       { expiresIn: '7d' }
     );
@@ -2094,15 +2144,16 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
 // Redefine a senha do usuário usando o código OTP obtido via !recuperar no grupo
 // Body: { idWhatsApp, codigo, novaSenha }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
+router.post('/auth/recuperar', rateLimitRecuperacao, async (req, res) => {
+  let otpClaimId = null;
   try {
     const { idWhatsApp, codigo, novaSenha } = req.body || {};
 
     if (!idWhatsApp || !codigo || !novaSenha)
       return res.status(400).json({ error: 'Número do WhatsApp, código e nova senha são obrigatórios.' });
 
-    if (novaSenha.length < 6 || novaSenha.length > 128)
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    if (typeof novaSenha !== 'string' || novaSenha.length < 6 || novaSenha.length > 128)
+      return res.status(400).json({ error: 'Nova senha deve ter entre 6 e 128 caracteres.' });
 
     const digitosBase = String(idWhatsApp).split('@')[0].replace(/\D/g, '');
     if (!digitosBase || digitosBase.length < 8 || digitosBase.length > 15)
@@ -2121,29 +2172,36 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
     if (!usuarioFinal)
       return res.status(404).json({ error: 'Perfil não encontrado. Digite !recuperar em um grupo no WhatsApp primeiro.' });
 
-    const jidsAceitos = [usuarioFinal.idWhatsApp, ...variantesPn];
-    const otpValido = await OtpCadastro.findOne({
-      idWhatsApp: { $in: jidsAceitos },
-      codigo: String(codigo).trim(),
-      usado: false,
-      expiresAt: { $gt: new Date() },
-    });
-
+    // O WhatsApp pode identificar a mesma pessoa pelo PN (@s.whatsapp.net)
+    // ou pelo LID (@lid). O comando !recuperar pode gravar o OTP em qualquer
+    // um desses identificadores; consulte todos antes de rejeitar o código.
+    const jidsAceitos = [...new Set([
+      usuarioFinal.idWhatsApp,
+      lidMap?.lid,
+      ...variantesPn,
+    ].filter(Boolean).map(jid => String(jid).trim().toLowerCase()))];
+    const otpValido = await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: { $in: jidsAceitos }, codigo: String(codigo).trim(), usado: false, expiresAt: { $gt: new Date() } },
+      { $set: { usado: true } }, { new: true, sort: { createdAt: -1 } }
+    );
     if (!otpValido)
       return res.status(400).json({ error: 'Código inválido ou expirado. Digite !recuperar em um grupo no WhatsApp para gerar um novo código.' });
-
-    otpValido.usado = true;
-    await otpValido.save();
+    otpClaimId = otpValido._id;
 
     const passwordHash = await bcrypt.hash(novaSenha, 12);
     usuarioFinal.passwordHash = passwordHash;
+    usuarioFinal.tokenVersion = (usuarioFinal.tokenVersion || 0) + 1;
     if (!usuarioFinal.telefone && digitosBase) {
       usuarioFinal.telefone = digitosBase;
     }
     await usuarioFinal.save();
+    otpClaimId = null;
 
     return res.json({ ok: true, message: 'Senha redefinida com sucesso! Faça login com a nova senha.' });
   } catch (err) {
+    if (otpClaimId) {
+      try { await OtpCadastro.updateOne({ _id: otpClaimId, usado: true, expiresAt: { $gt: new Date() } }, { $set: { usado: false } }); } catch {}
+    }
     console.error('[API] POST /auth/recuperar:', err);
     return res.status(500).json({ error: 'Erro interno ao redefinir senha.' });
   }
@@ -2155,14 +2213,15 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
 // Body: { senhaAtual, novaSenha }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/resetsenha', auth, async (req, res) => {
+  if (req.user.tokenType === 'profile') return res.status(403).json({ error: 'Entre com usuário/email e senha para alterar sua senha.' });
   try {
     const { senhaAtual, novaSenha } = req.body || {};
     const idWhatsApp = req.user.idWhatsApp;
 
-    if (!senhaAtual || !novaSenha)
+    if (typeof senhaAtual !== 'string' || !senhaAtual || typeof novaSenha !== 'string')
       return res.status(400).json({ error: 'senhaAtual e novaSenha são obrigatórios.' });
-    if (novaSenha.length < 6)
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    if (novaSenha.length < 6 || novaSenha.length > 128)
+      return res.status(400).json({ error: 'Nova senha deve ter entre 6 e 128 caracteres.' });
 
     const usuario = await Usuario.findOne({ idWhatsApp }).lean();
     if (!usuario || !usuario.passwordHash)
@@ -2173,7 +2232,7 @@ router.post('/auth/resetsenha', auth, async (req, res) => {
       return res.status(401).json({ error: 'Senha atual incorreta.' });
 
     const novoHash = await bcrypt.hash(novaSenha, 12);
-    await Usuario.findOneAndUpdate({ idWhatsApp }, { $set: { passwordHash: novoHash } });
+    await Usuario.findOneAndUpdate({ idWhatsApp }, { $set: { passwordHash: novoHash }, $inc: { tokenVersion: 1 } });
 
     return res.json({ ok: true, message: 'Senha alterada com sucesso!' });
 
@@ -2615,15 +2674,20 @@ router.get('/admin/contas', adminAuth, async (req, res) => {
 // Apaga os dados de conta do usuário (mantém dados do jogo).
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/auth/conta', auth, async (req, res) => {
+  if (req.user.tokenType === 'profile') return res.status(403).json({ error: 'Entre com usuário/email e senha para apagar a conta.' });
   try {
     const idWhatsApp = req.user.idWhatsApp;
 
     await Usuario.findOneAndUpdate(
       { idWhatsApp },
-      { $unset: { username: '', passwordHash: '', email: '' } }
+      { $unset: { username: '', passwordHash: '', email: '' }, $inc: { tokenVersion: 1 } }
     );
 
-    await OtpCadastro.deleteMany({ idWhatsApp });
+    const numero = String(idWhatsApp).split('@')[0].replace(/\D/g, '');
+    const variantesPn = gerarVariantesNumero(numero).map(n => `${n}@s.whatsapp.net`);
+    const mapas = await LidMapping.find({ $or: [{ lid: idWhatsApp }, { pn: { $in: variantesPn } }] }).select('lid').lean();
+    const idsOtp = [...new Set([idWhatsApp, ...variantesPn, ...mapas.map(m => m.lid)].filter(Boolean))];
+    await OtpCadastro.deleteMany({ idWhatsApp: { $in: idsOtp } });
 
     return res.json({ ok: true });
   } catch (err) {

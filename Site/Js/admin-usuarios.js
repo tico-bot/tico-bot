@@ -321,10 +321,10 @@ async function ajustarGold(operacao) {
   const nomeG = $('usr-acao-grupo').selectedOptions[0]?.text || jid;
 
   abrirModal(
-    operacao === 'dar' ? 'Dar Gold' : 'Remover Gold',
+    operacao === 'dar' ? 'Dar Plata' : 'Remover Plata',
     operacao === 'dar'
-      ? `Dar ${formatNum(valor)} gold para ${nomeU} em "${nomeG}"?`
-      : `Remover ${formatNum(valor)} gold de ${nomeU} em "${nomeG}"?`,
+      ? `Dar ${formatNum(valor)} Plata para ${nomeU} em "${nomeG}"?`
+      : `Remover ${formatNum(valor)} Plata de ${nomeU} em "${nomeG}"?`,
     async () => {
       try {
         const res = await fetch(`${API()}/admin/usuario/${encodeURIComponent(usuarioAtual.idWhatsApp)}/gold`, {
@@ -332,9 +332,9 @@ async function ajustarGold(operacao) {
           body: JSON.stringify({ idGrupo: jid, valor, operacao })
         });
         if (!res.ok) throw new Error();
-        toast(`✅ Gold ${operacao === 'dar' ? 'adicionado' : 'removido'}.`);
+        toast(`✅ Plata ${operacao === 'dar' ? 'adicionado' : 'removido'}.`);
         buscarUsuario();
-      } catch { toast('Erro ao ajustar gold.', 'erro'); }
+      } catch { toast('Erro ao ajustar Plata.', 'erro'); }
     }
   );
 }
@@ -345,15 +345,15 @@ $('btn-remover-gold')?.addEventListener('click', () => ajustarGold('remover'));
 $('btn-resetar-gold-usuario')?.addEventListener('click', () => {
   if (!usuarioAtual) return;
   const nomeU = usuarioAtual.nome || usuarioAtual.idWhatsApp;
-  abrirModal('Zerar Gold', `Zerar TODO o gold de ${nomeU} em todos os grupos?`, async () => {
+  abrirModal('Zerar Plata', `Zerar TODO o Plata de ${nomeU} em todos os grupos?`, async () => {
     try {
       const res = await fetch(`${API()}/admin/usuario/${encodeURIComponent(usuarioAtual.idWhatsApp)}/gold/reset`, {
         method: 'DELETE', headers: adminHeaders()
       });
       if (!res.ok) throw new Error();
-      toast('✅ Gold zerado em todos os grupos.');
+      toast('✅ Plata zerada em todos os grupos.');
       buscarUsuario();
-    } catch { toast('Erro ao zerar gold.', 'erro'); }
+    } catch { toast('Erro ao zerar Plata.', 'erro'); }
   });
 });
 
@@ -372,8 +372,8 @@ $('btn-transferir-gold')?.addEventListener('click', async () => {
   const nomeGrupo  = $('transfer-grupo-origem').selectedOptions[0]?.text || idGrupoOrigem;
 
   abrirModal(
-    'Transferir Gold',
-    `Transferir ${formatNum(valor)} gold de ${nomeOrigem} para ${destino} em "${nomeGrupo}"?`,
+    'Transferir Plata',
+    `Transferir ${formatNum(valor)} Plata de ${nomeOrigem} para ${destino} em "${nomeGrupo}"?`,
     async () => {
       try {
         const res = await fetch(`${API()}/admin/gold/transferir`, {
@@ -381,11 +381,11 @@ $('btn-transferir-gold')?.addEventListener('click', async () => {
           body: JSON.stringify({ idGrupo: idGrupoOrigem, idOrigem: usuarioAtual.idWhatsApp, idDestino: jidDestino, valor })
         });
         if (!res.ok) throw new Error();
-        toast(`✅ ${formatNum(valor)} gold transferido.`);
+        toast(`✅ ${formatNum(valor)} Plata transferida.`);
         $('transfer-destino').value = '';
         $('transfer-valor').value   = '';
         buscarUsuario();
-      } catch { toast('Erro ao transferir gold.', 'erro'); }
+      } catch { toast('Erro ao transferir Plata.', 'erro'); }
     }
   );
 });

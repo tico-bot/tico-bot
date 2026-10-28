@@ -5,7 +5,7 @@
 
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:3000/api'
-  : 'https://whatsappbot2-130c.onrender.com/api';
+  : 'https://tico-bot-6jpn.onrender.com/api';
 
 /* ── Auto-Login por Token de Acesso Direto (!site / !painel) ── */
 (function checkTokenAutoLogin() {
@@ -14,7 +14,7 @@ const API = window.location.hostname === 'localhost' || window.location.hostname
   if (token) {
     const apiHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000/api'
-      : 'https://whatsappbot2-130c.onrender.com/api';
+      : 'https://tico-bot-6jpn.onrender.com/api';
 
     fetch(`${apiHost}/auth/token`, {
       method: 'POST',

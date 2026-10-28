@@ -992,7 +992,7 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
     // isso cresce sem limite conforme o grupo e o histórico de pesca crescem.
     // Agora a soma e a ordenação acontecem no próprio MongoDB via agregação,
     // e só os 50 melhores candidatos (mesma margem de segurança que
-    // !rankgold usa) trafegam pro Node antes do filtro de membros ativos.
+    // !rankplata usa) trafegam pro Node antes do filtro de membros ativos.
     const chavesExcluidas = [
       ...Object.keys(VARAS_PESCA),
       ...Object.keys(ISCAS),
@@ -1031,7 +1031,7 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
       { $project: { idWhatsApp: 1, gold: 1, total: '$_total' } },
     ]);
 
-    // Remove inativos/banidos (mesmo padrão de !rankgold)
+    // Remove inativos/banidos (mesmo padrão de !rankplata)
     const candidatos = candidatosBrutos
       .filter(s => membrosAtuais.has(s.idWhatsApp));
 

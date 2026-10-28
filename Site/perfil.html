@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="index.css" />
   <link rel="stylesheet" href="perfil.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 <body>
 
@@ -119,7 +120,7 @@
             <span class="stat-val neon-roxo" id="stat-xp">—</span>
           </div>
           <div class="stat-pill">
-            <span class="stat-label">Gold</span>
+            <span class="stat-label">Plata</span>
             <span class="stat-val neon-gold" id="stat-gold">—</span>
           </div>
           <div class="stat-pill">
@@ -202,7 +203,7 @@
   <script>
     const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000/api'
-      : 'https://whatsappbot2-130c.onrender.com/api';
+      : 'https://tico-bot-6jpn.onrender.com/api';
 
     (function checkTokenAutoLogin() {
       const params = new URLSearchParams(window.location.search);
@@ -509,7 +510,7 @@
                 <span class="grupo-stat-val neon-roxo">${fmtNum(g.xp)}</span>
               </div>
               <div class="grupo-stat">
-                <span class="grupo-stat-label">Gold</span>
+                <span class="grupo-stat-label">Plata</span>
                 <span class="grupo-stat-val neon-gold">${fmtNum(g.gold)}</span>
               </div>
               <div class="grupo-stat">
@@ -652,7 +653,7 @@ localStorage.setItem('jwt', jwtSalvo);
 }
 
 async function apagarConta() {
-  const confirmado = confirm('⚠️ Tem certeza? Sua conta será apagada.\nSeus dados de jogo (XP, gold, grupos) serão mantidos.');
+  const confirmado = confirm('⚠️ Tem certeza? Sua conta será apagada.\nSeus dados de jogo (XP, Plata, grupos) serão mantidos.');
   if (!confirmado) return;
 
   const jwt = localStorage.getItem('jwt') || sessionStorage.getItem('piro_jwt');

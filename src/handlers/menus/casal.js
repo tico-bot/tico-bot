@@ -1,84 +1,102 @@
 'use strict';
 
+function obterPrefixo(jid, getPrefix) {
+  try {
+    const prefixo = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+    return typeof prefixo === 'string' && prefixo.trim() ? prefixo.trim() : '!';
+  } catch {
+    return '!';
+  }
+}
+
+async function enviarMenu(sock, msg, jid, texto) {
+  if (!sock || typeof sock.sendMessage !== 'function') {
+    throw new TypeError('[menu-casal] sock.sendMessage não está disponível.');
+  }
+  await sock.sendMessage(jid, { text: texto }, msg ? { quoted: msg } : {});
+}
+
 async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
-`╔══════════════════════╗
-      ❤️ MENU DO CASAL
-╚══════════════════════╝
+`╭━━━━━━━━━━━━━━━━━━━━━━╮
+│      ❤️ MENU DO CASAL      │
+╰━━━━━━━━━━━━━━━━━━━━━━╯
 
-💍 *RELACIONAMENTO*
-  ▸ ${P}casar @pessoa — Pedir em casamento
-  ▸ ${P}euaceito — Aceitar pedido
-  ▸ ${P}eurecuso — Recusar pedido
-  ▸ ${P}cancelarpedido — Cancelar pedido enviado
-  ▸ ${P}terminar — Terminar relacionamento _(bloqueia 10 min)_
+💍 *COMEÇAR OU GERENCIAR*
+  ▸ ${P}namorar @pessoa — pedir em namoro
+  ▸ ${P}casar @pessoa — pedir em casamento
+  ▸ ${P}euaceito — aceitar um pedido recebido
+  ▸ ${P}eurecuso — recusar um pedido recebido
+  ▸ ${P}cancelarpedido — cancelar seu pedido pendente
+  ▸ ${P}terminar — encerrar o relacionamento
 
-💐 *DIÁRIOS (+5 XP cada, 1x/dia)*
-  ▸ ${P}flores 🌹
-  ▸ ${P}doces 🍬
-  ▸ ${P}carta 💌
-  ▸ ${P}mimo 🎁
-  ▸ ${P}beijo 😘
+💐 *CARINHOS DIÁRIOS*
+  ▸ ${P}flores — enviar flores 🌹
+  ▸ ${P}doces — dar doces 🍬
+  ▸ ${P}carta — enviar uma carta 💌
+  ▸ ${P}mimo — dar um mimo 🎁
+  ▸ ${P}beijo — mandar um beijo 😘
+  _Os usos diários podem render XP e alguns exigem itens._
 
-💝 *ROMÂNTICOS*
-  ▸ ${P}abraco — Dar um abraço
-  ▸ ${P}presente — Dar um presente
-  ▸ ${P}jantar — Jantar a dois
-  ▸ ${P}cinematel — Sessão de cinema
-  ▸ ${P}viajar — Viajar juntos
-  ▸ ${P}serenata — Fazer uma serenata
-  ▸ ${P}declarar — Declaração de amor
-  ▸ ${P}ciumento — Demonstrar ciúme
+💝 *MOMENTOS A DOIS*
+  ▸ ${P}abraco @pessoa — dar um abraço
+  ▸ ${P}presente — presentear seu par
+  ▸ ${P}jantar — jantar romântico
+  ▸ ${P}cinema — sessão de cinema
+  ▸ ${P}viajar — viajar juntos
+  ▸ ${P}serenata — fazer uma serenata
+  ▸ ${P}declarar — declarar seu amor
+  ▸ ${P}ciumento — demonstrar ciúme
+  ▸ ${P}surpresa — preparar uma surpresa
 
-🏆 *ESPECIAIS*
-  ▸ ${P}statu — Status do casal
-  ▸ ${P}meupar — Infos do seu par
-  ▸ ${P}xpdobro — XP duplo por 1h
-  ▸ ${P}aniversario_casal — Ver aniversário
-  ▸ ${P}duelodecasais — Duelo entre casais
-  ▸ ${P}rankcasais — Ranking de casais
+🏆 *STATUS E COMPETIÇÃO*
+  ▸ ${P}statu — ver status e nível do casal
+  ▸ ${P}meupar — ver quem é seu par
+  ▸ ${P}aniversario_casal — conferir a data do relacionamento
+  ▸ ${P}xpdobro — ativar XP dobrado por 1 hora
+  ▸ ${P}rankcasais — ranking de casais
+  ▸ ${P}duelodecasais @pessoa — desafiar outro casal
 
-🛒 *LOJA*
-  ▸ ${P}lojacasal — Ver itens disponíveis
+🛍️ *ITENS E ACESSÓRIOS*
+  ▸ ${P}lojacasal — abrir a loja do casal
 
+ℹ️ Use sempre o prefixo configurado neste grupo: *${P}*
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleMenuFilho(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
-`╔══════════════════════╗
-      👶 MENU FILHOS
-╚══════════════════════╝
+`╭━━━━━━━━━━━━━━━━━━━━━━╮
+│       👶 MENU FILHOS       │
+╰━━━━━━━━━━━━━━━━━━━━━━╯
 
 👨‍👩‍👧 *FAMÍLIA*
-  ▸ ${P}tentarfilho — Tentar ter um filho _(40% chance)_
-  ▸ ${P}filho — Ver seus filhos e status
-  ▸ ${P}cuidarfilho — Cuidar dos filhos _(cooldown 20h)_
+  ▸ ${P}tentarfilho — tentar ter um filho
+  ▸ ${P}filho — ver filhos e situação atual
+  ▸ ${P}cuidarfilho — cuidar dos filhos
 
-💊 *SAÚDE*
-  ▸ ${P}remediofil — Curar filho doente _(R$ 3,00)_
+💊 *SAÚDE E CUIDADOS*
+  ▸ ${P}remediofil — tratar um filho doente
 
-━━━━━━━━━━━━━━━━━━━━━━━━
-📋 *REGRAS*
-  • Limite de *3 filhos* por casal
-  • A cada *7 dias* o filho completa *1 ano*
-  • Atributos caem com o tempo — cuide diariamente!
-  • Felicidade zerada → filho fica *doente*
-  • Em caso de separação → *guarda compartilhada*
-    _(o filho troca de responsável a cada dia)_
+📋 *COMO FUNCIONA*
+  • Limite de até *3 filhos por casal*.
+  • Cada *7 dias* equivalem a 1 ano de idade.
+  • Os atributos diminuem com o tempo; cuide da família.
+  • Felicidade zerada pode deixar o filho doente.
+  • Após uma separação, a guarda é compartilhada conforme as regras do sistema.
 
-━━━━━━━━━━━━━━━━━━━━━━━━
 📊 *ATRIBUTOS*
-  😊 Felicidade • 🍽️ Fome
-  😴 Sono • 🎈 Alegria
+  😊 Felicidade  •  🍽️ Fome
+  😴 Sono        •  🎈 Alegria
 
+ℹ️ Use o prefixo configurado neste grupo: *${P}*
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuRelacionamento, handleMenuFilho };

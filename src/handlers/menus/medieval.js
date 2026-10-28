@@ -1,7 +1,9 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleSistemaMedieval(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
       🏰 MODO MEDIEVAL
@@ -41,7 +43,7 @@ Um RPG completo onde você escolhe uma classe, ganha XP, batalha e conquista ite
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleSistemaMedieval };

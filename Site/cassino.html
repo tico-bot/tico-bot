@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="index.css" />
   <link rel="stylesheet" href="cassino.css" />
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 <body>
 
@@ -58,7 +59,7 @@
 <section class="hero">
   <p class="hero-eyebrow">Tico Bot · Cassino Royal</p>
   <h1 class="hero-title">Caça-Níqueis 🎰</h1>
-  <p class="hero-sub">Gire a roleta, combine símbolos e multiplique seu Gold!</p>
+  <p class="hero-sub">Gire a roleta, combine símbolos e multiplique sua Plata!</p>
 </section>
 
 <!-- ══════════ MAIN ══════════ -->
@@ -88,7 +89,7 @@
       </div>
       <div class="saldo-chip" id="saldo-chip" style="display:none">
         <span>💰 Saldo Disponível</span>
-        <strong id="saldo-val">— gold</strong>
+        <strong id="saldo-val">— Plata</strong>
       </div>
     </div>
 
@@ -138,7 +139,7 @@
       <!-- Controles de Aposta -->
       <div class="aposta-controls">
         <div class="aposta-input-group">
-          <label for="aposta-input">Valor da Aposta (Gold):</label>
+          <label for="aposta-input">Valor da Aposta (Plata):</label>
           <input type="number" id="aposta-input" placeholder="Ex: 50" min="10" max="100000" />
         </div>
 
@@ -181,7 +182,7 @@
 <script>
   const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:3000/api'
-    : 'https://whatsappbot2-130c.onrender.com/api';
+    : 'https://tico-bot-6jpn.onrender.com/api';
 
   const jwt = localStorage.getItem('jwt') || sessionStorage.getItem('piro_jwt');
 
@@ -239,7 +240,7 @@
       gruposData.forEach(g => {
         const opt = document.createElement('option');
         opt.value = g.idGrupo;
-        opt.textContent = `${g.nome || g.idGrupo} (${formatNum(g.gold || 0)} Gold)`;
+        opt.textContent = `${g.nome || g.idGrupo} (${formatNum(g.gold || 0)} Plata)`;
         select.appendChild(opt);
       });
 
@@ -265,7 +266,7 @@
     grupoSelecionado = grupo;
     saldoAtual = grupo.gold || 0;
 
-    $('saldo-val').textContent = `${formatNum(saldoAtual)} gold`;
+    $('saldo-val').textContent = `${formatNum(saldoAtual)} Plata`;
     $('saldo-chip').style.display = 'flex';
     $('slot-card').style.display = 'block';
     
@@ -349,12 +350,12 @@
         saldoAtual = saldoAtual - quantia + premio;
         $('status-pill').textContent = 'Vitória!';
         $('status-pill').className = 'status-pill win';
-        $('slot-status').textContent = `🎉 PARABÉNS! Você ganhou ${formatNum(premio)} gold!`;
+        $('slot-status').textContent = `🎉 PARABÉNS! Você ganhou ${formatNum(premio)} Plata!`;
         
         $('result-title').textContent = '🏆 VOCÊ GANHOU!';
-        $('result-aposta').textContent = `${formatNum(quantia)} gold`;
+        $('result-aposta').textContent = `${formatNum(quantia)} Plata`;
         $('result-mult').textContent = `${mult}x`;
-        $('result-premio').textContent = `+${formatNum(premio)} gold`;
+        $('result-premio').textContent = `+${formatNum(premio)} Plata`;
         $('slot-result').classList.remove('hidden');
       } else {
         saldoAtual = saldoAtual - quantia;
@@ -363,13 +364,13 @@
         $('slot-status').textContent = '❌ Não foi dessa vez! Tente novamente.';
         
         $('result-title').textContent = '💸 SEM SORTE!';
-        $('result-aposta').textContent = `${formatNum(quantia)} gold`;
+        $('result-aposta').textContent = `${formatNum(quantia)} Plata`;
         $('result-mult').textContent = '0x';
-        $('result-premio').textContent = `-${formatNum(quantia)} gold`;
+        $('result-premio').textContent = `-${formatNum(quantia)} Plata`;
         $('slot-result').classList.remove('hidden');
       }
 
-      $('saldo-val').textContent = `${formatNum(saldoAtual)} gold`;
+      $('saldo-val').textContent = `${formatNum(saldoAtual)} Plata`;
       if (grupoSelecionado) grupoSelecionado.gold = saldoAtual;
 
       isSpinning = false;

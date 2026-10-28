@@ -28,7 +28,7 @@ const { bloqueadoPorVinculo } = require('../../utils/carteira/vinculo');
 // ─── TABELA DE EMPREGOS (7 POR NÍVEL / TIER) ──────────────────────────────────
 
 const CATALGO_EMPREGOS = [
-  // ── TIER 1: Nível 1+ (Iniciante) — Salários: 400 a 800 gold (3 Funções Únicas) ────────
+  // ── TIER 1: Nível 1+ (Iniciante) — Salários: 400 a 800 Plata (3 Funções Únicas) ────────
   {
     tier: 1,
     nivelMin: 1,
@@ -96,7 +96,7 @@ const CATALGO_EMPREGOS = [
     ]
   },
 
-  // ── TIER 2: Nível 10+ (Intermediário) — Salários: 1.500 a 3.000 gold (3 Funções Únicas) ─
+  // ── TIER 2: Nível 10+ (Intermediário) — Salários: 1.500 a 3.000 Plata (3 Funções Únicas) ─
   {
     tier: 2,
     nivelMin: 10,
@@ -164,7 +164,7 @@ const CATALGO_EMPREGOS = [
     ]
   },
 
-  // ── TIER 3: Nível 25+ (Especializado) — Salários: 4.500 a 8.500 gold (3 Funções Únicas) ─
+  // ── TIER 3: Nível 25+ (Especializado) — Salários: 4.500 a 8.500 Plata (3 Funções Únicas) ─
   {
     tier: 3,
     nivelMin: 25,
@@ -232,7 +232,7 @@ const CATALGO_EMPREGOS = [
     ]
   },
 
-  // ── TIER 4: Nível 45+ (Liderança/Gerência) — Salários: 10.000 a 18.000 gold (3 Funções Gerenciais) ─
+  // ── TIER 4: Nível 45+ (Liderança/Gerência) — Salários: 10.000 a 18.000 Plata (3 Funções Gerenciais) ─
   {
     tier: 4,
     nivelMin: 45,
@@ -300,7 +300,7 @@ const CATALGO_EMPREGOS = [
     ]
   },
 
-  // ── TIER 5: Nível 70+ (Alta Executiva/Magnata) — Salários: 22.000 a 45.000 gold (4 Funções Executivas!) ─
+  // ── TIER 5: Nível 70+ (Alta Executiva/Magnata) — Salários: 22.000 a 45.000 Plata (4 Funções Executivas!) ─
   {
     tier: 5,
     nivelMin: 70,
@@ -766,7 +766,7 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
 
   const parcela = Math.floor(salarioTotal / numFuncoes);
   const detalheFuncoes = `\n📋 *FUNÇÕES DESEMPENHADAS NESTE TURNO (${numFuncoes}):*\n` +
-    cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${parcela} gold)*`).join('\n') + '\n';
+    cargo.funcoes.map((f, i) => `  ${i + 1}. ${f} *(+${parcela} Plata)*`).join('\n') + '\n';
 
   const proximoTier = CATALGO_EMPREGOS.find(t => t.tier === tierInfo.tier + 1);
   let progressoTexto = '';

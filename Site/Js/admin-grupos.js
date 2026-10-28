@@ -107,7 +107,7 @@ function renderGrupos(grupos, comFiltro = false) {
             <span class="grupo-jid">${jidEsc}<button class="btn-copiar-jid" data-jid="${jidEsc}">copiar</button></span>
             ${(membrosTxt || xpTxt) ? `<span class="grupo-meta">${[membrosTxt, xpTxt].filter(Boolean).join(' · ')}</span>` : ''}
             <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;">
-              <button class="btn-ver-gold" data-jid="${jidEsc}">🪙 Ver Gold</button>
+              <button class="btn-ver-gold" data-jid="${jidEsc}">🪙 Ver Plata</button>
               <button class="btn-remover-membro" data-jid="${jidEsc}" style="background:var(--verm-dim);border:1px solid rgba(255,59,110,.3);color:var(--vermelho);border-radius:var(--radius-sm);padding:.35rem .7rem;font-size:.76rem;font-weight:600;cursor:pointer;">🚫 Remover Membro</button>
               <button class="btn-exportar-grupo" data-jid="${jidEsc}" style="background:var(--mint-dim);border:1px solid rgba(0,255,176,.3);color:var(--mint);border-radius:var(--radius-sm);padding:.35rem .7rem;font-size:.76rem;font-weight:600;cursor:pointer;">⬇ Exportar JSON</button>
             </div>
@@ -159,10 +159,10 @@ function renderGrupos(grupos, comFiltro = false) {
 
         <!-- Painel gold (oculto) -->
         <div class="gold-painel hidden" id="gold-painel-${idSafe(g.idGrupo)}">
-          <div class="gold-painel-titulo">🪙 Ranking Gold</div>
+          <div class="gold-painel-titulo">🪙 Ranking de Plata</div>
           <div class="gold-loading" id="gold-loading-${idSafe(g.idGrupo)}"><div class="spinner"></div> Carregando...</div>
           <div class="gold-rank-lista" id="gold-rank-${idSafe(g.idGrupo)}"></div>
-          <div class="gold-painel-titulo" style="margin-top:.85rem;">Ajustar Gold de Membro</div>
+          <div class="gold-painel-titulo" style="margin-top:.85rem;">Ajustar Plata de Membro</div>
           <div class="gold-acoes">
             <div class="field" style="flex:2;min-width:160px;">
               <label>Membro (número ou JID)</label>
@@ -366,7 +366,7 @@ async function carregarGoldRanking(jid) {
     loading.style.display = 'none';
 
     if (!ranking?.length) {
-      lista.innerHTML = '<div class="dash-vazio">Nenhum membro com gold neste grupo.</div>';
+      lista.innerHTML = '<div class="dash-vazio">Nenhum membro com Plata neste grupo.</div>';
       return;
     }
 
@@ -403,17 +403,17 @@ async function acaoGoldGrupo(jid, op) {
 
   if (op === 'reset-grupo') {
     abrirModal(
-      'Zerar Gold do Grupo',
-      `Isso vai zerar o gold de TODOS os membros de "${nomeGrupoPorJid(jid)}". Não pode ser desfeito!`,
+      'Zerar Plata do grupo',
+      `Isso vai zerar o Plata de TODOS os membros de "${nomeGrupoPorJid(jid)}". Não pode ser desfeito!`,
       async () => {
         try {
           const res = await fetch(`${API()}/admin/grupo/${encodeURIComponent(jid)}/gold/reset`, {
             method: 'DELETE', headers: adminHeaders()
           });
           if (!res.ok) throw new Error();
-          toast('✅ Gold de todos os membros zerado.');
+          toast('✅ Plata de todos os membros zerada.');
           await carregarGoldRanking(jid);
-        } catch { toast('Erro ao zerar gold do grupo.', 'erro'); }
+        } catch { toast('Erro ao zerar Plata do grupo.', 'erro'); }
       }
     );
     return;
@@ -425,8 +425,8 @@ async function acaoGoldGrupo(jid, op) {
     if (!membro) { toast('Digite o número ou JID do membro.', 'erro'); return; }
     const jidMembro = membro.includes('@') ? membro : `${membro}@s.whatsapp.net`;
     abrirModal(
-      'Zerar Gold do Membro',
-      `Zerar TODO o gold de ${membro} em "${nomeGrupoPorJid(jid)}"? Não pode ser desfeito!`,
+      'Zerar Plata do membro',
+      `Zerar toda a Plata de ${membro} em "${nomeGrupoPorJid(jid)}"? Não pode ser desfeito!`,
       async () => {
         try {
           const res = await fetch(`${API()}/admin/usuario/gold/reset-grupo`, {
@@ -434,10 +434,10 @@ async function acaoGoldGrupo(jid, op) {
             body: JSON.stringify({ idWhatsApp: jidMembro, idGrupo: jid })
           });
           if (!res.ok) throw new Error();
-          toast('✅ Gold do membro zerado.');
+          toast('✅ Plata do membro zerada.');
           if (membroInput) membroInput.value = '';
           await carregarGoldRanking(jid);
-        } catch { toast('Erro ao zerar gold do membro.', 'erro'); }
+        } catch { toast('Erro ao zerar Plata do membro.', 'erro'); }
       }
     );
     return;
@@ -452,10 +452,10 @@ async function acaoGoldGrupo(jid, op) {
   if (!valor || valor <= 0) { toast('Digite uma quantidade válida.', 'erro'); return; }
 
   abrirModal(
-    op === 'dar' ? 'Dar Gold' : 'Remover Gold',
+    op === 'dar' ? 'Dar Plata' : 'Remover Plata',
     op === 'dar'
-      ? `Dar ${formatNum(valor)} gold para ${membro} em "${nomeGrupoPorJid(jid)}"?`
-      : `Remover ${formatNum(valor)} gold de ${membro} em "${nomeGrupoPorJid(jid)}"?`,
+      ? `Dar ${formatNum(valor)} Plata para ${membro} em "${nomeGrupoPorJid(jid)}"?`
+      : `Remover ${formatNum(valor)} Plata de ${membro} em "${nomeGrupoPorJid(jid)}"?`,
     async () => {
       try {
         const jidMembro = membro.includes('@') ? membro : `${membro}@s.whatsapp.net`;
@@ -464,11 +464,11 @@ async function acaoGoldGrupo(jid, op) {
           body: JSON.stringify({ idGrupo: jid, valor, operacao: op })
         });
         if (!res.ok) throw new Error();
-        toast(`✅ Gold ${op === 'dar' ? 'adicionado' : 'removido'} com sucesso.`);
+        toast(`✅ Plata ${op === 'dar' ? 'adicionado' : 'removido'} com sucesso.`);
         if (membroInput) membroInput.value = '';
         if (qtyInput)    qtyInput.value    = '';
         await carregarGoldRanking(jid);
-      } catch { toast('Erro ao ajustar gold.', 'erro'); }
+      } catch { toast('Erro ao ajustar Plata.', 'erro'); }
     }
   );
 }

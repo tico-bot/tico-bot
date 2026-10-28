@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="index.css" />
   <link rel="stylesheet" href="Jogos/corrida.css" />
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 
 <body>
@@ -89,7 +90,7 @@
       </div>
       <div class="saldo-chip" id="saldo-chip" style="display:none">
         <span>💰 Saldo disponível</span>
-        <strong id="saldo-val">— gold</strong>
+        <strong id="saldo-val">— Plata</strong>
       </div>
     </div>
 
@@ -177,7 +178,7 @@
 <script>
   const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:3000/api'
-    : 'https://whatsappbot2-130c.onrender.com/api';
+    : 'https://tico-bot-6jpn.onrender.com/api';
 
   const jwt = localStorage.getItem('jwt') || sessionStorage.getItem('piro_jwt');
 
@@ -275,7 +276,7 @@
       gruposData.forEach(g => {
         const opt = document.createElement('option');
         opt.value = g.idGrupo;
-        opt.textContent = `${g.nome || g.idGrupo} (${formatNum(g.gold || 0)} Gold)`;
+        opt.textContent = `${g.nome || g.idGrupo} (${formatNum(g.gold || 0)} Plata)`;
         select.appendChild(opt);
       });
 
@@ -301,7 +302,7 @@
     grupoSelecionado = grupo;
     saldoAtual = grupo.gold || 0;
 
-    $('saldo-val').textContent = `${formatNum(saldoAtual)} gold`;
+    $('saldo-val').textContent = `${formatNum(saldoAtual)} Plata`;
     $('saldo-chip').style.display = 'flex';
     $('corrida-card').style.display = 'block';
     
@@ -383,10 +384,10 @@
       $('corrida-status').textContent = `🎉 SENSACIONAL! Seu bicho ${vencedor.emoji} ${vencedor.nome} cruzou a linha em 1º lugar!`;
       
       $('result-title').textContent = '🏆 VOCÊ VENCEU A CORRIDA!';
-      $('result-aposta').textContent = `${formatNum(aposta)} gold`;
+      $('result-aposta').textContent = `${formatNum(aposta)} Plata`;
       $('result-odds').textContent = `${bichoSelecionado.odds}x`;
-      $('result-premio').textContent = `+${formatNum(premio)} gold`;
-      $('result-saldo').textContent = `${formatNum(saldoAtual)} gold`;
+      $('result-premio').textContent = `+${formatNum(premio)} Plata`;
+      $('result-saldo').textContent = `${formatNum(saldoAtual)} Plata`;
     } else {
       saldoAtual = saldoAtual - aposta;
       $('status-pill').textContent = 'Derrota';
@@ -394,13 +395,13 @@
       $('corrida-status').textContent = `💔 O bicho campeão foi ${vencedor.emoji} ${vencedor.nome}. Tente novamente!`;
       
       $('result-title').textContent = '💸 PERDEU A CORRIDA!';
-      $('result-aposta').textContent = `${formatNum(aposta)} gold`;
+      $('result-aposta').textContent = `${formatNum(aposta)} Plata`;
       $('result-odds').textContent = `${bichoSelecionado.odds}x`;
-      $('result-premio').textContent = `-${formatNum(aposta)} gold`;
-      $('result-saldo').textContent = `${formatNum(saldoAtual)} gold`;
+      $('result-premio').textContent = `-${formatNum(aposta)} Plata`;
+      $('result-saldo').textContent = `${formatNum(saldoAtual)} Plata`;
     }
 
-    $('saldo-val').textContent = `${formatNum(saldoAtual)} gold`;
+    $('saldo-val').textContent = `${formatNum(saldoAtual)} Plata`;
     if (grupoSelecionado) grupoSelecionado.gold = saldoAtual;
 
     $('corrida-result').style.display = 'block';

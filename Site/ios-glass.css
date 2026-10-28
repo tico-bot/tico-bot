@@ -1,0 +1,265 @@
+/* iOS-inspired Liquid Glass layer: progressive enhancement, no JavaScript dependency */
+:root {
+  color-scheme: dark;
+  --ios-radius-xs: 12px;
+  --ios-radius-sm: 18px;
+  --ios-radius-md: 24px;
+  --ios-radius-lg: 30px;
+  --ios-glass: rgba(255,255,255,.065);
+  --ios-glass-strong: rgba(255,255,255,.105);
+  --ios-glass-border: rgba(255,255,255,.13);
+  --ios-glass-highlight: rgba(255,255,255,.2);
+  --ios-shadow: 0 18px 55px rgba(0,0,0,.22);
+  --ios-accent: var(--purple, var(--roxo, #a78bfa));
+  --ios-focus: rgba(167,139,250,.42);
+  --ios-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { min-height: 100%; scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { min-width: 320px; min-height: 100vh; min-height: 100dvh; padding-bottom: var(--ios-safe-bottom); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overscroll-behavior-x: none; }
+img, video, canvas, svg { max-width: 100%; }
+button, input, select, textarea { font: inherit; }
+button, [role="button"], a, input[type="checkbox"], input[type="radio"], select { -webkit-tap-highlight-color: transparent; }
+button, [role="button"] { touch-action: manipulation; }
+:where(button, input, select, textarea, a, [tabindex]):focus-visible { outline: 2px solid var(--ios-accent); outline-offset: 3px; }
+::selection { background: var(--ios-focus); }
+.top-nav, nav.top-nav, .topbar { border-color: var(--ios-glass-border) !important; background: rgba(17,18,29,.72) !important; -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); box-shadow: 0 1px 0 rgba(255,255,255,.055), 0 12px 34px rgba(0,0,0,.12); }
+.nav-brand, .nav-links a, .top-nav a, .topbar a { transition: background-color .2s ease, border-color .2s ease, transform .2s ease; }
+.nav-links a, .nav-link, .topbar a { border-radius: 999px !important; }
+:where(.auth-card, .login-card, .card, .panel, .stat-card, .stat-pill, .podium-slot, .profile-card, .profile-section, .section-card, .group-card, .group-selector-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .modal-box, .modal-content, .dialog, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .help-banner, .auth-brand, .auth-form, .saldo-chip, .reel-box, .reel, .bicho-card, .animal-card, .bet-card) { border-radius: var(--ios-radius-md) !important; border-color: var(--ios-glass-border) !important; }
+:where(.auth-card, .login-card, .card, .panel, .stat-card, .profile-card, .profile-section, .section-card, .group-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .modal-box, .modal-content, .dialog, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .group-selector-card, .bet-card) { box-shadow: var(--ios-shadow), inset 0 1px 0 rgba(255,255,255,.055); }
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :where(.auth-card, .login-card, .card, .panel, .stat-card, .profile-card, .profile-section, .section-card, .group-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .modal-box, .modal-content, .dialog, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .group-selector-card, .bet-card) { background-color: var(--ios-glass) !important; -webkit-backdrop-filter: saturate(155%) blur(22px); backdrop-filter: saturate(155%) blur(22px); }
+}
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) { min-height: 44px; max-width: 100%; border-radius: var(--ios-radius-xs) !important; border-color: var(--ios-glass-border) !important; scroll-margin-block: 1rem; }
+textarea { min-height: 100px; resize: vertical; }
+:where(input, select, textarea):focus { border-color: var(--ios-accent) !important; box-shadow: 0 0 0 4px var(--ios-focus) !important; }
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"]) { min-height: 42px; border-radius: 999px !important; transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"]):active { transform: scale(.975); }
+:where(button:disabled, input:disabled, select:disabled, textarea:disabled) { cursor: not-allowed; opacity: .58; }
+.tabela-wrap, .table-wrap, .table-responsive, .table-container { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--ios-radius-sm); }
+table { max-width: 100%; }
+:where(.modal, .modal-overlay, .overlay, [role="dialog"]) { overscroll-behavior: contain; }
+:where(.modal-box, .modal-content, .dialog, [role="dialog"]) { max-width: min(94vw, 760px); max-height: min(88dvh, 900px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 760px) {
+  body { overflow-x: clip; }
+  .top-nav, nav.top-nav, .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .nav-inner { width: 100%; max-width: 100%; gap: 8px; }
+  .nav-links { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .nav-links::-webkit-scrollbar { display: none; }
+  :where(.container, .main-content, .page-content, .cassino-wrap, .corrida-wrap, .profile-container, .admin-content) { max-width: 100%; }
+  :where(.auth-card, .login-card, .card, .panel, .modal-box, .modal-content, .dialog) { max-width: 100%; }
+  :where(.form-row, .form-grid, .stats-grid, .profile-grid, .dashboard-grid) { min-width: 0; }
+  :where(input, select, textarea, button) { font-size: max(16px, 1em); }
+  :where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn) { min-height: 44px; }
+  .modal-box, .modal-content, .dialog, [role="dialog"] { width: min(94vw, 600px); }
+}
+@media (max-width: 420px) {
+  :root { --ios-radius-md: 20px; --ios-radius-lg: 24px; }
+  :where(.auth-card, .login-card, .modal-box, .modal-content, .dialog) { padding-left: 16px; padding-right: 16px; }
+  :where(.stat-grid, .stats-grid, .hero-stats) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (hover: hover) and (pointer: fine) {
+  :where(.card, .panel, .game-card, .group-card, .profile-section, .stat-card, .btn, button):hover { border-color: var(--ios-glass-highlight); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+/* Matte-black monochrome theme */
+:root {
+  color-scheme: dark;
+  --ios-glass: rgba(28, 28, 28, .88);
+  --ios-glass-strong: rgba(38, 38, 38, .94);
+  --ios-glass-border: rgba(255, 255, 255, .14);
+  --ios-glass-highlight: rgba(255, 255, 255, .28);
+  --ios-accent: #ffffff;
+  --ios-focus: rgba(255, 255, 255, .22);
+  --ios-shadow: 0 18px 55px rgba(0, 0, 0, .48);
+}
+html, body {
+  background-color: #0b0b0b !important;
+  color: #f5f5f5;
+}
+body {
+  background-image: none;
+}
+body, body :where(h1, h2, h3, h4, h5, h6, p, label, li, dt, dd, th, td, small, strong, em, legend, .nav-brand, .nav-links a, .nav-link, .top-nav a, .topbar a, .muted, .subtitle, .description, .stat-label, .card-title, .section-title) {
+  color: #f5f5f5;
+}
+a { color: #ffffff; }
+.top-nav, nav.top-nav, .topbar {
+  background: rgba(15, 15, 15, .88) !important;
+  border-color: #303030 !important;
+}
+:where(.auth-card, .login-card, .card, .panel, .stat-card, .stat-pill, .podium-slot, .profile-card, .profile-section, .section-card, .group-card, .group-selector-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .modal-box, .modal-content, .dialog, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .help-banner, .auth-brand, .auth-form, .saldo-chip, .reel-box, .reel, .bicho-card, .animal-card, .bet-card) {
+  background-color: #181818 !important;
+  border-color: #353535 !important;
+}
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  color: #ffffff !important;
+  background-color: #111111 !important;
+  border-color: #383838 !important;
+}
+:where(input, select, textarea)::placeholder { color: #a5a5a5 !important; opacity: 1; }
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]) {
+  color: #ffffff !important;
+  background: #242424 !important;
+  border: 1px solid #444444 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 5px 16px rgba(0,0,0,.24);
+}
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]):hover {
+  background: #303030 !important;
+  border-color: #666666 !important;
+}
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]):disabled {
+  background: #1b1b1b !important;
+  color: #a0a0a0 !important;
+}
+::selection { color: #000000; background: #ffffff; }
+/* Site-wide motion system: entrance, hover, feedback and subtle ambience */
+:root {
+  --motion-fast: 180ms;
+  --motion-medium: 420ms;
+  --motion-slow: 720ms;
+  --motion-ease: cubic-bezier(.2, .75, .25, 1);
+}
+@keyframes site-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes site-rise-in {
+  from { opacity: 0; transform: translate3d(0, 22px, 0) scale(.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes site-pop-in {
+  0% { opacity: 0; transform: scale(.94); }
+  70% { opacity: 1; transform: scale(1.012); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes site-soft-glow {
+  0%, 100% { box-shadow: 0 8px 26px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.035); }
+  50% { box-shadow: 0 12px 34px rgba(255,255,255,.055), inset 0 1px 0 rgba(255,255,255,.075); }
+}
+@keyframes site-sheen {
+  0% { background-position: 180% 0; }
+  100% { background-position: -180% 0; }
+}
+@keyframes site-line-in {
+  from { transform: scaleX(0); opacity: .25; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+@keyframes site-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes site-spinner {
+  to { transform: rotate(360deg); }
+}
+html { scroll-behavior: smooth; }
+body { animation: site-fade-in 520ms ease both; }
+main, .main-content, .page-content, .container, .cassino-wrap, .corrida-wrap, .profile-container, .admin-content {
+  animation: site-rise-in 650ms var(--motion-ease) both;
+}
+h1, .page-title, .hero-title {
+  animation: site-rise-in 650ms var(--motion-ease) both;
+}
+h2, h3, .section-title { animation: site-fade-in 700ms ease both; }
+.top-nav, nav.top-nav, .topbar {
+  transition: background-color var(--motion-medium) ease, box-shadow var(--motion-medium) ease, border-color var(--motion-medium) ease;
+}
+.nav-brand { transition: transform var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) ease; }
+.nav-brand:hover { transform: translateY(-1px) scale(1.025); }
+.nav-links a, .nav-link, .top-nav a, .topbar a {
+  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) ease;
+}
+.nav-links a:hover, .nav-link:hover, .top-nav a:hover, .topbar a:hover { transform: translateY(-2px); background-color: rgba(255,255,255,.09); }
+:where(.auth-card, .login-card, .card, .panel, .stat-card, .stat-pill, .podium-slot, .profile-card, .profile-section, .section-card, .group-card, .group-selector-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .modal-box, .modal-content, .dialog, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .help-banner, .auth-brand, .auth-form, .saldo-chip, .reel-box, .reel, .bicho-card, .animal-card, .bet-card) {
+  transition: transform 300ms var(--motion-ease), border-color 250ms ease, background-color 250ms ease, box-shadow 300ms ease, opacity 250ms ease;
+}
+:where(.card, .panel, .stat-card, .profile-card, .profile-section, .section-card, .group-card, .group-selector-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .table-card, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .bet-card) {
+  animation: site-rise-in 620ms var(--motion-ease) both;
+}
+:where(.card, .panel, .stat-card, .profile-card, .profile-section, .section-card, .group-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .bet-card):hover {
+  transform: translateY(-4px);
+  border-color: rgba(255,255,255,.26) !important;
+  box-shadow: 0 18px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.07);
+}
+:where(.stats-grid, .stat-grid, .profile-grid, .dashboard-grid, .game-grid, .games-grid, .group-grid, .cards-grid) > :nth-child(1) { animation-delay: 40ms; }
+:where(.stats-grid, .stat-grid, .profile-grid, .dashboard-grid, .game-grid, .games-grid, .group-grid, .cards-grid) > :nth-child(2) { animation-delay: 90ms; }
+:where(.stats-grid, .stat-grid, .profile-grid, .dashboard-grid, .game-grid, .games-grid, .group-grid, .cards-grid) > :nth-child(3) { animation-delay: 140ms; }
+:where(.stats-grid, .stat-grid, .profile-grid, .dashboard-grid, .game-grid, .games-grid, .group-grid, .cards-grid) > :nth-child(4) { animation-delay: 190ms; }
+:where(.stats-grid, .stat-grid, .profile-grid, .dashboard-grid, .game-grid, .games-grid, .group-grid, .cards-grid) > :nth-child(n+5) { animation-delay: 220ms; }
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]) {
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, filter var(--motion-fast) ease;
+}
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(255,255,255,.07), 0 6px 18px rgba(0,0,0,.32);
+}
+:where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]):active {
+  transform: scale(.965);
+  filter: brightness(1.18);
+}
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  transition: border-color 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+:where(input, select, textarea):focus {
+  transform: translateY(-1px);
+}
+a:not(.nav-brand):not(.nav-links a):not(.top-nav a):not(.topbar a) {
+  transition: color 200ms ease, opacity 200ms ease, text-decoration-color 200ms ease;
+}
+img { transition: filter 250ms ease, transform 350ms var(--motion-ease); }
+:where(.card, .panel, .profile-card, .game-card, .group-card):hover img { filter: brightness(1.06); }
+:where(.modal, .modal-overlay, .overlay, [role="dialog"]) {
+  animation: site-fade-in 180ms ease both;
+}
+:where(.modal-box, .modal-content, .dialog, [role="dialog"]) {
+  animation: site-pop-in 280ms var(--motion-ease) both;
+}
+hr, .divider, .section-divider {
+  transform-origin: left center;
+  animation: site-line-in 700ms var(--motion-ease) both;
+}
+:where(.loading, .spinner, [aria-busy="true"] .loader) { animation: site-spinner 900ms linear infinite; }
+@media (hover: hover) and (pointer: fine) {
+  :where(.stat-pill, .saldo-chip, .podium-slot, .reel-box) { animation: site-soft-glow 5s ease-in-out infinite; }
+  :where(.stat-pill, .saldo-chip, .podium-slot, .reel-box):hover { animation-play-state: paused; }
+}
+@media (max-width: 760px) {
+  :where(.card, .panel, .stat-card, .profile-card, .profile-section, .section-card, .group-card, .game-card, .game-panel, .casino-card, .corrida-card, .history-card, .settings-card, .user-card, .rank-card, .admin-card, .form-card, .info-card, .bet-card):hover { transform: none; }
+  :where(button, .btn, .btn-primary, .btn-secondary, .btn-ghost, .btn-spin, .btn-correr, .modal-btn, .action-btn, .submit-btn, input[type="submit"], [role="button"]):hover { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* O overlay do modal do ranking deve ocupar o viewport inteiro e centralizar o cartão. */
+#modal-overlay.modal-overlay[role="dialog"] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}
+#modal-overlay .modal-card {
+  width: min(420px, calc(100vw - 32px)) !important;
+  max-width: 420px !important;
+  max-height: calc(100dvh - 32px) !important;
+  overflow-y: auto !important;
+  box-sizing: border-box !important;
+}

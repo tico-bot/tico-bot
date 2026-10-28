@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login — Tico Bot</title>
   <link rel="stylesheet" href="login.css" />
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 <body>
   <div class="auth-wrapper">
@@ -17,9 +18,9 @@
 
       <form id="loginForm" novalidate>
         <div class="field-group">
-          <label for="username">Usuário</label>
-          <input id="username" type="text" placeholder="seu_usuario"
-            autocomplete="username" maxlength="30" required />
+          <label for="username">Usuário ou email</label>
+          <input id="username" type="text" placeholder="seu_usuario ou seu@email.com"
+            autocomplete="username" maxlength="254" required />
         </div>
 
         <div class="field-group">
@@ -49,7 +50,7 @@
   <script>
     const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000/api'
-      : 'https://whatsappbot2-130c.onrender.com/api';
+      : 'https://tico-bot-6jpn.onrender.com/api';
 
     if (localStorage.getItem('jwt')) {
       window.location.replace('perfil.html');

@@ -29,7 +29,7 @@ async function moedaDaConta() {
   return null; // Este bot usa somente a carteira local.
 }
 
-// !gold
+// !plata
 async function handleGold(sock, msg, jid, getPrefix, contactNames) {
   const userIdRaw = getSenderJid(msg);
   const userId    = jidNormalizedUser(resolveGlobalId(userIdRaw));

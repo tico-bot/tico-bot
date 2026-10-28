@@ -17,7 +17,7 @@ const {
 
 // brincadeiras
 const {
-  handleMiniGame, handleGay, handleSexo, handleNazista, handleLesbica, handleAura,
+  handleMiniGame, handleGay, handleSexo, handleLesbica, handleAura,
   handleDado, handleMoeda, handle8ball, handleShip, handleRolar,
   handleXingar, handleElogio, handleCrush, handleCantada, handleSafadeza,
   handleTiro, handleMorte, handleRoletaRussa, handleRoletaRussa2, handleRoletaRussa3,
@@ -25,7 +25,7 @@ const {
   handleVerdadeOuDesafio, handleConfissao, handleJulgamento, handlePodre, handleFrango,
   handleMaldizer, handleFortuna, handleCompatibilidade,
   handleTrans, handleCorno, handlePeitudo, handlePauzudo,
-  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
+  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup, handleBrasileirao,
 } = require('./brincadeiras');
 
   // ── Filhos (6 itens) ────────────────────────────────────────────────────
@@ -126,7 +126,6 @@ module.exports = {
   // ── Brincadeiras (33 funções) ──────────────────────────────────────────────
   handleGay,
   handleSexo,
-  handleNazista,
   handleLesbica,
   handleAura,
   handleDado,
@@ -167,6 +166,7 @@ module.exports = {
   handleGado,
   handleBucetudo,
   handleWorldCup,
+  handleBrasileirao,
   // ── Economia (18 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,

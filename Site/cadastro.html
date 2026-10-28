@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Criar Conta — Tico Bot</title>
   <link rel="stylesheet" href="login.css" />
+  <link rel="stylesheet" href="ios-glass.css" />
 </head>
 <body>
   <div class="auth-wrapper">
@@ -27,7 +28,16 @@
           <label for="email">Email</label>
           <input id="email" type="email" placeholder="seu@email.com"
             autocomplete="email" required />
-          <span class="field-hint">Usado para recuperação de conta.</span>
+          <span class="field-hint">Você também poderá usar este email para entrar na conta.</span>
+        </div>
+
+        <div class="field-group">
+          <label for="codigo">Código de verificação do WhatsApp</label>
+          <div style="display:flex;gap:8px;align-items:stretch">
+            <input id="codigo" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" required />
+            <button type="button" class="btn-primary" id="btnEnviarCodigo" style="white-space:nowrap;padding:0 12px">Enviar código</button>
+          </div>
+          <span class="field-hint">Código enviado ao WhatsApp informado, válido por 10 minutos.</span>
         </div>
 
         <div class="field-group">
@@ -72,7 +82,7 @@
   <script>
     const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
       ? 'http://localhost:3000/api'
-      : 'https://whatsappbot2-130c.onrender.com/api';
+      : 'https://tico-bot-6jpn.onrender.com/api';
 
     if (localStorage.getItem('jwt')) {
       window.location.replace('perfil.html');
@@ -81,6 +91,7 @@
     const form   = document.getElementById('cadastroForm');
     const btn    = document.getElementById('btnCadastrar');
     const msgBox = document.getElementById('cadastroMsg');
+    const btnEnviarCodigo = document.getElementById('btnEnviarCodigo');
 
     document.querySelector('.toggle-pw').addEventListener('click', () => {
       const inp = document.getElementById('password');
@@ -108,7 +119,7 @@
 
     function msgPorStatus(status, serverMsg) {
       if (status === 400) {
-        const seguros = ['entre 3 e 30', 'letras, números', 'mínimo 6', 'já está em uso', 'Perfil não encontrado'];
+        const seguros = ['entre 3 e 30', 'letras, números', 'mínimo 6', 'já está em uso', 'Perfil não encontrado', 'Código inválido', 'email válido'];
         if (serverMsg && seguros.some(s => serverMsg.includes(s))) return serverMsg;
         return 'Dados inválidos. Verifique os campos e tente novamente.';
       }
@@ -132,12 +143,26 @@
       }
     }
 
+    btnEnviarCodigo.addEventListener('click', async () => {
+      const numero = document.getElementById('idWhatsApp').value.split('').filter(c => c >= '0' && c <= '9').join('');
+      if (numero.length < 10 || numero.length > 15) { showMsg('Informe primeiro um número de WhatsApp válido.'); return; }
+      btnEnviarCodigo.disabled = true;
+      try {
+        const res = await fetch(`${API}/auth/otp/enviar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idWhatsApp: `${numero}@s.whatsapp.net` }) });
+        const data = await res.json();
+        if (!res.ok) { showMsg(data.error || 'Não foi possível enviar o código.'); return; }
+        showMsg(data.message || 'Código enviado ao WhatsApp!', 'success');
+      } catch { showMsg('Não foi possível conectar ao servidor.'); }
+      finally { btnEnviarCodigo.disabled = false; }
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const rawTel          = document.getElementById('idWhatsApp').value;
       const idWhatsAppNum   = rawTel.replace(/\D/g, '');
       const email           = document.getElementById('email').value.trim();
+      const codigo          = document.getElementById('codigo').value.trim();
       const username        = document.getElementById('username').value.trim();
       const password        = document.getElementById('password').value;
       const passwordConfirm = document.getElementById('passwordConfirm').value;
@@ -150,6 +175,7 @@
         showMsg('Digite um email válido.');
         return;
       }
+      if (!/^[0-9]{6}$/.test(codigo)) { showMsg('Digite o código de verificação de 6 dígitos enviado ao WhatsApp.'); return; }
       if (username.length < 3) {
         showMsg('Nome de usuário muito curto (mínimo 3 caracteres).');
         return;
@@ -175,6 +201,7 @@
           body: JSON.stringify({
             idWhatsApp: `${idWhatsAppNum}@s.whatsapp.net`,
             email,
+            codigo,
             username,
             password,
           }),

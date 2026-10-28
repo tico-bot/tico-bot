@@ -14,6 +14,15 @@ const petSpawnSchema = new mongoose.Schema({
     type:    Date,
     default: null,
   },
+  // Personagem selvagem ativo, compartilhado entre instâncias do bot.
+  personagemAtivo: {
+    type: new mongoose.Schema({
+      type: { type: String, default: null },
+      rarity: { type: String, default: null },
+      spawnedAt: { type: Number, default: null },
+    }, { _id: false }),
+    default: null,
+  },
   totalSpawns: {
     type:    Number,
     default: 0,

@@ -81,6 +81,7 @@ const usuarioSchema = new mongoose.Schema({
   // o campo quando ele não é informado, e o sparse index volta a funcionar.
   username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
   passwordHash: { type: String, default: null },
+  tokenVersion: { type: Number, default: 0, min: 0 },
   email:        { type: String, trim: true, lowercase: true },
 
   // ── Banimento global ─────────────────────────────────────────
