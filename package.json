@@ -8,6 +8,7 @@
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
     "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
+    "test:api-helpers": "node --test src/utils/mapas.test.js",
     "test:menus": "node --test --test-force-exit src/handlers/menus/menus.test.js",
     "test:futebol": "node --test src/handlers/futebol-api.test.js"
   },

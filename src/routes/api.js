@@ -9,6 +9,7 @@ const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
+const { mapParaObjeto, somarMap } = require('../utils/mapas');
 const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
