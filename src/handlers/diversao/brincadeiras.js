@@ -2642,7 +2642,16 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
       const derrotas = Number(row.derrotas ?? row.losses ?? row.lost ?? 0);
       const saldo = Number(row.saldo ?? row.saldo_gols ?? row.goalDifference ?? (Number(row.gols_pro ?? row.goalsFor ?? 0) - Number(row.gols_contra ?? row.goalsAgainst ?? 0)));
       texto += `${pos}. ${nome} — *${pts} pts* | ${jogos}J | ${vitorias}V | ${empates}E | ${derrotas}D | SG ${saldo > 0 ? '+' : ''}${saldo}\n`;
-      if (divisao === 'A' && posNum === 16) texto += '━━━━━━━━━━━━━━━━━━\n';
+      if (divisao === 'A' && posNum === 4) {
+        texto += '━━━━━━━━━━━━━━━━━━\n';
+        texto += '🏆 *G4 — VAGAS NA LIBERTADORES*\n';
+        texto += '━━━━━━━━━━━━━━━━━━\n';
+      }
+      if (divisao === 'A' && posNum === 16) {
+        texto += '━━━━━━━━━━━━━━━━━━\n';
+        texto += '⚠️ *ZONA DE REBAIXAMENTO — Z4*\n';
+        texto += '━━━━━━━━━━━━━━━━━━\n';
+      }
     }
 
     texto += '\n📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols\n';
