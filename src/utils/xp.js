@@ -1,7 +1,8 @@
 'use strict';
 
-const Usuario    = require('../models/Usuario');
-const LidMapping = require('../models/LidMapping');
+const Usuario       = require('../models/Usuario');
+const LidMapping    = require('../models/LidMapping');
+const CarteiraGrupo = require('../models/CarteiraGrupo');
 const { normalizarJid } = require('./jid');
 const { prepareDailyMissionState, incrementMission } = require('../handlers/diversao/missoes');
 
@@ -56,8 +57,7 @@ function getBonusHorario(date = new Date()) {
  * @returns {number}
  */
 function levelFromXpGlobal(xp) {
-  const xpSeguro = Math.max(0, xp || 0);
-  return Math.max(1, Math.floor(Math.pow(xpSeguro / 80, 1 / 1.4)) + 1);
+  return CarteiraGrupo.levelFromXp(xp);
 }
 
 /**

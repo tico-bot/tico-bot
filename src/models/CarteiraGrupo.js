@@ -208,8 +208,14 @@ function xpParaLevel(level) {
 
 // Nível correspondente a uma quantidade de XP (sempre >= 1)
 function levelFromXp(xp) {
-  const xpSeguro = Math.max(0, xp || 0);
-  return Math.max(1, Math.floor(Math.pow(xpSeguro / 80, 1 / 1.4)) + 1);
+  const valor = Number(xp);
+  const xpSeguro = Number.isFinite(valor) ? Math.max(0, valor) : 0;
+  let nivel = Math.max(1, Math.floor(Math.pow(xpSeguro / 80, 1 / 1.4)) + 1);
+
+  // Corrige desvios de ponto flutuante nos limites exatos (ex.: 211 XP = nível 3).
+  while (xpParaLevel(nivel + 1) <= xpSeguro) nivel++;
+  while (nivel > 1 && xpParaLevel(nivel) > xpSeguro) nivel--;
+  return nivel;
 }
 
 // Expor as fórmulas como statics — qualquer comando (!level, !ranklevel etc.)
@@ -222,9 +228,16 @@ carteiraGrupoSchema.statics.incrementXp = async function (idWhatsApp, idGrupo, a
   if (!idWhatsApp || !idGrupo) return null;
   if (!Number.isFinite(amount) || amount === 0) return null;
 
+  const hojeISO = new Date().toISOString().slice(0, 10);
   const atualizado = await this.findOneAndUpdate(
     { idWhatsApp, idGrupo },
-    { $inc: { xp: amount } },
+    {
+      $inc: {
+        xp: amount,
+        mensagens: amount > 0 ? 1 : 0,
+        [`xpHistory.${hojeISO}`]: amount,
+      },
+    },
     { upsert: true, new: true }
   );
 

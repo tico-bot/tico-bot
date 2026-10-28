@@ -9,6 +9,7 @@
     "dev": "node --watch src/bot.js",
     "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
     "test:api-helpers": "node --test src/utils/mapas.test.js",
+    "test:progressao": "node --test src/models/CarteiraGrupo.test.js",
     "test:menus": "node --test --test-force-exit src/handlers/menus/menus.test.js",
     "test:futebol": "node --test src/handlers/futebol-api.test.js"
   },

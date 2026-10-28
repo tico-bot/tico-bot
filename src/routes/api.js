@@ -18,11 +18,11 @@ const { ipKeyGenerator } = require('express-rate-limit');
 // Mantêm a fórmula de nível igual à usada no site.
 function calcularLevel(xp = 0) {
   const valor = Math.max(0, Number(xp) || 0);
-  return Math.max(1, Math.floor(Math.pow(valor / 100, 1 / 1.5)) + 1);
+  return CarteiraGrupo.levelFromXp(valor);
 }
 
 function nomeGrupo(grupo = {}, jid = '') {
-  const nome = grupo.nomeCustom || grupo.nomeGrupo;
+  const nome = grupo.nomeCustom || grupo.nomeGrupo || grupo.nomeReal || grupo.nome;
   if (typeof nome === 'string' && nome.trim()) return nome.trim();
   return String(jid).split('@')[0] || 'Grupo sem nome';
 }
@@ -401,14 +401,25 @@ if (!carteiras.length) {
     // Filtra APENAS carteiras de grupos válidos (terminados em @g.us)
     const carteirasGruposValidos = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
 
-    const xpTotal        = carteirasGruposValidos.reduce((s, c) => s + (c.xp        ?? 0), 0);
-    const goldTotal      = carteirasGruposValidos.reduce((s, c) => s + (c.gold      ?? 0), 0);
-    const mensagensTotal = carteirasGruposValidos.reduce((s, c) => s + (c.mensagens ?? 0), 0);
+    // A progressão principal usa o XP global de Usuario; as carteiras continuam
+    // sendo a fonte dos saldos e das estatísticas individuais de cada grupo.
+    const xpGruposTotal = carteirasGruposValidos.reduce((s, c) => s + (c.xp ?? 0), 0);
+    const xpSalvoUsuario = usuario.xp;
+    const xpTotal = xpSalvoUsuario != null && Number.isFinite(Number(xpSalvoUsuario))
+      ? Math.max(0, Number(xpSalvoUsuario))
+      : xpGruposTotal;
+    const goldTotal = carteirasGruposValidos.reduce((s, c) => s + (c.gold ?? 0), 0);
+    const mensagensGruposTotal = carteirasGruposValidos.reduce((s, c) => s + (c.mensagens ?? 0), 0);
+    const mensagensSalvasUsuario = usuario.mensagens;
+    const mensagensTotal = mensagensSalvasUsuario != null && Number.isFinite(Number(mensagensSalvasUsuario))
+      ? Math.max(0, Number(mensagensSalvasUsuario))
+      : mensagensGruposTotal;
 
     const levelGlobal = calcularLevel(xpTotal);
 
-    const xpParaProximo = Math.ceil(80 * Math.pow(levelGlobal, 1.4));
-    const xpInicioNivel = Math.ceil(80 * Math.pow(Math.max(0, levelGlobal - 1), 1.4));
+    // Mesma curva usada pelo CarteiraGrupo.incrementXp() e pelo !level.
+    const xpInicioNivel = CarteiraGrupo.xpParaLevel(levelGlobal);
+    const xpParaProximo = CarteiraGrupo.xpParaLevel(levelGlobal + 1);
     const xpNoNivel     = xpParaProximo - xpInicioNivel;
     const xpProgresso   = xpNoNivel > 0
       ? Math.min(100, Math.max(0, Math.floor(((xpTotal - xpInicioNivel) / xpNoNivel) * 100)))
@@ -417,30 +428,49 @@ if (!carteiras.length) {
     const posicaoResult = await CarteiraGrupo.aggregate([
       { $match: { idGrupo: { $regex: /@g\.us$/ } } },
       { $group: { _id: '$idWhatsApp', xpTotal: { $sum: '$xp' } } },
-      { $match: { xpTotal: { $gt: xpTotal } } },
+      { $match: { xpTotal: { $gt: xpGruposTotal } } },
       { $count: 'acima' },
     ]);
     const posicaoRanking = (posicaoResult[0]?.acima ?? 0) + 1;
 
-    const jidsGruposMe = carteirasGruposValidos.map(c => c.idGrupo);
+    const jidsGruposMe = [...new Set(carteirasGruposValidos.map(c => c.idGrupo))];
     const nomesGruposMe = {};
     if (jidsGruposMe.length) {
-      const docsNomes = await CarteiraGrupo.aggregate([
-        { $match: { idGrupo: { $in: jidsGruposMe } } },
-        { $group: {
-          _id:        '$idGrupo',
-          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
-          nomeReal:   { $first: { $ifNull: ['$nome', null] } },
-        }},
+      const GrupoConfig = require('../models/GrupoConfig');
+      const [docsNomes, configsNomes] = await Promise.all([
+        CarteiraGrupo.aggregate([
+          { $match: { idGrupo: { $in: jidsGruposMe } } },
+          { $group: {
+            _id:        '$idGrupo',
+            nomeCustom: { $max: '$nomeCustom' },
+            nomeReal:   { $max: '$nome' },
+          }},
+        ]),
+        GrupoConfig.find({ idGrupo: { $in: jidsGruposMe } })
+          .select('idGrupo nomeGrupo nomeCustom')
+          .lean(),
       ]);
-      for (const d of docsNomes) nomesGruposMe[d._id] = nomeGrupo(d, d._id);
+      const configsPorJid = Object.fromEntries(configsNomes.map(c => [c.idGrupo, c]));
+      for (const d of docsNomes) {
+        const cfg = configsPorJid[d._id] || {};
+        nomesGruposMe[d._id] = nomeGrupo({
+          nomeCustom: cfg.nomeCustom || d.nomeCustom,
+          nomeGrupo:  cfg.nomeGrupo || d.nomeReal,
+        }, d._id);
+      }
+      // Também inclui grupos cujo nome só está salvo na configuração.
+      for (const cfg of configsNomes) {
+        if (!nomesGruposMe[cfg.idGrupo]) {
+          nomesGruposMe[cfg.idGrupo] = nomeGrupo(cfg, cfg.idGrupo);
+        }
+      }
     }
 
     const grupos = carteirasGruposValidos.map(c => ({
       jid:          c.idGrupo,
       nome:         nomesGruposMe[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       xp:           c.xp           ?? 0,
-      level:        c.level        ?? 1,
+      level:        calcularLevel(c.xp ?? 0),
       gold:         c.gold         ?? 0,
       mensagens:    c.mensagens    ?? 0,
       empregoAtual: c.empregoAtual ?? null,
@@ -516,26 +546,25 @@ if (!carteiras.length) {
       if (cComPet) petResolvido = cComPet.pet;
     }
 
-    // xpHistory: soma o xpHistory de todas as carteiras do usuário
-    const xpHistoryMerge = {};
+    // O gráfico de progressão usa o histórico global do usuário. Só recorre
+    // aos históricos das carteiras em documentos antigos sem histórico global.
+    const xpHistoryUsuario = {};
+    for (const [k, v] of Object.entries(mapParaObjeto(usuario.xpHistory ?? {}))) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
+        xpHistoryUsuario[k] = Number(v);
+      }
+    }
+    const xpHistoryGrupos = {};
     for (const c of carteirasGruposValidos) {
-      const raw = mapParaObjeto(c.xpHistory ?? {});
-      for (const [k, v] of Object.entries(raw)) {
+      for (const [k, v] of Object.entries(mapParaObjeto(c.xpHistory ?? {}))) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) {
-          xpHistoryMerge[k] = (xpHistoryMerge[k] ?? 0) + Number(v);
+          xpHistoryGrupos[k] = (xpHistoryGrupos[k] ?? 0) + Number(v);
         }
       }
     }
-    const xpHistoryLimpo = Object.keys(xpHistoryMerge).length > 0
-      ? xpHistoryMerge
-      : (() => {
-          const raw = mapParaObjeto(usuario.xpHistory);
-          const obj = {};
-          for (const [k, v] of Object.entries(raw)) {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(k) && Number.isFinite(Number(v))) obj[k] = Number(v);
-          }
-          return obj;
-        })();
+    const xpHistoryLimpo = Object.keys(xpHistoryUsuario).length > 0
+      ? xpHistoryUsuario
+      : xpHistoryGrupos;
 
     const nomeResolvido     = usuario.nome     || carteirasGruposValidos[0]?.nome || null;
     const telefoneResolvido = usuario.telefone || idWhatsApp.split('@')[0] || null;
@@ -551,6 +580,7 @@ if (!carteiras.length) {
       mensagens:  mensagensTotal,
       quizPoints: usuario.quizPoints ?? 0,
       xpParaProximo,
+      xpInicioNivel,
       xpProgresso,
       posicaoRanking,
 
