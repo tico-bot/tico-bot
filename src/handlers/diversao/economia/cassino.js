@@ -224,13 +224,14 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
 // ─── !corrida ───────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+// Odds equilibradas para ~90% de retorno teórico por escolha (peso / 37).
 const CORRIDA_BICHOS = [
-  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 2.0, velocidade: 9 },
-  { nome: '🐅 Tigre',     emoji: '🐅', odds: 2.5, velocidade: 8 },
-  { nome: '🦊 Raposa',    emoji: '🦊', odds: 3.0, velocidade: 7 },
-  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 3.5, velocidade: 6 },
-  { nome: '🐗 Javali',    emoji: '🐗', odds: 4.0, velocidade: 5 },
-  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 8.0, velocidade: 2 },
+  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 3.70, velocidade: 9 },
+  { nome: '🐅 Tigre',     emoji: '🐅', odds: 4.16, velocidade: 8 },
+  { nome: '🦊 Raposa',    emoji: '🦊', odds: 4.76, velocidade: 7 },
+  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 5.55, velocidade: 6 },
+  { nome: '🐗 Javali',    emoji: '🐗', odds: 6.66, velocidade: 5 },
+  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 16.65, velocidade: 2 },
 ];
 
 const CORRIDA_PISTA_LEN   = 12;

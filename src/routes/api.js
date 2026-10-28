@@ -8,6 +8,8 @@ const AuthToken     = require('../models/AuthToken');
 const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
+const JogoRequest   = require('../models/JogoRequest');
+const { normalizarJid } = require('../utils/jid');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const { mapParaObjeto, somarMap } = require('../utils/mapas');
 const rateLimit      = require('express-rate-limit');
@@ -24,7 +26,12 @@ function calcularLevel(xp = 0) {
 function nomeGrupo(grupo = {}, jid = '') {
   const nome = grupo.nomeCustom || grupo.nomeGrupo || grupo.nomeReal || grupo.nome;
   if (typeof nome === 'string' && nome.trim()) return nome.trim();
-  return String(jid).split('@')[0] || 'Grupo sem nome';
+  return nomeGrupoFallback(jid);
+}
+
+function nomeGrupoFallback(jid = '') {
+  const fallback = String(jid || '').split('@')[0].trim();
+  return fallback || 'Grupo sem nome';
 }
 
 // Retorna variantes de números brasileiros com e sem o nono dígito.
@@ -226,7 +233,7 @@ router.get('/user/ranking', async (req, res) => {
 
     const matchGrupo = { $match: { idGrupo: { $regex: /@g\.us$/ } } };
 
-    const [agregados, totaisGlobais] = await Promise.all([
+    const [agregados, totaisGlobais, totaisMensagensUsuario] = await Promise.all([
       CarteiraGrupo.aggregate([
         matchGrupo,
         {
@@ -250,6 +257,17 @@ router.get('/user/ranking', async (req, res) => {
           },
         },
       ]),
+      // O contador global é atualizado por addUserXp(). Carteiras antigas podem
+      // ter XP acumulado sem o campo mensagens preenchido; usa-se esse total como
+      // fonte principal e o contador por grupo como compatibilidade histórica.
+      Usuario.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalMensagens: { $sum: { $ifNull: ['$mensagens', 0] } },
+          },
+        },
+      ]),
     ]);
 
     const jids = agregados.map(a => a._id);
@@ -260,7 +278,7 @@ router.get('/user/ranking', async (req, res) => {
 
     const todosJidsBusca = [...new Set([...jids, ...pnsResolvidos])];
     const usuarios = todosJidsBusca.length
-      ? await Usuario.find({ idWhatsApp: { $in: todosJidsBusca } }).select('idWhatsApp nome telefone username').lean()
+      ? await Usuario.find({ idWhatsApp: { $in: todosJidsBusca } }).select('idWhatsApp nome telefone username mensagens').lean()
       : [];
     const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
 
@@ -281,18 +299,23 @@ router.get('/user/ranking', async (req, res) => {
         nome:       nomeFinal,
         xp:         a.xp        ?? 0,
         gold:       a.gold      ?? 0,
-        mensagens:  a.mensagens ?? 0,
+        // Usa o contador global se a carteira antiga ainda não tiver mensagens.
+        mensagens:  Math.max(Number(a.mensagens) || 0, Number(u.mensagens) || 0),
         level:      calcularLevel(a.xp),
         posicao:    i + 1,
       };
     });
 
     const t = totaisGlobais[0] || {};
+    const totalMensagens = Math.max(
+      Number(totaisMensagensUsuario[0]?.totalMensagens) || 0,
+      Number(t.totalMensagens) || 0,
+    );
 
     return res.json({
       ranking,
       total:          t.totalUsuarios?.length || ranking.length,
-      totalMensagens: t.totalMensagens || 0,
+      totalMensagens,
       atualizadoEm:   new Date(),
     });
   } catch (err) {
@@ -410,10 +433,14 @@ if (!carteiras.length) {
       : xpGruposTotal;
     const goldTotal = carteirasGruposValidos.reduce((s, c) => s + (c.gold ?? 0), 0);
     const mensagensGruposTotal = carteirasGruposValidos.reduce((s, c) => s + (c.mensagens ?? 0), 0);
-    const mensagensSalvasUsuario = usuario.mensagens;
-    const mensagensTotal = mensagensSalvasUsuario != null && Number.isFinite(Number(mensagensSalvasUsuario))
-      ? Math.max(0, Number(mensagensSalvasUsuario))
-      : mensagensGruposTotal;
+    const mensagensSalvasUsuario = Number(usuario.mensagens);
+    // Os contadores global e por grupo podem estar desencontrados em registros antigos.
+    // Prefere o maior contador disponível para não mostrar zero se a outra fonte já contou.
+    const mensagensTotal = Math.max(
+      Number.isFinite(mensagensSalvasUsuario) ? mensagensSalvasUsuario : 0,
+      mensagensGruposTotal,
+      0,
+    );
 
     const levelGlobal = calcularLevel(xpTotal);
 
@@ -443,7 +470,7 @@ if (!carteiras.length) {
           { $group: {
             _id:        '$idGrupo',
             nomeCustom: { $max: '$nomeCustom' },
-            nomeReal:   { $max: '$nome' },
+            nomeGrupo:  { $max: '$nomeGrupo' },
           }},
         ]),
         GrupoConfig.find({ idGrupo: { $in: jidsGruposMe } })
@@ -455,7 +482,7 @@ if (!carteiras.length) {
         const cfg = configsPorJid[d._id] || {};
         nomesGruposMe[d._id] = nomeGrupo({
           nomeCustom: cfg.nomeCustom || d.nomeCustom,
-          nomeGrupo:  cfg.nomeGrupo || d.nomeReal,
+          nomeGrupo:  cfg.nomeGrupo || d.nomeGrupo,
         }, d._id);
       }
       // Também inclui grupos cujo nome só está salvo na configuração.
@@ -669,8 +696,8 @@ router.get('/user/grupos', auth, async (req, res) => {
         { $match: { idGrupo: { $in: jidsGruposUser } } },
         { $group: {
           _id:        '$idGrupo',
-          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
-          nomeReal:   { $first: { $ifNull: ['$nome',       null] } }, // campo real é "nome"
+          nomeCustom: { $max: '$nomeCustom' },
+          nomeGrupo:  { $max: '$nomeGrupo' },
         }},
       ]);
       for (const d of docsNomes) nomesGruposMap[d._id] = nomeGrupo(d, d._id);
@@ -769,7 +796,7 @@ router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
     const gruposDocs = jidsGrupos.length
       ? await CarteiraGrupo.aggregate([
           { $match: { idGrupo: { $in: jidsGrupos } } },
-          { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } }
+          { $group: { _id: '$idGrupo', nomeCustom: { $max: '$nomeCustom' }, nomeGrupo: { $max: '$nomeGrupo' } } }
         ])
       : [];
     const nomesMap = Object.fromEntries(gruposDocs.map(g => [g._id, nomeGrupo(g, g._id)]));
@@ -1392,6 +1419,106 @@ router.post('/admin/usuario/gold/reset-grupo', adminAuth, async (req, res) => {
 // ROTAS DO CASSINO (JWT de sessão)
 // ══════════════════════════════════════════════════════════════════════════════
 
+function parseInteiroJogo(valor) {
+  if (typeof valor === 'number') return Number.isSafeInteger(valor) ? valor : null;
+  if (typeof valor !== 'string' || !/^-?\d+$/.test(valor.trim())) return null;
+  const numero = Number(valor.trim());
+  return Number.isSafeInteger(numero) ? numero : null;
+}
+
+function idGrupoValidoJogo(idGrupo) {
+  return typeof idGrupo === 'string'
+    && idGrupo === idGrupo.trim()
+    && idGrupo.length <= 128
+    && /^\d+@g\.us$/.test(idGrupo);
+}
+
+function requestIdJogoValido(requestId) {
+  return typeof requestId === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId);
+}
+
+function mesmaRodadaSalva(registro, dados) {
+  return registro.jogo === dados.jogo
+    && registro.idGrupo === dados.idGrupo
+    && Number(registro.aposta) === Number(dados.aposta)
+    && (registro.escolha ?? null) === (dados.escolha ?? null);
+}
+
+async function resolverRequestExistente(registro, dados) {
+  if (!mesmaRodadaSalva(registro, dados)) {
+    return { resposta: true, status: 409, corpo: { error: 'Este identificador já está associado a outra aposta. Confira o saldo antes de continuar.' } };
+  }
+
+  let atual = registro;
+  for (let tentativa = 0; tentativa < 15 && atual.status !== 'completed'; tentativa++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    atual = await JogoRequest.findOne({ idWhatsApp: dados.idWhatsApp, requestId: dados.requestId }).lean();
+    if (!atual) break;
+  }
+
+  if (atual?.status === 'completed') {
+    return { resposta: true, status: atual.httpStatus || 200, corpo: atual.response || { error: 'A rodada foi concluída, mas não há um resultado salvo.' }, replay: true };
+  }
+
+  return { resposta: true, status: 409, corpo: { error: 'Esta rodada ainda está sendo processada. Tente novamente com os mesmos dados; a aposta não será debitada duas vezes.' } };
+}
+
+async function iniciarRequestJogo(dados) {
+  if (!requestIdJogoValido(dados.requestId)) {
+    return { resposta: true, status: 400, corpo: { error: 'requestId inválido ou ausente. Atualize a página do jogo e tente novamente.' } };
+  }
+
+  dados.requestId = dados.requestId.toLowerCase();
+  dados.idWhatsApp = String(dados.idWhatsApp || '').toLowerCase();
+  const query = { idWhatsApp: dados.idWhatsApp, requestId: dados.requestId };
+  const existente = await JogoRequest.findOne(query).lean();
+  if (existente) return resolverRequestExistente(existente, dados);
+
+  try {
+    const registro = await JogoRequest.create({ ...dados, status: 'pending' });
+    return { resposta: false, registro };
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    const concorrente = await JogoRequest.findOne(query).lean();
+    if (!concorrente) throw error;
+    return resolverRequestExistente(concorrente, dados);
+  }
+}
+
+async function concluirRequestJogo(dados, status, corpo) {
+  await JogoRequest.updateOne(
+    { idWhatsApp: String(dados.idWhatsApp || '').toLowerCase(), requestId: String(dados.requestId || '').toLowerCase(), status: 'pending' },
+    { $set: { status: 'completed', httpStatus: status, response: corpo } },
+  );
+}
+
+async function encontrarCarteiraJogo(idWhatsApp, idGrupo) {
+  const rawJid = String(idWhatsApp || '').trim().toLowerCase();
+  if (!rawJid) return null;
+
+  const jidNorm = normalizarJid(rawJid) || rawJid;
+  const digitos = jidNorm.split('@')[0].split(':')[0];
+  const variantesPn = gerarVariantesNumero(digitos).map(n => `${n}@s.whatsapp.net`);
+  const jidsBusca = new Set([rawJid, jidNorm, ...variantesPn]);
+
+  const lidMap = await LidMapping.findOne({
+    $or: [
+      { lid: rawJid },
+      { lid: jidNorm },
+      { pn: { $in: [rawJid, jidNorm, ...variantesPn] } },
+    ],
+  }).lean();
+  if (lidMap?.lid) jidsBusca.add(lidMap.lid);
+  if (lidMap?.pn) jidsBusca.add(lidMap.pn);
+
+  const carteiras = await CarteiraGrupo
+    .find({ idWhatsApp: { $in: [...jidsBusca] }, idGrupo })
+    .sort({ gold: -1, xp: -1 })
+    .lean();
+  return carteiras[0] || null;
+}
+
 const SLOTS_SIMBOLOS = [
   { emoji: '💎', nome: 'Diamante', peso: 2  },
   { emoji: '7️⃣',  nome: 'Sete',    peso: 5  },
@@ -1415,7 +1542,7 @@ const SLOTS_MULTIPLICADORES = {
 };
 
 function sortearSlotBackend() {
-  const pick = () => SLOTS_POOL[Math.floor(Math.random() * SLOTS_POOL.length)];
+  const pick = () => SLOTS_POOL[crypto.randomInt(SLOTS_POOL.length)];
   return [pick(), pick(), pick()];
 }
 
@@ -1454,39 +1581,38 @@ const cassinoRateLimit = rateLimit({
 // Body: { idGrupo, aposta }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
+  let rodadaAtual = null;
   try {
     const idWhatsApp = req.user.idWhatsApp;
-    const { idGrupo, aposta } = req.body || {};
+    const { idGrupo, aposta, requestId } = req.body || {};
 
-    // ── Validações ────────────────────────────────────────────────────────────
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    // Validações estritas: não aceitar decimais, lixo anexado nem IDs que não sejam grupos.
+    if (!idGrupoValidoJogo(idGrupo))
+      return res.status(400).json({ error: 'Grupo inválido.' });
 
-    const valorAposta = parseInt(aposta, 10);
-    if (!valorAposta || isNaN(valorAposta) || valorAposta <= 0)
-      return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
+    const valorAposta = parseInteiroJogo(aposta);
+    if (valorAposta === null || valorAposta < 10)
+      return res.status(400).json({ error: 'A aposta mínima é 10 e deve ser um número inteiro.' });
 
     if (valorAposta > 100_000)
       return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
-    // ── Confirma que o usuário pertence ao grupo (resolve @lid se necessário) ─
-    let idResolvido = idWhatsApp;
-    let carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
+    const dadosRodada = { idWhatsApp, requestId, jogo: 'slots', idGrupo, aposta: valorAposta, escolha: null };
+    const abertura = await iniciarRequestJogo(dadosRodada);
+    if (abertura.resposta) return res.status(abertura.status).json(abertura.corpo);
+    rodadaAtual = dadosRodada;
 
-    if (!carteira) {
-      const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-        .map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
-      if (lidMap) {
-        idResolvido = lidMap.lid;
-        carteira = await CarteiraGrupo.findOne({ idWhatsApp: idResolvido, idGrupo });
-      }
+    // Confirma participação e resolve variações PN/LID antes de mexer no saldo.
+    const carteiraEncontrada = await encontrarCarteiraJogo(idWhatsApp, idGrupo);
+    if (!carteiraEncontrada) {
+      const corpo = { error: 'Você não pertence a esse grupo.' };
+      await concluirRequestJogo(rodadaAtual, 403, corpo);
+      return res.status(403).json(corpo);
     }
 
-    if (!carteira)
-      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
-
+    let idResolvido = carteiraEncontrada.idWhatsApp;
     const carteiraIntegrada = await getCarteira(idResolvido, idGrupo);
+    if (carteiraIntegrada?.idWhatsApp) idResolvido = carteiraIntegrada.idWhatsApp;
     let carteiraDebitada;
     try {
       carteiraDebitada = await alterarGold(
@@ -1494,11 +1620,12 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
         idGrupo,
         -valorAposta,
         'Slots (aposta)',
-        crypto.randomUUID(),
       );
     } catch (error) {
       if (error instanceof RangeError) {
-        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+        const corpo = { error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold };
+        await concluirRequestJogo(rodadaAtual, 400, corpo);
+        return res.status(400).json(corpo);
       }
       throw error;
     }
@@ -1519,12 +1646,11 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
           idGrupo,
           premio,
           `Slots (${mult}x)`,
-          crypto.randomUUID(),
         );
         saldoFinal = carteiraAtualizada.gold;
       } catch (error) {
         try {
-          await alterarGold(idResolvido, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+          await alterarGold(idResolvido, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível');
         } catch (refundError) {
           console.error('[API] Estorno crítico de Slots falhou:', refundError);
         }
@@ -1532,17 +1658,23 @@ router.post('/cassino/slots', auth, cassinoRateLimit, async (req, res) => {
       }
     }
 
-    return res.json({
+    const resultado = {
       resultado: [r1, r2, r3],
       tipo,
       mult,
       premio,
       lucroLiq,
-      aposta:    valorAposta,
+      aposta: valorAposta,
       saldoFinal,
-    });
+    };
+    await concluirRequestJogo(rodadaAtual, 200, resultado);
+    return res.json(resultado);
 
   } catch (err) {
+    if (rodadaAtual) {
+      try { await concluirRequestJogo(rodadaAtual, 500, { error: 'Erro interno.' }); }
+      catch (persistErr) { console.error('[API] Não foi possível salvar estado da rodada Slots:', persistErr.message); }
+    }
     console.error('[API] POST /cassino/slots:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
@@ -1570,8 +1702,8 @@ router.get('/user/grupos/:idWhatsApp', auth, async (req, res) => {
         { $match: { idGrupo: { $in: jids } } },
         { $group: {
           _id:        '$idGrupo',
-          nomeCustom: { $first: { $ifNull: ['$nomeCustom', null] } },
-          nomeReal:   { $first: { $ifNull: ['$nome',       null] } },
+          nomeCustom: { $max: '$nomeCustom' },
+          nomeGrupo:  { $max: '$nomeGrupo' },
         }},
       ]);
       for (const d of docs) nomesMap[d._id] = nomeGrupo(d, d._id);
@@ -1597,13 +1729,15 @@ router.get('/user/grupos/:idWhatsApp', auth, async (req, res) => {
 // ROTAS DA CORRIDA (JWT de sessão)
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Odds calculadas para ~90% de retorno teórico: probabilidade = velocidade / 37.
+// O arredondamento para duas casas e Math.floor do prêmio tornam o retorno real ligeiramente menor.
 const CORRIDA_BICHOS_API = [
-  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 2.0, velocidade: 9 },
-  { nome: '🐅 Tigre',     emoji: '🐅', odds: 2.5, velocidade: 8 },
-  { nome: '🦊 Raposa',    emoji: '🦊', odds: 3.0, velocidade: 7 },
-  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 3.5, velocidade: 6 },
-  { nome: '🐗 Javali',    emoji: '🐗', odds: 4.0, velocidade: 5 },
-  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 8.0, velocidade: 2 },
+  { nome: '🐎 Cavalo',    emoji: '🐎', odds: 3.70, velocidade: 9 },
+  { nome: '🐅 Tigre',     emoji: '🐅', odds: 4.16, velocidade: 8 },
+  { nome: '🦊 Raposa',    emoji: '🦊', odds: 4.76, velocidade: 7 },
+  { nome: '🐕 Cachorro',  emoji: '🐕', odds: 5.55, velocidade: 6 },
+  { nome: '🐗 Javali',    emoji: '🐗', odds: 6.66, velocidade: 5 },
+  { nome: '🐢 Tartaruga', emoji: '🐢', odds: 16.65, velocidade: 2 },
 ];
 
 const CORRIDA_RATE_MAX    = 10;
@@ -1621,47 +1755,59 @@ const corridaRateLimit = rateLimit({
 
 function sortearVencedorApi() {
   const pool = CORRIDA_BICHOS_API.flatMap((b, i) => Array(b.velocidade).fill(i));
-  return pool[Math.floor(Math.random() * pool.length)];
+  return pool[crypto.randomInt(pool.length)];
 }
 
 // POST /api/corrida/apostar
 // Body: { idGrupo, escolha (0-5), aposta }
 router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
+  let rodadaAtual = null;
   try {
     const idWhatsApp = req.user.idWhatsApp;
-    const { idGrupo, escolha, aposta } = req.body || {};
+    const { idGrupo, escolha, aposta, requestId } = req.body || {};
 
-    if (!idGrupo)
-      return res.status(400).json({ error: 'idGrupo é obrigatório.' });
+    if (!idGrupoValidoJogo(idGrupo))
+      return res.status(400).json({ error: 'Grupo inválido.' });
 
-    const escolhaIdx = parseInt(escolha, 10);
-    if (isNaN(escolhaIdx) || escolhaIdx < 0 || escolhaIdx >= CORRIDA_BICHOS_API.length)
+    const escolhaIdx = parseInteiroJogo(escolha);
+    if (escolhaIdx === null || escolhaIdx < 0 || escolhaIdx >= CORRIDA_BICHOS_API.length)
       return res.status(400).json({ error: 'Escolha inválida.' });
 
-    const valorAposta = parseInt(aposta, 10);
-    if (!valorAposta || isNaN(valorAposta) || valorAposta <= 0)
-      return res.status(400).json({ error: 'Aposta deve ser um número positivo.' });
+    const valorAposta = parseInteiroJogo(aposta);
+    if (valorAposta === null || valorAposta < 10)
+      return res.status(400).json({ error: 'A aposta mínima é 10 e deve ser um número inteiro.' });
 
     if (valorAposta > 100_000)
       return res.status(400).json({ error: `Aposta máxima: ${formatarSaldo(100_000)}.` });
 
-    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo });
-    if (!carteira)
-      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+    const dadosRodada = { idWhatsApp, requestId, jogo: 'corrida', idGrupo, aposta: valorAposta, escolha: escolhaIdx };
+    const abertura = await iniciarRequestJogo(dadosRodada);
+    if (abertura.resposta) return res.status(abertura.status).json(abertura.corpo);
+    rodadaAtual = dadosRodada;
 
-    const carteiraIntegrada = await getCarteira(idWhatsApp, idGrupo);
+    const carteiraEncontrada = await encontrarCarteiraJogo(idWhatsApp, idGrupo);
+    if (!carteiraEncontrada) {
+      const corpo = { error: 'Você não pertence a esse grupo.' };
+      await concluirRequestJogo(rodadaAtual, 403, corpo);
+      return res.status(403).json(corpo);
+    }
+
+    let idResolvido = carteiraEncontrada.idWhatsApp;
+    const carteiraIntegrada = await getCarteira(idResolvido, idGrupo);
+    if (carteiraIntegrada?.idWhatsApp) idResolvido = carteiraIntegrada.idWhatsApp;
     let carteiraDebitada;
     try {
       carteiraDebitada = await alterarGold(
-        idWhatsApp,
+        idResolvido,
         idGrupo,
         -valorAposta,
         `Corrida (${CORRIDA_BICHOS_API[escolhaIdx].nome})`,
-        crypto.randomUUID(),
       );
     } catch (error) {
       if (error instanceof RangeError) {
-        return res.status(400).json({ error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold });
+        const corpo = { error: 'Saldo insuficiente.', saldo: carteiraIntegrada.gold };
+        await concluirRequestJogo(rodadaAtual, 400, corpo);
+        return res.status(400).json(corpo);
       }
       throw error;
     }
@@ -1677,16 +1823,15 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
     if (premio > 0) {
       try {
         const carteiraAtualizada = await alterarGold(
-          idWhatsApp,
+          idResolvido,
           idGrupo,
           premio,
           `Corrida (${bicho.odds}x)`,
-          crypto.randomUUID(),
         );
         saldoFinal = carteiraAtualizada.gold;
       } catch (error) {
         try {
-          await alterarGold(idWhatsApp, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível', crypto.randomUUID());
+          await alterarGold(idResolvido, idGrupo, valorAposta, 'Estorno de aposta: prêmio indisponível');
         } catch (refundError) {
           console.error('[API] Estorno crítico de Corrida falhou:', refundError);
         }
@@ -1694,20 +1839,77 @@ router.post('/corrida/apostar', auth, corridaRateLimit, async (req, res) => {
       }
     }
 
-    return res.json({
+    const resultado = {
       vencedorIdx,
       escolhaIdx,
-      bichos:    CORRIDA_BICHOS_API.map(b => ({ nome: b.nome, emoji: b.emoji, odds: b.odds })),
+      bichos: CORRIDA_BICHOS_API.map(b => ({ nome: b.nome, emoji: b.emoji, odds: b.odds })),
       ganhou,
       premio,
       lucroLiq,
-      aposta:    valorAposta,
+      aposta: valorAposta,
       saldoFinal,
-    });
+    };
+    await concluirRequestJogo(rodadaAtual, 200, resultado);
+    return res.json(resultado);
 
   } catch (err) {
+    if (rodadaAtual) {
+      try { await concluirRequestJogo(rodadaAtual, 500, { error: 'Erro interno.' }); }
+      catch (persistErr) { console.error('[API] Não foi possível salvar estado da rodada Corrida:', persistErr.message); }
+    }
     console.error('[API] POST /corrida/apostar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// GET /api/games/request/:requestId
+// Confere o estado de uma rodada do próprio usuário após falha de conexão/servidor.
+router.get('/games/request/:requestId', auth, async (req, res) => {
+  try {
+    const requestId = String(req.params.requestId || '').toLowerCase();
+    if (!requestIdJogoValido(requestId)) {
+      return res.status(400).json({ error: 'Identificador de rodada inválido.' });
+    }
+
+    const registro = await JogoRequest.findOne({
+      idWhatsApp: String(req.user.idWhatsApp || '').toLowerCase(),
+      requestId,
+    }).lean();
+    if (!registro) return res.status(404).json({ error: 'Nenhuma rodada registrada com este identificador.' });
+
+    return res.json({
+      requestId: registro.requestId,
+      jogo: registro.jogo,
+      idGrupo: registro.idGrupo,
+      status: registro.status,
+      httpStatus: registro.httpStatus,
+      response: registro.status === 'completed' ? registro.response : null,
+    });
+  } catch (err) {
+    console.error('[API] GET /games/request/:requestId:', err);
+    return res.status(500).json({ error: 'Não foi possível conferir o estado da rodada.' });
+  }
+});
+
+// GET /api/games/wallet/:idGrupo
+// Retorna o saldo atual usando a mesma resolução PN/LID usada no processamento de apostas.
+router.get('/games/wallet/:idGrupo', auth, async (req, res) => {
+  try {
+    const idGrupo = decodeURIComponent(req.params.idGrupo || '');
+    if (!idGrupoValidoJogo(idGrupo)) {
+      return res.status(400).json({ error: 'Grupo inválido.' });
+    }
+
+    const carteiraEncontrada = await encontrarCarteiraJogo(req.user.idWhatsApp, idGrupo);
+    if (!carteiraEncontrada) {
+      return res.status(403).json({ error: 'Você não pertence a esse grupo.' });
+    }
+
+    const carteira = await getCarteira(carteiraEncontrada.idWhatsApp, idGrupo);
+    return res.json({ idGrupo, gold: Number(carteira?.gold) || 0 });
+  } catch (err) {
+    console.error('[API] GET /games/wallet/:idGrupo:', err);
+    return res.status(500).json({ error: 'Não foi possível atualizar o saldo do jogo.' });
   }
 });
 
@@ -2499,7 +2701,7 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
     const nomesGruposRel = jidsGruposRel.length
       ? await CarteiraGrupo.aggregate([
           { $match: { idGrupo: { $in: jidsGruposRel } } },
-          { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } },
+          { $group: { _id: '$idGrupo', nomeCustom: { $max: '$nomeCustom' }, nomeGrupo: { $max: '$nomeGrupo' } } },
         ])
       : [];
     const nomesGruposRelMap = Object.fromEntries(
@@ -2601,7 +2803,7 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
     const jidsGrupos = [...new Set(carteirasComPet.map(c => c.idGrupo))];
     const nomesGrupos = await CarteiraGrupo.aggregate([
       { $match: { idGrupo: { $in: jidsGrupos } } },
-      { $group: { _id: '$idGrupo', nomeCustom: { $first: '$nomeCustom' }, nomeReal: { $first: '$nome' } } },
+      { $group: { _id: '$idGrupo', nomeCustom: { $max: '$nomeCustom' }, nomeGrupo: { $max: '$nomeGrupo' } } },
     ]);
     const nomesGruposMap = Object.fromEntries(
       nomesGrupos.map(g => [g._id, nomeGrupo(g, g._id)])
