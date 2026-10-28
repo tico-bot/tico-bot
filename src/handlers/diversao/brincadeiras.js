@@ -2627,7 +2627,8 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
     let texto = `🇧🇷 *BRASILEIRÃO ${selecionada.nome.toUpperCase()} ${temporada}* ⚽\n`;
     texto += '━━━━━━━━━━━━━━━━━━\n';
     texto += '🏆 *CLASSIFICAÇÃO ATUAL*\n\n';
-    texto += '```Pos Clube                Pts  J  V  E  D  SG\n';
+    texto += '```\n';
+    texto += 'Pos Clube                Pts  J  V  E  D  SG\n';
 
     for (const row of tabela) {
       const time = row.time ?? row.clube ?? row.equipe ?? row.team ?? {};
