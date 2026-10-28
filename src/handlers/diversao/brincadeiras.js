@@ -1,6 +1,7 @@
 // ─── Helpers
 const fs   = require('fs');
 const path = require('path');
+const { buscarTabelaCBF } = require('./brasileirao-cbf');
 
 function getAlvo(contextInfo, senderJid, contactNames) {
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
@@ -2613,23 +2614,43 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
     if (tabelaData?.success !== true) throw new Error(tabelaData?.error?.message || 'Resposta inválida da API');
 
     const dados = tabelaData.data;
-    const temporada = dados?.competition?.season || new Date().getFullYear();
-    const tabelas = Array.isArray(dados?.tables) ? dados.tables : [];
-    const tabela = tabelas.flatMap(grupo =>
+    let temporada = dados?.competition?.season || new Date().getFullYear();
+    let etapaCBF = '';
+    let urlFonteCBF = '';
+    let tabelas = Array.isArray(dados?.tables) ? dados.tables : [];
+    let tabela = tabelas.flatMap(grupo =>
       (Array.isArray(grupo?.entries) ? grupo.entries : []).map(row => ({
         ...row,
         grupo: grupo.name && grupo.name !== 'Classificacao geral' ? grupo.name : undefined,
       }))
     );
+
+    // A API de terceiros deixa Série C/D vazias durante o mata-mata. Nessa situação,
+    // usa a classificação publicada pela CBF em vez de responder com uma tabela inexistente.
+    if (!tabela.length && ['C', 'D'].includes(divisao)) {
+      const oficial = await buscarTabelaCBF(divisao, temporada);
+      if (oficial?.tabelas?.length) {
+        temporada = oficial.temporada;
+        etapaCBF = oficial.etapa;
+        urlFonteCBF = oficial.url;
+        tabelas = oficial.tabelas;
+        tabela = tabelas.flatMap(grupo => grupo.entries.map(row => ({ ...row, grupo: grupo.name })));
+      }
+    }
     if (!tabela.length) {
-      throw new Error(`A API está online, mas ainda não possui classificação disponível para a Série ${divisao}`);
+      throw new Error(`Nenhuma classificação disponível para a Série ${divisao} na API nem na CBF`);
     }
     let texto = `🇧🇷 *BRASILEIRÃO ${selecionada.nome.toUpperCase()} ${temporada}* ⚽\n`;
     texto += '━━━━━━━━━━━━━━━━━━\n';
-    texto += '🏆 *CLASSIFICAÇÃO ATUAL*\n\n';
+    texto += etapaCBF ? `🏆 *CLASSIFICAÇÃO — ${etapaCBF} (FONTE: CBF)*\n\n` : '🏆 *CLASSIFICAÇÃO ATUAL*\n\n';
     texto += '*POS.  CLUBE — PTS | J | V | E | D | SG*\n';
 
+    let grupoAnterior = null;
     for (const row of tabela) {
+      if (row.grupo && row.grupo !== grupoAnterior) {
+        texto += `\n📋 *${row.grupo.toUpperCase()}*\n`;
+        grupoAnterior = row.grupo;
+      }
       const time = row.time ?? row.clube ?? row.equipe ?? row.team ?? {};
       const posNum = Number(row.posicao ?? row.position ?? row.colocacao);
       const pos = String(row.posicao ?? row.position ?? row.colocacao ?? '–');
@@ -2656,12 +2677,13 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
 
     texto += '\n📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols\n';
     texto += '━━━━━━━━━━━━━━━━━━\n';
-    texto += `🔄 _Atualizado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
+    if (urlFonteCBF) texto += `🔗 Fonte oficial: ${urlFonteCBF}\n`;
+    texto += `🔄 _Consultado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (err) {
     console.error(`[brasileirao-${divisao.toLowerCase()}] Erro ao buscar tabela:`, err.message);
     await sock.sendMessage(jid, {
-      text: `❌ Não consegui buscar a tabela do Brasileirão ${selecionada.nome} agora. A API pode não disponibilizar essa divisão com a chave atual. Tente novamente mais tarde.`,
+      text: `❌ Não consegui carregar a classificação do Brasileirão ${selecionada.nome} agora. A fonte de dados pode estar indisponível; tente novamente mais tarde.`,
     }, { quoted: msg });
   }
 }
