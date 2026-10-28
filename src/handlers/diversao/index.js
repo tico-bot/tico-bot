@@ -25,7 +25,7 @@ const {
   handleVerdadeOuDesafio, handleConfissao, handleJulgamento, handlePodre, handleFrango,
   handleMaldizer, handleFortuna, handleCompatibilidade,
   handleTrans, handleCorno, handlePeitudo, handlePauzudo,
-  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup,
+  handleBundudo, handleGordo, handleCuzudo, handleGado, handleBucetudo, handleWorldCup, handleBrasileirao,
 } = require('./brincadeiras');
 
   // ── Filhos (6 itens) ────────────────────────────────────────────────────
@@ -166,6 +166,7 @@ module.exports = {
   handleGado,
   handleBucetudo,
   handleWorldCup,
+  handleBrasileirao,
   // ── Economia (18 itens) ────────────────────────────────────────────────────
   handleGold,
   handleLoja,

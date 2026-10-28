@@ -541,10 +541,14 @@ async function handleSave(sock, msg, jid, caption) {
   const metaPromise = fetchMeta(ytdlp, link);
 
   const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
-  if (/pinterest|pin\.it/i.test(link)) {
+  const isPinterest = /pinterest|pin\.it/i.test(link);
+  if (isPinterest) {
     baseArgs.push(
       '--referer', 'https://www.pinterest.com',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      // Não aceitar miniaturas como se fossem o conteúdo principal: prioriza
+      // streams de vídeo e deixa Pins estáticos para o fallback de imagem.
+      '-f', 'bestvideo*+bestaudio/bestvideo*/best[protocol^=http][vcodec!=none]'
     );
   }
   baseArgs.push('-o', outTemplate, link);
@@ -554,8 +558,11 @@ async function handleSave(sock, msg, jid, caption) {
   const exts = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
   let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
 
-  if (!dlOk && !filePath && /pinterest|pin\.it/i.test(link)) {
-    filePath = await downloadPinterestImage(link, base);
+  // Se o extractor ainda tiver produzido uma miniatura estática, não a envia
+  // imediatamente: tenta primeiro recuperar a imagem original do Pin.
+  if (isPinterest && (!filePath || /\.(?:jpe?g|png|webp)$/i.test(filePath))) {
+    const imageFallback = await downloadPinterestImage(link, base);
+    if (imageFallback) filePath = imageFallback;
   }
   if (!dlOk && !filePath) {
     return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo. Se for um pin de imagem, confirme se ele está público; se for vídeo, tente outro link do Pinterest.' }, { quoted: msg });

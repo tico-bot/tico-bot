@@ -54,7 +54,6 @@ function getOwners() {
     .filter(Boolean);
   return [...new Set([...ownersFixos, ...ownersEnv])];
 }
-
 function isOwnerJid(jid) {
   const base = String(jid || '').split(':')[0].split('@')[0].replace(/\D/g, '');
   return !!base && getOwners().includes(base);

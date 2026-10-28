@@ -1,12 +1,19 @@
 'use strict';
 
-async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+const { obterPrefixo, enviarMenu } = require('./helpers');
 
-  const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const [, hora] = agora.split(', ');
-  const [hour] = hora.split(':').map(Number);
-  const timeStr = hora.slice(0, 5);
+async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
+  const P = obterPrefixo(jid, getPrefix);
+
+  const agora = new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Cuiaba',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const [hourText, minuteText] = agora.split(':');
+  const hour = Number(hourText);
+  const timeStr = `${String(hourText).padStart(2, '0')}:${minuteText}`;
 
   let greeting = 'Olá';
   if (hour >= 5  && hour < 12) greeting = '🌅 Bom dia';
@@ -51,7 +58,7 @@ ${greeting}, ${userMention}! São ${timeStr} ⏰
   ▸ ${P}menuutil
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenu };

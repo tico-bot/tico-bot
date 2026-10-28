@@ -21,7 +21,7 @@ const CONFIG = {
   COOLDOWN_CIUMENTO_MS: 60 * 60 * 1000,
   LIMITE_DECLARACAO:    500,
   RANK_CASAIS_TOP:      10,
-  FUSO:                 'America/Sao_Paulo',
+  FUSO:                 'America/Cuiaba',
 };
 
 const SURPRESAS = [

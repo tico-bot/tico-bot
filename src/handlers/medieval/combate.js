@@ -511,7 +511,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         text:
           `✅ *MISSÃO CONCLUÍDA!*\n\n` +
           `${missao.emoji} *${missao.titulo}*\n\n` +
-          `🏆 *${p.nome}* retornou vitorioso!\n\n` +
+          `${sortearAleatorio([`🏆 *${p.nome}* retornou vitorioso!`, `🎉 *${p.nome}* concluiu a missão e voltou com glória!`, `🛡️ A jornada foi um sucesso: *${p.nome}* regressa ao reino!`, `✨ Os bardos já cantam sobre a façanha de *${p.nome}*!`])}\n\n` +
           `🎁 *Recompensas:*\n` +
           `⭐ +${xpBonus} XP Medieval\n` +
           `🪙 +${formatarSaldo(goldBonus, carteiraAtualizada)}\n\n` +
@@ -540,7 +540,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
         text:
           `❌ *MISSÃO FRACASSADA!*\n\n` +
           `${missao.emoji} *${missao.titulo}*\n\n` +
-          `💀 *${p.nome}* foi derrotado e recuou!\n` +
+          `${sortearAleatorio([`💀 *${p.nome}* foi derrotado e recuou!`, `🌫️ A missão saiu do controle; *${p.nome}* precisou bater em retirada.`, `🩹 Ferido e sem vantagem, *${p.nome}* abandonou a expedição.`, `⚔️ O inimigo levou a melhor desta vez; *${p.nome}* recuou para sobreviver.`])}\n` +
           `❤️ HP: ${novoHp}/${p.hpMax} (-${danoReal})\n` +
           `+10 XP pela tentativa ⭐\n\n` +
           `_Recupere-se e tente novamente em 30 minutos._`,
@@ -603,7 +603,7 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
     await sock.sendMessage(jid, {
       text:
         `🌟 *RECARGA COMPLETA!*\n\n` +
-        `✨ *${p.nome}* medita e recupera suas forças!\n\n` +
+        `${sortearAleatorio([`✨ *${p.nome}* medita e recupera suas forças!`, `🌿 Uma energia serena envolve *${p.nome}*, restaurando seu vigor.`, `🔮 *${p.nome}* canaliza mana e sente as forças voltarem.`, `🧘 *${p.nome}* respira fundo e se reequilibra antes da próxima batalha.`, `💫 O descanso termina: *${p.nome}* está renovado para a aventura!`])}\n\n` +
         `${hpTexto}\n` +
         `💧 Mana: ${novaMana}/${antes.manaMax} _(Completa!)_\n\n` +
         `_Próxima recarga em 10 minutos._`,

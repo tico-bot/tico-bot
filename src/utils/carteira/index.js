@@ -1,13 +1,13 @@
 'use strict';
 
-const { getCarteira, alterarGold, alterarGoldSeguro } = require('./gold');
+const { getCarteira, alterarGold, alterarGoldSeguro } = require('./plata');
 const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
 const { comprarComGold, venderComGold }                = require('./compras');
 const { resolveJidComLid }                             = require('../identity');
 
 function formatarSaldo(centavos, carteira) {
-  return `${Number(centavos)} gold`;
+  return `${Number(centavos)} prata`;
 }
 
 module.exports = {

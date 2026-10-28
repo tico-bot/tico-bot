@@ -159,7 +159,7 @@ async function handlePix(sock, msg, jid, caption) {
     }
     console.error(`[handlePix] ERRO code=${e.code || '-'} name=${e.name}: ${e.message}`);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!reais*.',
+      text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!plata*.',
     }, { quoted: msg });
     return;
   }
@@ -241,9 +241,9 @@ async function handlePixMulti(sock, msg, jid, caption) {
   await sock.sendMessage(jid, {
     text:
       `${transferenciasRestritas ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '✅ *PIX MÚLTIPLO CONCLUÍDO!*'}\n\n` +
-      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} gold* cada!\n` +
-      `💸 Total distribuído: *${enviados * quantiaPorPessoa} gold*\n` +
-      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* gold` +
+      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} Plata* cada!\n` +
+      `💸 Total distribuído: *${enviados * quantiaPorPessoa} Plata*\n` +
+      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* Plata` +
       (transferenciasRestritas ? '\n\n❌ Algumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
     mentions: mentionsList,
   }, { quoted: msg });
@@ -294,10 +294,10 @@ async function handlePixDoar(sock, msg, jid, caption) {
   const numSorteado = getNumeroPuro(sorteado);
 
   try {
-    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de saldo');
+    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Plata');
     await sock.sendMessage(jid, {
       text:
-        `🎉 *DOAÇÃO ANÔNIMA DE GOLD!* 🎉\n\n` +
+        `🎉 *DOAÇÃO ANÔNIMA DE PLATA!* 🎉\n\n` +
         `🎁 *@${userBase}* doou *${formatarSaldo(quantia, res?.de)}* para *@${numSorteado}*!\n\n` +
         `💰 Novo saldo do doador: *${formatarSaldo(res?.de?.gold ?? 0, res?.de)}*`,
       mentions: [userId, sorteado],

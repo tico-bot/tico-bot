@@ -75,11 +75,11 @@ function normalizeJidBase(jid) {
 
 async function isAdmin(sock, groupJid, userJid) {
   if (!groupJid || !userJid) return false;
-  // O dono global do bot tem permissão administrativa mesmo sem ser admin do grupo.
+  // Donos globais do bot têm permissão administrativa mesmo sem serem admins do grupo.
   if (isOwnerJid(userJid)) return true;
   try {
     // O WhatsApp pode entregar o remetente como @lid; resolve para o número
-    // antes de decidir se ele é um dos donos globais.
+    // antes de decidir se ele é um dos donos globais configurados.
     if (String(userJid).endsWith('@lid')) {
       const mapping = await LidMapping.findOne({ lid: normalizarJid(userJid) || userJid }).lean().catch(() => null);
       if (mapping?.pn && isOwnerJid(mapping.pn)) return true;

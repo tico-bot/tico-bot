@@ -46,6 +46,31 @@ const CLASSES = [
     armasPermitidas: ['Cajado', 'Cajado de Madeira', 'Arco', 'Arco Simples', 'Ramo Druídico', 'Cajado da Floresta', 'Arco Élfico', 'Arco da Tempestade', 'Cetro da Natureza', 'Cajado Ancestral', 'Arco do Julgamento'],
   },
   {
+    nome: 'Bárbaro', emoji: '🪓', descricao: 'Guerreiro brutal que troca técnica por força devastadora',
+    ataque: 19, defesa: 7, hp: 145, mana: 35,
+    armasPermitidas: ['Machado', 'Machado de Guerra', 'Machado Sombrio', 'Machado do Colosso', 'Martelo de Guerra', 'Espada', 'Espada Longa'],
+  },
+  {
+    nome: 'Berserker', emoji: '🔥', descricao: 'Lutador implacável que avança sem temer ferimentos',
+    ataque: 21, defesa: 4, hp: 115, mana: 40,
+    armasPermitidas: ['Machado', 'Machado de Guerra', 'Machado do Colosso', 'Lâminas Gêmeas', 'Espada Longa', 'Espada do Dragão'],
+  },
+  {
+    nome: 'Monge', emoji: '🥋', descricao: 'Combatente disciplinado que une agilidade e energia interior',
+    ataque: 14, defesa: 11, hp: 110, mana: 85,
+    armasPermitidas: ['Bastão de Bambu', 'Bordão Sagrado', 'Cajado', 'Manoplas do Dragão', 'Cajado de Madeira'],
+  },
+  {
+    nome: 'Bardo', emoji: '🎻', descricao: 'Artista místico que inspira aliados e confunde adversários',
+    ataque: 12, defesa: 7, hp: 95, mana: 125,
+    armasPermitidas: ['Alaúde Encantado', 'Cajado de Madeira', 'Cajado', 'Cetro Enferrujado', 'Faca de Caça'],
+  },
+  {
+    nome: 'Engenheiro Arcano', emoji: '⚙️', descricao: 'Inventor que combina engenhocas, runas e magia',
+    ataque: 15, defesa: 9, hp: 105, mana: 100,
+    armasPermitidas: ['Besta Mecânica', 'Martelo de Guerra', 'Cajado de Cristal', 'Cajado', 'Lança Simples', 'Besta Rúnica'],
+  },
+  {
     nome: 'Necromante',
     emoji: '💀',
     descricao: 'Domina a magia negra e os mortos',

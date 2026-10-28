@@ -114,7 +114,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
   ▸ ${P}adv / ${P}advertencia — Ver suas advertências
 
 📊 *JOGO / ECONOMIA*
-  ▸ ${P}rankgold — Ranking de saldo deste grupo
+  ▸ ${P}rankplata — Ranking de Plata deste grupo
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 

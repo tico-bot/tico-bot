@@ -7,7 +7,7 @@
  *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
  *
  * Toda a lógica é isolada por grupo via CarteiraGrupo.
- * Gold gerenciado exclusivamente pelo carteiraService.
+ * Plata gerenciada exclusivamente pelo carteiraService.
  */
 
 const path = require('path');
@@ -158,7 +158,7 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   texto += `\n🏦 *FERRAMENTAS PARA ASSALTO A BANCO*\n`;
   for (const [key, item] of Object.entries(ITENS_ROUBO_BANCO)) {
-    texto += `  ▸ ${item.nome} — *${item.preco}* gold\n`;
+    texto += `  ▸ ${item.nome} — *${item.preco}* Plata\n`;
     texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
@@ -286,7 +286,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
       `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${itemInfo.preco} gold\n` +
+      `💵 *Preço:* ${itemInfo.preco} Plata\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
       `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
       `💡 Use *!equiparroubo ${itemSlug}* para equipar!`,

@@ -1,7 +1,9 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleMenuUtil(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
      🔧 MENU UTILIDADES
@@ -32,11 +34,11 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleMenuBaixar(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
       📥 MENU DOWNLOADS
@@ -53,7 +55,7 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuUtil, handleMenuBaixar };

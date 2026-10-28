@@ -145,11 +145,11 @@ async function changeGold(userId, amount, groupJid) {
       return carteira;
     }
 
-    console.log(`✅ Gold alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
+    console.log(`✅ Plata alterada: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
     return 0;
 
   } catch (e) {
-    console.error('⚠️ Erro ao alterar gold:', e.message);
+    console.error('⚠️ Erro ao alterar Plata:', e.message);
     throw e;
   }
 }
@@ -653,7 +653,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
         ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
       ]);
 
-      const linhaGold = `💵 *+${goldReward} gold!* Saldo: *${novoSaldoGold} gold*`;
+      const linhaGold = `💵 *+${goldReward} Plata!* Saldo: *${novoSaldoGold} Plata*`;
 
       await sock.sendMessage(jid, {
         text:
@@ -664,9 +664,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
     } else {
       await sock.sendMessage(jid, {
-        text:
-          `❌ *ERROU!* *${author}*!\n\n` +
-          `✅ Resposta correta: *${state.r}* 😬`,
+        text: `❌ *ERROU!* *${author}*! Tente novamente no próximo quiz. 😬`,
       }, { quoted: msg });
     }
     return;

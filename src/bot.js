@@ -4,6 +4,10 @@
  */
 require('dotenv').config();
 
+// Fuso horário padrão de todo o processo: Cuiabá (MT).
+// Datas persistidas como Date continuam sendo instantes UTC no MongoDB.
+process.env.TZ = 'America/Cuiaba';
+
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 
@@ -383,17 +387,26 @@ const port    = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
+const corsOrigins = new Set([
+  'https://tico-bot.github.io',
+  'https://tico-bot.github.io/tico-bot-site',
+  'https://piroquinhasbot.github.io',
+  'https://piroquinhasbot.github.io/painel-piroquinhas-bot',
+  'http://localhost:3000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  ...(process.env.SITE_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean),
+]);
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  if (origin && corsOrigins.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-key');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  if (req.method === 'OPTIONS') return origin && !corsOrigins.has(origin) ? res.sendStatus(403) : res.sendStatus(204);
   next();
 });
 
