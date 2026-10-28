@@ -4,45 +4,41 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleSistemaMedieval(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-      🏰 MODO MEDIEVAL
-╚══════════════════════╝
-
-⚔️ *O QUE É?*
-Um RPG completo onde você escolhe uma classe, ganha XP, batalha e conquista itens raros!
-
-📜 *PERSONAGEM*
-  ▸ ${P}ficha — ver sua ficha e atributos
-  ▸ ${P}missaomed — missões por XP e saldo
-  ▸ ${P}recargamana — meditar e recuperar energia
-  ▸ ${P}usarpocao _(poção)_ — usar uma poção
-
-🗡️ *BATALHA*
-  ▸ ${P}atacar @alvo — batalhar contra outro jogador
-  ▸ ${P}magia @alvo — lançar feitiço elemental
-  ▸ ${P}saquear @alvo — levar pertences de inimigos derrotados
-
-🛡️ *LOJA & EQUIPAMENTOS*
-  ▸ ${P}lojamedieval — comprar equipamentos e poções
-  ▸ ${P}comprar _(item)_ — comprar um item
-  ▸ ${P}equipar _(item)_ — equipar
-  ▸ ${P}desequipar _(item)_ — desequipar
-
-🎒 *INVENTÁRIO*
-  ▸ ${P}invmed — ver seu inventário
-  ▸ ${P}sellmed _(item)_ — vender item
-  ▸ ${P}givemed @alvo _(item)_ — entregar item a alguém
-
-🏆 *RANKING & HISTÓRICO*
-  ▸ ${P}rankmedieval — ranking do reino
-  ▸ ${P}historico — suas batalhas
-
-⚙️ *GRUPO*
-  ▸ ${P}medieval _(on/off)_ — ligar ou desligar o modo
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '        🏰 MENU & GUIA MEDIEVAL',
+    '╚══════════════════════╝',
+    '',
+    'Um RPG de personagens, equipamentos, missões e combates dentro do grupo.',
+    '',
+    '👤 *PERSONAGEM & PROGRESSO*',
+    '  ▸ ' + P + 'ficha — consultar ou criar ficha',
+    '  ▸ ' + P + 'missaomed — realizar missão',
+    '  ▸ ' + P + 'recargamana — recuperar HP e mana',
+    '  ▸ ' + P + 'rankmedieval — ranking de guerreiros',
+    '  ▸ ' + P + 'historico — últimas batalhas',
+    '',
+    '⚔️ *COMBATE*',
+    '  ▸ ' + P + 'atacar @pessoa — ataque físico',
+    '  ▸ ' + P + 'magia @pessoa — ataque mágico',
+    '  ▸ ' + P + 'saquear @pessoa — saquear alvo elegível',
+    '',
+    '🏪 *LOJA & INVENTÁRIO*',
+    '  ▸ ' + P + 'lojamedieval — abrir loja (alias: lojamed)',
+    '  ▸ ' + P + 'comprar <item> — comprar item',
+    '  ▸ ' + P + 'equipar <item> / ' + P + 'desequipar <item>',
+    '  ▸ ' + P + 'usarpocao <nome> — usar poção',
+    '  ▸ ' + P + 'invmed — inventário medieval',
+    '  ▸ ' + P + 'sellmed <item> — vender item',
+    '  ▸ ' + P + 'givemed @pessoa <item> — entregar item',
+    '',
+    '⚙️ *GRUPO & AJUDA*',
+    '  ▸ ' + P + 'medieval on/off — ligar/desligar modo',
+    '  ▸ ' + P + 'menumediev — menu dos comandos',
+    '  ▸ ' + P + 'comomediev — alias desta ajuda',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 

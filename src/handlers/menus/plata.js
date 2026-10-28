@@ -4,51 +4,73 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleMenuGold(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  await sock.sendMessage(jid, {
-    text:
-      `💵 *SISTEMA DE PLATA* 💵\n\n` +
-      `${P}plata / ${P}plata — ver saldo (${P}plata é o comando principal)\n` +
-      `${P}loja — loja geral\n` +
-      `${P}lojafood — loja de comida\n` +
-      `${P}lojapet — loja de pets\n` +
-      `${P}lojatec — loja de tecnologia\n` +
-      `${P}lojacasal — loja de casal\n` +
-      `${P}buy [item] — comprar item\n` +
-      `${P}vender [item] — vender item\n` +
-      `${P}inventario — ver inventário\n` +
-      `${P}pix [@] [valor] — transferir Plata\n` +
-      `${P}apostar [valor] — apostar Plata\n` +
-      `${P}slots [valor] — jogar slots\n` +
-      `${P}corrida [valor] — corrida de bichos\n` +
-      `${P}garimpar — garimpar recursos\n` +
-      `${P}extrato — histórico de transações\n` +
-      `${P}banco [valor] — investir no banco\n` +
-      `${P}resgatar — resgatar do banco\n` +
-      `${P}rankplata — ranking de saldo\n` +
-      `${P}give [@] [valor] — dar Plata`,
-  }, { quoted: msg });
+  const menu = [
+    '╔══════════════════════╗',
+    '          💵 SISTEMA DE PLATA',
+    '╚══════════════════════╝',
+    '',
+    '💰 *SALDO & LOJAS*',
+    '  ▸ ' + P + 'plata — ver saldo (aliases: gold, real, reais)',
+    '  ▸ ' + P + 'loja — loja geral',
+    '  ▸ ' + P + 'lojafood / ' + P + 'lojapet / ' + P + 'lojatec / ' + P + 'lojacasal',
+    '  ▸ ' + P + 'buy <item> — comprar item da loja',
+    '  ▸ ' + P + 'vender <item> — vender item permitido',
+    '  ▸ ' + P + 'inventario — ver inventário (alias: inv)',
+    '  ▸ ' + P + 'give @pessoa <item> — entregar item do inventário',
+    '',
+    '💸 *TRANSFERÊNCIAS*',
+    '  ▸ ' + P + 'pix @pessoa <valor> — transferir Plata',
+    '  ▸ ' + P + 'pixmulti @1 @2 <valor> — transferência múltipla',
+    '  ▸ ' + P + 'pixtodos — alias de pixmulti',
+    '  ▸ ' + P + 'pixdoar <valor> — doação de Plata',
+    '',
+    '📈 *GANHOS, APOSTAS & BANCO*',
+    '  ▸ ' + P + 'missao — missão de economia',
+    '  ▸ ' + P + 'garimpar — garimpar recursos (aliases: explorar, pesquisar)',
+    '  ▸ ' + P + 'emprestimo <valor> / ' + P + 'divida — empréstimos e dívidas',
+    '  ▸ ' + P + 'banco <valor> / ' + P + 'resgatar / ' + P + 'historicobanco',
+    '  ▸ ' + P + 'apostar <valor> / ' + P + 'slots [valor] / ' + P + 'corrida [valor]',
+    '  ▸ ' + P + 'extrato — histórico de transações',
+    '  ▸ ' + P + 'rankplata — ranking de saldo (alias: rankgold)',
+    '',
+    '🐟 *PESCA*',
+    '  ▸ ' + P + 'pescar — pescar',
+    '  ▸ ' + P + 'varas / ' + P + 'iscas — lojas de pesca',
+    '  ▸ ' + P + 'buypesca <item> — comprar vara/isca',
+    '  ▸ ' + P + 'inventariopesca — ver itens e peixes',
+    '  ▸ ' + P + 'sellpesca <item> — vender peixe/item',
+    '  ▸ ' + P + 'givepesca @pessoa <item> — transferir peixe/item',
+    '  ▸ ' + P + 'rankingpesca / ' + P + 'statspesca — ranking e estatísticas',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleSistemaGold(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  await sock.sendMessage(jid, {
-    text:
-      `📖 *COMO FUNCIONA A MOEDA* 📖\n\n` +
-      `💰 *Plata*\n` +
-      `Os saldos e valores da economia do bot são exibidos em Plata ou na moeda local da conta vinculada. Use para comprar itens, apostar e muito mais!\n\n` +
-      `📥 *Como ganhar:*\n` +
-      `• Bônus diário ao mandar mensagem\n` +
-      `• Trabalhar com ${P}trabalhar\n` +
-      `• Garimpar com ${P}garimpar\n` +
-      `• Vender itens com ${P}vender\n` +
-      `• Ganhar no cassino/corrida\n` +
-      `• Pescar e vender peixes\n\n` +
-      `📤 *Como gastar:*\n` +
-      `• Comprar itens na loja (${P}loja)\n` +
-      `• Transferir para amigos (${P}pix)\n` +
-      `• Apostar no cassino (${P}slots, ${P}apostar)\n` +
-      `• Investir no banco (${P}banco; indisponível para contas vinculadas)`,
-  }, { quoted: msg });
+  const menu = [
+    '📖 *COMO FUNCIONA A ECONOMIA*',
+    '',
+    'A economia usa Plata para compras, vendas, transferências, apostas e sistemas de jogo.',
+    '',
+    '📥 *FORMAS DE CONSEGUIR RECURSOS*',
+    '  • ' + P + 'trabalhar — trabalhar no emprego',
+    '  • ' + P + 'missao — cumprir missões',
+    '  • ' + P + 'garimpar — obter recursos',
+    '  • ' + P + 'pescar — pescar e vender itens',
+    '  • ' + P + 'vender — vender itens aceitos pela loja',
+    '',
+    '📤 *USO DA PLATA*',
+    '  • ' + P + 'loja / ' + P + 'buy — comprar itens',
+    '  • ' + P + 'pix — transferir saldo',
+    '  • ' + P + 'banco / ' + P + 'resgatar — administrar saldo no banco',
+    '  • ' + P + 'apostar / ' + P + 'slots / ' + P + 'corrida — jogos de aposta',
+    '',
+    'Consulte ' + P + 'menuplata para ver todos os comandos e seus argumentos.',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuGold, handleSistemaGold };

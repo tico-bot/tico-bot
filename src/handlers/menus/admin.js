@@ -4,53 +4,61 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleMenuAdm(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-    🛡️ MENU ADMINISTRAÇÃO
-╚══════════════════════╝
-
-⚙️ *CONFIGURAÇÃO DE GRUPO*
-  ▸ ${P}bot on/off — Ativar/desativar bot no grupo
-  ▸ ${P}antilink on/off — Ativar/desativar antilink
-  ▸ ${P}autosticker on/off — Ativar/desativar auto-sticker
-  ▸ ${P}slowmode [seg] — Configurar slow mode (1-3600s)
-  ▸ ${P}antiflood [msgs]/[seg] — Configurar anti-flood
-  ▸ ${P}bemvindo on/off/[msg] — Configurar boas-vindas
-  ▸ ${P}medieval on/off — Ativar/desativar modo medieval
-
-📋 *REGRAS & INFORMAÇÕES*
-  ▸ ${P}regras — Visualizar regras do grupo
-  ▸ ${P}setregras [texto] — Definir regras do grupo
-  ▸ ${P}grupinfo — Informações detalhadas do grupo
-  ▸ ${P}statsgrupo — Estatísticas do grupo
-  ▸ ${P}listamembros — Lista de membros do grupo
-  ▸ ${P}listaadm — Lista de administradores
-
-🔨 *MODERAÇÃO & CARGOS*
-  ▸ ${P}ban @pessoa — Banir membro
-  ▸ ${P}ban @all — Banir todos não-admins
-  ▸ ${P}mute @pessoa — Mutar membro
-  ▸ ${P}mute @all — Mutar todos os não-admins
-  ▸ ${P}desmute @pessoa — Desmutar membro
-  ▸ ${P}promover @pessoa — Tornar membro administrador
-  ▸ ${P}rebaixar @pessoa — Remover cargo de administrador
-  ▸ ${P}adv / ${P}reportar — Dar advertência (reply/@)
-  ▸ ${P}removerreporte — Limpar advertência (reply/@)
-  ▸ ${P}fechar — Fechar o grupo para mensagens
-  ▸ ${P}abrir — Abrir o grupo para mensagens
-
-📢 *COMUNICAÇÃO & FERRAMENTAS*
-  ▸ ${P}todos [mensagem] — Marcar todos os membros
-  ▸ ${P}adms [motivo] — Notificar todos os administradores
-  ▸ ${P}avisar [mensagem] — Enviar aviso de admin com @todos
-  ▸ ${P}fixargrupo — Fixar mensagem citada
-  ▸ ${P}fixargrupo ver — Ver último aviso fixado
-  ▸ ${P}enquete [pergunta|op1|op2] — Criar enquete
-  ▸ ${P}sorteio — Sortear um membro do grupo
-  ▸ ${P}linkgrupo — Obter link de convite do grupo
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '      🛡️ MENU ADMINISTRAÇÃO',
+    '╚══════════════════════╝',
+    '',
+    '👥 *MEMBROS & CARGOS*',
+    '  ▸ ' + P + 'ban @pessoa — remover membro',
+    '  ▸ ' + P + 'ban @all — remover não-admins',
+    '  ▸ ' + P + 'mute @pessoa / ' + P + 'mute @all',
+    '  ▸ ' + P + 'desmute @pessoa / ' + P + 'desmute @all',
+    '  ▸ ' + P + 'promover @pessoa / ' + P + 'rebaixar @pessoa',
+    '  ▸ ' + P + 'listamembros / ' + P + 'listaadm / ' + P + 'tempo [@pessoa]',
+    '',
+    '📋 *GRUPO & REGRAS*',
+    '  ▸ ' + P + 'grupinfo — informações do grupo (alias: grupoinfo)',
+    '  ▸ ' + P + 'statsgrupo — estatísticas',
+    '  ▸ ' + P + 'regras — consultar regras',
+    '  ▸ ' + P + 'setregras <texto> — definir regras',
+    '  ▸ ' + P + 'fechar / ' + P + 'abrir — restringir/liberar mensagens',
+    '  ▸ ' + P + 'linkgrupo — link de convite',
+    '',
+    '⚙️ *CONFIGURAÇÕES*',
+    '  ▸ ' + P + 'bot on/off — ativar/desativar o bot no grupo',
+    '  ▸ ' + P + 'antilink on/off — filtro de links',
+    '  ▸ ' + P + 'autosticker on/off — figurinhas automáticas',
+    '  ▸ ' + P + 'slowmode <segundos> — intervalo entre mensagens',
+    '  ▸ ' + P + 'antiflood <qtd>/<segundos> — limite de mensagens',
+    '  ▸ ' + P + 'bemvindo on/off [mensagem] — boas-vindas',
+    '  ▸ ' + P + 'pet on/off/status — controlar spawns de pets',
+    '  ▸ ' + P + 'medieval on/off — ativar modo medieval',
+    '',
+    '🔔 *AVISOS & MODERAÇÃO*',
+    '  ▸ ' + P + 'todos <mensagem> — mencionar membros',
+    '  ▸ ' + P + 'adms [motivo] — avisar administradores',
+    '  ▸ ' + P + 'avisar <texto> — aviso para o grupo',
+    '  ▸ ' + P + 'reportar — responder à mensagem para advertir',
+    '  ▸ ' + P + 'adv / ' + P + 'advertencia — consultar advertências',
+    '  ▸ ' + P + 'removerreporte — remover advertência',
+    '  ▸ ' + P + 'limparwarns — limpar advertências',
+    '  ▸ ' + P + 'apagarmsg — apagar mensagem citada',
+    '',
+    '📌 *MENSAGENS, ENQUETES & SORTEIOS*',
+    '  ▸ ' + P + 'fixargrupo — fixar mensagem citada',
+    '  ▸ ' + P + 'fixargrupo ver — ver último aviso fixado',
+    '  ▸ ' + P + 'fixarinfo — ajuda sobre mensagens fixadas',
+    '  ▸ ' + P + 'pinned / ' + P + 'mensagemfixada — ver mensagem fixada',
+    '  ▸ ' + P + 'desfixar — retirar a fixação registrada',
+    '  ▸ ' + P + 'enquete <pergunta|opção1|opção2>',
+    '  ▸ ' + P + 'sorteio — sortear membro',
+    '',
+    '💰 ' + P + 'rankplata — ranking de saldo do grupo',
+    '',
+    '⚠️ Ações de moderação exigem permissões adequadas no grupo.',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 

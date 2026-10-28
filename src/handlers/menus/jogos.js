@@ -4,95 +4,116 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleMenuJogos(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-   🎮 MENU JOGOS & DIVERSÃO
-╚══════════════════════╝
-
-💰 *ECONOMIA*
-  ▸ ${P}menuplata — economia em Plata
-  ▸ ${P}missao
-  ▸ ${P}garimpar
-  ▸ ${P}extrato
-
-🧩 *MINI-JOGOS*
-  ▸ ${P}quiz _(tema)_
-  ▸ ${P}anagrama
-  ▸ ${P}ppt _(pedra/papel/tesoura)_
-  ▸ ${P}eununca
-  ▸ ${P}brincadeiras
-
-🎰 *APOSTAS & SORTE*
-  ▸ ${P}apostar _(quantia)_
-  ▸ ${P}slots
-  ▸ ${P}corrida
-  ▸ ${P}roletarussa
-  ▸ ${P}roletarussa2
-  ▸ ${P}roletarussa3
-
-🎯 *OUTROS*
-  ▸ ${P}tiro
-  ▸ ${P}morte
-  ▸ ${P}falta
-  ▸ ${P}baterfalta
-  ▸ ${P}pontos
-  ▸ ${P}rankjogos
-  ▸ ${P}ranklevel
-  ▸ ${P}level
-
-⚽ *FUTEBOL*
-  ▸ ${P}brasileirao [A/B/C/D] — Tabelas do Brasileirão 🇧🇷
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '     🎮 MENU JOGOS & DIVERSÃO',
+    '╚══════════════════════╝',
+    '',
+    '💰 *ECONOMIA*',
+    '  ▸ ' + P + 'menuplata — saldo, lojas, transferências e pesca',
+    '  ▸ ' + P + 'missao — missão de economia',
+    '  ▸ ' + P + 'garimpar — garimpar recursos',
+    '  ▸ ' + P + 'banco / ' + P + 'resgatar / ' + P + 'extrato',
+    '  ▸ ' + P + 'rankplata — ranking de saldo',
+    '',
+    '🧠 *QUIZZES & DESAFIOS*',
+    '  ▸ ' + P + 'quiz [tema] — quiz geral',
+    '  ▸ ' + P + 'quizfut / ' + P + 'quizgeo / ' + P + 'quizhis',
+    '  ▸ ' + P + 'quizmat / ' + P + 'quizctec / ' + P + 'quizbsq (basquete) / ' + P + 'quizanime',
+    '  ▸ ' + P + 'anagrama — desembaralhar palavra',
+    '  ▸ ' + P + 'ppt — pedra, papel ou tesoura',
+    '  ▸ ' + P + 'forca — jogar forca',
+    '  ▸ ' + P + 'adivinha — adivinhar número',
+    '  ▸ ' + P + 'contas / ' + P + 'charada / ' + P + 'termo',
+    '  ▸ ' + P + 'letra / ' + P + 'chutar — jogar forca',
+    '  ▸ ' + P + 'palpite — palpite no número',
+    '  ▸ ' + P + 'resp — responder conta ou charada',
+    '  ▸ ' + P + 'tentar <palavra> — tentar a palavra do Termo',
+    '  ▸ ' + P + 'velha @pessoa / ' + P + 'jogar <1-9> — jogo da velha',
+    '  ▸ ' + P + 'batata / ' + P + 'passar @pessoa — batata quente',
+    '  ▸ ' + P + 'duelo @pessoa — duelo de dados',
+    '',
+    '🎲 *SORTE & MINI-JOGOS*',
+    '  ▸ ' + P + 'dado [lados] / ' + P + 'moeda / ' + P + 'rolar <mín> <máx>',
+    '  ▸ ' + P + '8ball <pergunta> — bola mágica',
+    '  ▸ ' + P + 'sorte / ' + P + 'mimica / ' + P + 'animal / ' + P + 'memoria',
+    '  ▸ ' + P + 'superpoder / ' + P + 'vilao / ' + P + 'heroi',
+    '  ▸ ' + P + 'previsao / ' + P + 'segredo / ' + P + 'detetive',
+    '  ▸ ' + P + 'sobrevivencia / ' + P + 'campeonatozoeira / ' + P + 'dilema',
+    '  ▸ ' + P + 'palavra / ' + P + 'numero — desafio aleatório',
+    '  ▸ ' + P + 'eununca / ' + P + 'verdadeoudesafio / ' + P + 'confissao',
+    '  ▸ ' + P + 'fortuna — fortuna fictícia',
+    '',
+    '💬 *SOCIAL & BRINCADEIRAS*',
+    '  ▸ ' + P + 'brincadeiras — lista de brincadeiras sociais',
+    '  ▸ ' + P + 'ship @ @ / ' + P + 'compatibilidade @ / ' + P + 'crush @',
+    '  ▸ ' + P + 'aura @ / ' + P + 'gay @ / ' + P + 'sexo @ / ' + P + 'lesbica @ / ' + P + 'trans @',
+    '  ▸ ' + P + 'elogio @ / ' + P + 'cantada @ / ' + P + 'xingar @',
+    '  ▸ ' + P + 'julgamento @ / ' + P + 'maldizer @ / ' + P + 'fofoca',
+    '  ▸ ' + P + 'podre / ' + P + 'frango / ' + P + 'safadeza / ' + P + 'corno / ' + P + 'gado',
+    '  ▸ ' + P + 'peitudo / ' + P + 'pauzudo / ' + P + 'bundudo / ' + P + 'gordo / ' + P + 'cuzudo / ' + P + 'bucetudo',
+    '',
+    '🎰 *APOSTAS & FUTEBOL DE BRINCADEIRA*',
+    '  ▸ ' + P + 'apostar <valor> / ' + P + 'slots [valor] / ' + P + 'corrida [valor]',
+    '  ▸ ' + P + 'roletarussa / ' + P + 'roletarussa2 / ' + P + 'roletarussa3',
+    '  ▸ ' + P + 'tiro @ / ' + P + 'morte @ / ' + P + 'falta / ' + P + 'baterfalta @',
+    '  ▸ ' + P + 'pontos / ' + P + 'rankjogos — pontuação e ranking',
+    '',
+    '🐟 *PESCA*',
+    '  ▸ ' + P + 'pescar — pescar peixes',
+    '  ▸ ' + P + 'varas / ' + P + 'iscas — lojas de pesca',
+    '  ▸ ' + P + 'inventariopesca / ' + P + 'sellpesca / ' + P + 'givepesca',
+    '  ▸ ' + P + 'rankingpesca / ' + P + 'statspesca',
+    '',
+    '⚽ *FUTEBOL*',
+    '  ▸ ' + P + 'menufutebol — menu completo de futebol',
+    '  ▸ ' + P + 'brasileirao [A/B/C/D] / ' + P + 'brasileiraojg',
+    '  ▸ ' + P + 'rodada [A/B/C/D] [grupo] — jogos da rodada',
+    '  ▸ ' + P + 'champions / ' + P + 'premier — tabelas',
+    '  ▸ ' + P + 'laliga / ' + P + 'bundesliga / ' + P + 'seriea',
+    '  ▸ ' + P + 'ligue1 / ' + P + 'portuguesa / ' + P + 'eredivisie',
+    '  ▸ ' + P + 'mundial / ' + P + 'mundialjg — Copa do Mundo',
+    '  ▸ Adicione jg ao nome da liga para ver os jogos',
+    '  ▸ ' + P + 'classificacao <código> / ' + P + 'jogos [código] [datas]',
+    '  ▸ ' + P + 'clubes <código> / ' + P + 'artilheiros <código> [n]',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleBrincadeiras(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-      🎮 BRINCADEIRAS
-╚══════════════════════╝
-
-📊 *PORCENTAGENS*
-  ▸ ${P}gay @ — % de gay
-  ▸ ${P}sexo @ — % de sexo
-  ▸ ${P}lesbica @ — % lésbica
-  ▸ ${P}trans @ — % trans
-  ▸ ${P}aura @ — sua aura
-  ▸ ${P}compatibilidade @ — compatibilidade
-
-💘 *SOCIAL*
-  ▸ ${P}ship @ @ — shippar
-  ▸ ${P}crush @ — crush
-  ▸ ${P}cantada @ — cantada
-  ▸ ${P}elogio @ — elogiar alguém
-  ▸ ${P}xingar @ — xingar alguém
-  ▸ ${P}julgamento @ — julgar
-  ▸ ${P}maldizer @ — maldizer
-  ▸ ${P}fofoca @ — contar fofoca
-
-🎲 *SORTE & JOGOS*
-  ▸ ${P}dado _(lados)_ — jogar dado
-  ▸ ${P}moeda — cara ou coroa
-  ▸ ${P}8ball _(pergunta)_ — bola 8
-  ▸ ${P}rolar _(min) (max)_ — número aleatório
-  ▸ ${P}ppt — pedra papel tesoura
-  ▸ ${P}quiz — quiz aleatório
-  ▸ ${P}anagrama — jogo de anagrama
-  ▸ ${P}roletarussa — roleta russa
-  ▸ ${P}eununca — eu nunca
-  ▸ ${P}verdadeoudesafio — verdade ou desafio
-
-🔮 *OUTROS*
-  ▸ ${P}fortuna — fortuna
-  ▸ ${P}confissao — confissão
-  ▸ ${P}inverter _(texto)_ — inverter texto
-  ▸ ${P}gerarnome — gerador de nicknames
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '        🎮 BRINCADEIRAS',
+    '╚══════════════════════╝',
+    '',
+    '📊 *PORCENTAGENS & PERFIS*',
+    '  ▸ ' + P + 'gay @ / ' + P + 'sexo @ / ' + P + 'lesbica @ / ' + P + 'trans @',
+    '  ▸ ' + P + 'aura @ / ' + P + 'compatibilidade @ / ' + P + 'ship @ @',
+    '  ▸ ' + P + 'podre / ' + P + 'frango',
+    '',
+    '💘 *SOCIAL*',
+    '  ▸ ' + P + 'crush @ / ' + P + 'cantada @ / ' + P + 'elogio @ / ' + P + 'xingar @',
+    '  ▸ ' + P + 'julgamento @ / ' + P + 'maldizer @ / ' + P + 'fofoca',
+    '  ▸ ' + P + 'safadeza / ' + P + 'corno / ' + P + 'gado / ' + P + 'peitudo',
+    '  ▸ ' + P + 'pauzudo / ' + P + 'bundudo / ' + P + 'gordo / ' + P + 'cuzudo / ' + P + 'bucetudo',
+    '',
+    '🎲 *JOGOS RÁPIDOS*',
+    '  ▸ ' + P + 'dado [lados] / ' + P + 'moeda / ' + P + '8ball <pergunta>',
+    '  ▸ ' + P + 'rolar <mín> <máx> / ' + P + 'ppt / ' + P + 'anagrama',
+    '  ▸ ' + P + 'eununca / ' + P + 'verdadeoudesafio / ' + P + 'confissao',
+    '  ▸ ' + P + 'fortuna / ' + P + 'sorte / ' + P + 'mimica / ' + P + 'animal',
+    '  ▸ ' + P + 'superpoder / ' + P + 'vilao / ' + P + 'heroi / ' + P + 'previsao',
+    '  ▸ ' + P + 'segredo / ' + P + 'detetive / ' + P + 'sobrevivencia',
+    '  ▸ ' + P + 'campeonatozoeira / ' + P + 'dilema / ' + P + 'palavra / ' + P + 'memoria / ' + P + 'numero',
+    '',
+    '⚽ *FUTEBOL DE BRINCADEIRA*',
+    '  ▸ ' + P + 'falta / ' + P + 'baterfalta @ / ' + P + 'tiro @ / ' + P + 'morte @',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 

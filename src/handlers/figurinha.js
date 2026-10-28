@@ -1171,11 +1171,13 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
 🔄 *CONVERTER*
   ▸ ${P}desfig — sticker → imagem/vídeo
   ▸ ${P}toimg — alias do ${P}desfig
-  ▸ ${P}togif — sticker → gif
-  ▸ ${P}estourar — amplifica áudio
+  ▸ ${P}togif — sticker → GIF
+
+🔊 *ÁUDIO*
+  ▸ ${P}estourar — amplificar áudio de uma mídia
 
 🔎 *PACOTES & BUSCA*
-  ▸ ${P}fig — sticker aleatório
+  ▸ ${P}fig <tema> — buscar figurinhas por categoria
   ▸ ${P}figemoji • ${P}figroblox • ${P}figmeme
   ▸ ${P}figcoreana • ${P}figraiva
   ▸ ${P}figengracada • ${P}figdesenho

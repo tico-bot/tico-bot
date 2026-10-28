@@ -853,8 +853,7 @@ async function handleMenuEfeitos(sock, msg, jid, prefix) {
 
   // CORRIGIDO: filtros sem suporte a vídeo listados de forma precisa
   const semVideo = [
-    `${P}sfundo`, `${P}sketch`, `${P}cartoon`, `${P}glitch`,
-    `${P}vinheta`, `${P}radiancia`, `${P}polaroid`, `${P}matrix`,
+    `${P}sfundo`, `${P}radiancia`, `${P}glitch`, `${P}sketch`,
   ].join(', ');
 
   const menu =
@@ -892,7 +891,7 @@ _Responda uma foto ou vídeo com o comando_
 ▸ ${P}pixel — Pixel art retrô 🎮
 ▸ ${P}posterizar — Cores em blocos
 ▸ ${P}solarizar — Efeito solarizado
-▸ ${P}cartoon — Efeito cartoon animado 🎭
+▸ ${P}cartoon — Filtro cartoon / contornos 🎭
 ▸ ${P}sketch — Efeito desenho a lápis ✏️
 
 🌈 *TONS & TEMPERATURA*
@@ -905,7 +904,7 @@ _Responda uma foto ou vídeo com o comando_
 ▸ ${P}aquarela — Efeito aquarela artística 🎨
 
 🎬 *CINEMA & ARTE*
-▸ ${P}cinema — Widescreen cinemático 🎬
+▸ ${P}cinemaimg — Widescreen cinemático 🎬
 ▸ ${P}old — Foto muito antiga 📜
 ▸ ${P}polaroid — Borda de polaroid 🖼️
 ▸ ${P}corecore — Estética lo-fi / nichetok 🌫️

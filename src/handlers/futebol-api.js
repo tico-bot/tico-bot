@@ -143,24 +143,51 @@ function numberOr(...values) {
   return 0;
 }
 
+function formatSeasonLabel(season) {
+  const startDate = String(season?.startDate || '');
+  const endDate = String(season?.endDate || '');
+  const startYear = /^\d{4}-/.test(startDate) ? startDate.slice(0, 4) : '';
+  const endYear = /^\d{4}-/.test(endDate) ? endDate.slice(0, 4) : '';
+  if (!startYear) return '';
+  if (endYear && endYear !== startYear) return startYear + '/' + endYear.slice(-2);
+  return startYear;
+}
+
 function formatInternationalStandings(data, code) {
   const competition = data?.competition || {};
-  const standings = Array.isArray(data?.standings) ? data.standings : [];
-  const season = data?.season?.startDate ? ' ' + data.season.startDate.slice(0, 4) : '';
+  const allStandings = Array.isArray(data?.standings) ? data.standings : [];
+  // Some provider responses can include TOTAL, HOME and AWAY tables together.
+  // Prefer the overall ranking so the bot never prints three misleading tables
+  // for one league. Keep separate TOTAL tables for group-based competitions.
+  const totalStandings = allStandings.filter((item) => item?.type === 'TOTAL');
+  const standings = totalStandings.length ? totalStandings : allStandings;
+  const seasonLabel = formatSeasonLabel(data?.season);
+  const season = seasonLabel ? ' ' + seasonLabel : '';
+  const normalizedCode = String(code).toUpperCase();
+  const isLeagueTable = ['PL', 'PD', 'BL1', 'SA', 'FL1', 'PPL', 'DED'].includes(normalizedCode);
+  const isChampionsLeaguePhase = normalizedCode === 'CL' && standings.some((item) => item?.stage === 'LEAGUE_STAGE');
   const lines = [
-    '🌍 *' + (competition.name || code.toUpperCase()) + season + '* ⚽',
+    '🌍 *' + (competition.name || normalizedCode) + season + '* ⚽',
     '━━━━━━━━━━━━━━━━━━',
     '🏆 *CLASSIFICAÇÃO ATUAL*',
     '',
-    '*POS. CLUBE — PTS | J | V | E | D | SG*'
+    '*POS. CLUBE — PTS | J | V | E | D | GP | GC | SG*',
+    ...(isChampionsLeaguePhase
+      ? ['🎯 *1º–8º — VAGA DIRETA AOS OITAVOS*']
+      : isLeagueTable ? ['🏆 *TOP 4 DA TABELA*'] : [])
   ];
   let total = 0;
+  let otherPositionsHeaderAdded = false;
   for (const group of standings) {
     const table = Array.isArray(group?.table) ? group.table : [];
     if (!table.length) continue;
     const groupCode = typeof group.group === 'string' && /^GROUP_[A-Z0-9]+$/.test(group.group)
       ? group.group.replace(/^GROUP_/, 'Grupo ') : null;
-    if (standings.length > 1 || groupCode) lines.push('', '📋 *' + (groupCode || (group.type === 'TOTAL' ? 'Classificação geral' : group.type || 'Classificação')) + '*');
+    const groupLabel = groupCode || (group.group && !['Matchday', 'League phase'].includes(group.group)
+      ? group.group : null);
+    if (standings.length > 1 || groupLabel) {
+      lines.push('', '📋 *' + (groupLabel || (group.type === 'TOTAL' ? 'Classificação geral' : group.type || 'Classificação')) + '*');
+    }
     for (const row of table) {
       if (total >= 48) {
         lines.push('', '… classificação abreviada para caber na mensagem.');
@@ -170,20 +197,26 @@ function formatInternationalStandings(data, code) {
       const team = row.team || {};
       const name = String(team.shortName || team.name || 'Clube').slice(0, 24);
       const pos = numberOr(row.position) || '–';
+      if (isChampionsLeaguePhase && Number(pos) === 9) {
+        lines.push('━━━━━━━━━━━━━━━━━━', '🎟️ *9º–24º — ZONA DE PLAY-OFFS*', '━━━━━━━━━━━━━━━━━━');
+      } else if (isChampionsLeaguePhase && Number(pos) === 25) {
+        lines.push('━━━━━━━━━━━━━━━━━━', '⛔ *25º–36º — ELIMINADOS*', '━━━━━━━━━━━━━━━━━━');
+      } else if (isLeagueTable && Number(pos) === 5 && !otherPositionsHeaderAdded) {
+        lines.push('━━━━━━━━━━━━━━━━━━', '📋 *DEMAIS POSIÇÕES*', '━━━━━━━━━━━━━━━━━━');
+        otherPositionsHeaderAdded = true;
+      }
       const gd = numberOr(row.goalDifference);
       lines.push(String(pos) + '. ' + name + ' — *' + numberOr(row.points) + ' pts* | ' +
         numberOr(row.playedGames) + 'J | ' + numberOr(row.won) + 'V | ' + numberOr(row.draw) +
-        'E | ' + numberOr(row.lost) + 'D | SG ' + (gd > 0 ? '+' : '') + gd);
-      if (Number(pos) === 4 && ['PL', 'PD', 'BL1', 'SA'].includes(String(code).toUpperCase())) {
-        lines.push('━━━━━━━━━━━━━━━━━━', '🏆 *G4 — ZONA DE CLASSIFICAÇÃO*', '━━━━━━━━━━━━━━━━━━');
-      }
+        'E | ' + numberOr(row.lost) + 'D | ' + numberOr(row.goalsFor) + 'GP | ' +
+        numberOr(row.goalsAgainst) + 'GC | SG ' + (gd > 0 ? '+' : '') + gd);
       total++;
     }
   }
   if (!total) return null;
   lines.push(
     '',
-    '📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols',
+    '📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • GP = gols pró • GC = gols contra • SG = saldo de gols',
     '━━━━━━━━━━━━━━━━━━',
     '🔄 _Consultado em ' + new Date().toLocaleString('pt-BR', { timeZone: TIME_ZONE }) + '_'
   );
@@ -195,22 +228,54 @@ function formatMatches(data) {
   if (!matches.length) return '📅 Não encontrei jogos nesse filtro e período. Tente outra data ou competição.';
   const competitionName = matches.find((match) => match.competition?.name)?.competition?.name;
   const lines = ['⚽ *JOGOS — ' + (competitionName || 'FUTEBOL').toUpperCase() + '*', '━━━━━━━━━━━━━━━━━━'];
-  for (const match of matches.slice(0, 35)) {
+  const orderedMatches = matches.slice().sort((a, b) => {
+    const dateA = Date.parse(a?.utcDate || '') || 0;
+    const dateB = Date.parse(b?.utcDate || '') || 0;
+    return dateA - dateB;
+  });
+  for (const match of orderedMatches.slice(0, 35)) {
     const home = match.homeTeam?.shortName || match.homeTeam?.name || 'A definir';
     const away = match.awayTeam?.shortName || match.awayTeam?.name || 'A definir';
     const status = String(match.status || '').toUpperCase();
-    const ft = match.score?.fullTime || {};
-    const current = match.score?.regularTime || {};
-    const scoreHome = ft.home ?? current.home;
-    const scoreAway = ft.away ?? current.away;
-    const score = scoreHome !== null && scoreHome !== undefined && scoreAway !== null && scoreAway !== undefined
-      ? '*' + scoreHome + ' × ' + scoreAway + '*'
+    const scoreData = match.score || {};
+    // Prefer the current score during live play, but skip incomplete score
+    // objects (for example { home: null, away: null }) instead of hiding a valid fallback.
+    const scoreCandidates = ['IN_PLAY', 'PAUSED', 'LIVE', 'EXTRA_TIME', 'PENALTY_SHOOTOUT'].includes(status)
+      ? [scoreData.regularTime, scoreData.fullTime, scoreData.halfTime]
+      : [scoreData.fullTime, scoreData.regularTime, scoreData.halfTime];
+    const current = scoreCandidates.find((candidate) => candidate &&
+      candidate.home !== null && candidate.home !== undefined &&
+      candidate.away !== null && candidate.away !== undefined) || {};
+    const score = current.home !== undefined && current.away !== undefined
+      ? '*' + current.home + ' × ' + current.away + '*'
       : 'vs';
     const label = status === 'FINISHED' ? '✅ Encerrado'
+      : ['AFTER_EXTRA_TIME'].includes(status) ? '✅ Encerrado após prorrogação'
+      : ['AFTER_PENALTIES'].includes(status) ? '✅ Encerrado nos pênaltis'
+      : status === 'AWARDED' ? '✅ Resultado atribuído'
       : ['IN_PLAY', 'PAUSED', 'LIVE'].includes(status) ? '🔴 Ao vivo'
-      : ['POSTPONED', 'SUSPENDED'].includes(status) ? '⚠️ Adiado/suspenso'
-      : ['CANCELED', 'CANCELLED'].includes(status) ? '❌ Cancelado' : '🕒 Agendado';
-    lines.push('', '📅 ' + displayDate(match.utcDate) + ' — ' + label, home + ' ' + score + ' ' + away);
+      : status === 'EXTRA_TIME' ? '🔴 Prorrogação'
+      : status === 'PENALTY_SHOOTOUT' ? '🔴 Disputa de pênaltis'
+      : status === 'POSTPONED' ? '⚠️ Adiado'
+      : status === 'SUSPENDED' ? '⚠️ Suspenso'
+      : ['CANCELED', 'CANCELLED'].includes(status) ? '❌ Cancelado'
+      : status === 'TIMED' ? '🕒 Horário confirmado'
+      : status === 'SCHEDULED' ? '📅 Agendado'
+      : status ? 'ℹ️ ' + status.replace(/_/g, ' ').toLowerCase() : '🕒 Status indisponível';
+    const details = [];
+    if (Number.isFinite(Number(match.matchday)) && Number(match.matchday) > 0) details.push('Rodada ' + Number(match.matchday));
+    const groupCode = typeof match.group === 'string' && /^GROUP_[A-Z0-9]+$/.test(match.group)
+      ? match.group.replace(/^GROUP_/, 'Grupo ') : null;
+    if (groupCode) details.push(groupCode);
+    const phase = ({
+      LEAGUE_STAGE: 'Fase de liga', GROUP_STAGE: 'Fase de grupos',
+      LAST_16: 'Oitavas de final', QUARTER_FINALS: 'Quartas de final',
+      SEMI_FINALS: 'Semifinal', FINAL: 'Final', THIRD_PLACE: 'Disputa do 3º lugar',
+      PLAYOFFS: 'Play-off', REGULAR_SEASON: ''
+    })[String(match.stage || '').toUpperCase()];
+    if (phase && !details.includes(phase)) details.push(phase);
+    lines.push('', '📅 ' + displayDate(match.utcDate) + ' — ' + label +
+      (details.length ? ' · ' + details.join(' · ') : ''), home + ' ' + score + ' ' + away);
   }
   if (matches.length > 35) lines.push('', '… e mais ' + (matches.length - 35) + ' partidas.');
   lines.push('━━━━━━━━━━━━━━━━━━');
@@ -282,6 +347,8 @@ function helpText(prefix = '!') {
     '▸ ' + prefix + 'seriea / serieajg — tabela / jogos da Serie A italiana',
     '▸ ' + prefix + 'ligue1 / ligue1jg — tabela / jogos da Ligue 1',
     '▸ ' + prefix + 'portuguesa / portuguesajg — tabela / jogos da Liga Portuguesa',
+    '▸ ' + prefix + 'eredivisie / eredivisiejg — tabela / jogos da liga neerlandesa',
+    '▸ ' + prefix + 'mundial / mundialjg — tabela / jogos da Copa do Mundo',
     '▸ ' + prefix + 'clubes PL — clubes participantes',
     '▸ ' + prefix + 'artilheiros PL 10 — goleadores',
     '',

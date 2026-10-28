@@ -4,57 +4,73 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleMenuUtil(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-     🔧 MENU UTILIDADES
-╚══════════════════════╝
-
-📍 *CONSULTAS*
-  ▸ ${P}cep _(número)_
-  ▸ ${P}clima _(cidade)_
-  ▸ ${P}calcular _(expressão)_
-
-🌐 *TEXTO & IDIOMAS*
-  ▸ ${P}traduzir _(idioma) (texto)_
-  ▸ ${P}maiusculo _(texto)_
-  ▸ ${P}invertido _(texto)_
-  ▸ ${P}caixa _(texto)_
-
-📡 *CÓDIGO MORSE*
-  ▸ ${P}morse _(texto)_
-  ▸ ${P}demorse _(código)_
-
-🔗 *OUTROS*
-  ▸ ${P}encurtar _(link)_
-  ▸ ${P}qrcode _(texto)_
-  ▸ ${P}dado _(lados)_
-  ▸ ${P}moeda _(câmbio ou cara/coroa)_
-  ▸ ${P}piada
-  ▸ ${P}fato
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '      🔧 MENU UTILIDADES',
+    '╚══════════════════════╝',
+    '',
+    '📍 *CONSULTAS*',
+    '  ▸ ' + P + 'cep <CEP> — consultar CEP',
+    '  ▸ ' + P + 'clima <cidade> — condições do tempo',
+    '  ▸ ' + P + 'calcular <expressão> — calculadora',
+    '  ▸ ' + P + 'moeda <valor> <origem> <destino> — conversão de moeda',
+    '',
+    '🌐 *TEXTO & IDIOMAS*',
+    '  ▸ ' + P + 'traduzir <idioma> <texto> — traduzir texto',
+    '  ▸ ' + P + 'inverter <texto> — inverter o texto',
+    '  ▸ ' + P + 'gerarnome — gerar um nickname',
+    '  ▸ ' + P + 'fofoca [@pessoa] — brincadeira social',
+    '',
+    '📡 *CÓDIGO MORSE*',
+    '  ▸ ' + P + 'morse <texto> — codificar em Morse',
+    '  ▸ ' + P + 'codigomorse <texto> — alias de morse',
+    '  ▸ ' + P + 'demorse <código> — decodificar Morse',
+    '  ▸ ' + P + 'decodificarmorse <código> — alias de demorse',
+    '',
+    '👤 *PERFIL & PROGRESSO*',
+    '  ▸ ' + P + 'perfil — ver seu perfil',
+    '  ▸ ' + P + 'bio <texto> — definir sua bio',
+    '  ▸ ' + P + 'level — consultar nível e XP',
+    '  ▸ ' + P + 'ranklevel — ranking de níveis',
+    '  ▸ ' + P + 'meupainel / ' + P + 'site — acessar o painel',
+    '  ▸ ' + P + 'recuperar — gerar código de verificação (use em conversa privada)',
+    '  ▸ ' + P + 'resetsenha — instruções para redefinir a senha no painel',
+    '',
+    '🔗 *OUTROS*',
+    '  ▸ ' + P + 'encurtar <link> — encurtar link',
+    '  ▸ ' + P + 'qrcode <texto/link> — gerar QR code',
+    '  ▸ ' + P + 'piada — piada aleatória',
+    '  ▸ ' + P + 'fato — curiosidade aleatória',
+    '  ▸ ' + P + 'alteradores — efeitos de áudio e vídeo',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleMenuBaixar(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-      📥 MENU DOWNLOADS
-╚══════════════════════╝
-
-🎵 *MÚSICA & ÁUDIO*
-  ▸ ${P}som _(nome da música)_
-  ▸ ${P}audio _(link)_
-
-📱 *VÍDEO & REDES SOCIAIS*
-  ▸ ${P}tiktok _(link)_
-  ▸ ${P}save _(link)_
-  ▸ ${P}saverec _(link)_
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '        📥 MENU DOWNLOADS',
+    '╚══════════════════════╝',
+    '',
+    '🎵 *MÚSICA & ÁUDIO*',
+    '  ▸ ' + P + 'som <nome/música> — pesquisar e baixar áudio',
+    '  ▸ ' + P + 'play <nome/música> — alias de som',
+    '  ▸ ' + P + 'audio <link> — baixar áudio de um link',
+    '  ▸ ' + P + 'playmp4 — baixar o vídeo da música pesquisada mais recentemente',
+    '  ▸ ' + P + 'playdoc — enviar a música recente como documento',
+    '',
+    '📱 *VÍDEO & REDES SOCIAIS*',
+    '  ▸ ' + P + 'tiktok <link> — baixar vídeo do TikTok',
+    '  ▸ ' + P + 'save <link> — baixar mídia de redes compatíveis',
+    '  ▸ ' + P + 'saverec <link> — recortar trecho inicial da mídia',
+    '  ▸ ' + P + 'pinterest <link> — baixar mídia do Pinterest',
+    '  ▸ ' + P + 'pinterest2 <link> — alias de pinterest',
+    '',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 

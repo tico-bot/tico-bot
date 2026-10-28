@@ -974,37 +974,7 @@ async function handleDemitir(sock, msg, jid) {
 // ─── !menuwork ────────────────────────────────────────────────────────────────
 
 async function handleMenuWork(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
-
-  const menu =
-`╔══════════════════════╗
-      💼 MENU EMPREGOS
-╚══════════════════════╝
-
-🔎 *CARREIRA & VAGAS*
-  ▸ ${P}procuraremprego — Ver vagas do seu nível e se candidatar
-  ▸ ${P}procuraremprego <1-7> — Escolher vaga desejada
-  ▸ ${P}emprego — Ver seu cargo, salário e status
-  ▸ ${P}demitir — Pedir demissão voluntária
-
-⏱️ *TRABALHAR*
-  ▸ ${P}trabalhar / ${P}work — Bater ponto e receber salário
-
-📈 *PROGRESSÃO*
-  ▸ ${P}promocao — Qualificar para próxima categoria de cargos
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🏢 *SISTEMA DE EMPREGOS*
-  • 35 cargos únicos divididos em 5 categorias (Tier 1 a 5)
-  • 7 opções de escolha por nível
-  • Todos os cargos possuem *funções específicas desempenhadas a cada turno*!
-  • Horário de expediente: *${LABEL_HORARIO}*
-  • Cooldown entre turnos: *${LABEL_COOLDOWN}*
-  • Janela de tolerância: *${LABEL_JANELA}* no horário comercial (congelada à noite)
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  return require('../menus/trabalho').handleMenuWork(sock, msg, jid, getPrefix);
 }
 
 module.exports = {

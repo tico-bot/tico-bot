@@ -43,7 +43,7 @@ async function handleMenuRelacionamento(sock, msg, jid, getPrefix) {
   ▸ ${P}abraco @pessoa — dar um abraço
   ▸ ${P}presente — presentear seu par
   ▸ ${P}jantar — jantar romântico
-  ▸ ${P}cinema — sessão de cinema
+  ▸ ${P}cinema — sessão de cinema (alias: cinematel)
   ▸ ${P}viajar — viajar juntos
   ▸ ${P}serenata — fazer uma serenata
   ▸ ${P}declarar — declarar seu amor
@@ -81,6 +81,8 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
 
 💊 *SAÚDE E CUIDADOS*
   ▸ ${P}remediofil — tratar um filho doente
+  ▸ ${P}renomearfilho <nome> — renomear um filho
+  • Se tiver mais de um: ${P}renomearfilho <número> <nome>
 
 📋 *COMO FUNCIONA*
   • Limite de até *3 filhos por casal*.

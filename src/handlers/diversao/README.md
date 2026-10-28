@@ -24,9 +24,8 @@ O arquivo `diversao.js` foi dividido em 5 módulos menores e organizados dentro 
 - `!brincadeiras` - Menu de brincadeiras
 - `!menuplata` - Menu de economy
 - `!menupet` - Menu de pets
-- `!sistemaPlata` - Informações sobre o sistema de Plata
-- `!sistemaPet` - Informações sobre o sistema de Pets
-- `!menuauxiliar` - Menu auxiliar
+- `!sistemplata` - Informações sobre o sistema de Plata
+- `!sistempet` - Informações sobre o sistema de Pets
 
 ### 4. **marketplace.js** (Sistema de Compra/Venda)
 - `!ofertar` - Criar oferta de venda

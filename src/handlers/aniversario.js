@@ -261,7 +261,7 @@ async function handleMenuAniversario(sock, msg, jid, getPrefix) {
   ▸ ${P}listaniversarios — Listar todos
 
 ⚙️ *SISTEMA*
-  ▸ ${P}sistemaniversario — Ativar/desativar _(apenas admin)_
+  ▸ ${P}sistemaniversario — Alternar o sistema _(apenas admin; cada uso inverte o estado)_
 
 🎉 *FUNCIONAMENTO*
   • Bot parabeniza automaticamente

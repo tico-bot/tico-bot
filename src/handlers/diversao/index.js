@@ -49,7 +49,7 @@ const {
 // Menus
 const {
   handleBrincadeiras, handleMenuGold, handleMenuPet,
-  handleSistemaGold, handleSistemaPet, handleMenuAuxiliar,
+  handleSistemaGold, handleSistemaPet,
   handleSistemaMedieval, handleMenuMarket,
 } = require('./menus');
 
@@ -196,7 +196,6 @@ module.exports = {
   handleMenuPet,
   handleSistemaGold,
   handleSistemaPet,
-  handleMenuAuxiliar,
   handleSistemaMedieval,
   handleMenuMarket,
 

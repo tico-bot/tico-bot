@@ -4,28 +4,29 @@ const { obterPrefixo, enviarMenu } = require('./helpers');
 
 async function handleMenuMarket(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
-  const menu =
-`╔══════════════════════╗
-      🛒 MARKETPLACE
-╚══════════════════════╝
-
-🔍 *EXPLORAR*
-  ▸ ${P}avenda — ver ofertas no mercado
-  ▸ ${P}buscaroferta _(item)_ — procurar ofertas de um item
-
-💰 *VENDER*
-  ▸ ${P}ofertar _(item) (preço) (qtd)_ — colocar item à venda
-  ▸ ${P}minhasofertas — ver suas ofertas ativas
-  ▸ ${P}cancelaroferta _(item)_ — remover sua oferta
-
-🛍️ *COMPRAR*
-  ▸ ${P}buyoferta _(vendedor) (item) (qtd)_ — comprar oferta
-
-📜 *HISTÓRICO*
-  ▸ ${P}historicomarket — compras e vendas
-
-━━━━━━━━━━━━━━━━━━━━━━━━`;
-
+  const menu = [
+    '╔══════════════════════╗',
+    '          🛒 MARKETPLACE',
+    '╚══════════════════════╝',
+    '',
+    '🔎 *EXPLORAR OFERTAS*',
+    '  ▸ ' + P + 'avenda [página] — navegar pelas ofertas',
+    '  ▸ ' + P + 'buscaroferta <item> — procurar item (alias: buscaoferta)',
+    '',
+    '📤 *VENDER*',
+    '  ▸ ' + P + 'ofertar <item> <preço> <quantidade> — anunciar item',
+    '  ▸ ' + P + 'minhasofertas — consultar ofertas (alias: mesofertas)',
+    '  ▸ ' + P + 'cancelaroferta <item> — cancelar anúncio (alias: canceloferta)',
+    '',
+    '📥 *COMPRAR*',
+    '  ▸ ' + P + 'buyoferta <vendedor> <item> <quantidade> — comprar oferta',
+    '',
+    '📜 *HISTÓRICO*',
+    '  ▸ ' + P + 'historicomarket — histórico de transações (alias: mercadohistorico)',
+    '',
+    'A compra de ofertas é feita por ' + P + 'buyoferta.',
+    '━━━━━━━━━━━━━━━━━━━━━━━━'
+  ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 

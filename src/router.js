@@ -477,7 +477,9 @@ async function handleMessage(sock, msg) {
     return;
   }
   const imageCommandAliases = { espelho: 'espelho', cinemaimg: 'cinema' };
-  const imageCommand = Object.keys(imagemHandler.FILTROS).find(name => matchPrefixCmd(caption, name, jid))
+  // 'cinema' pertence ao menu de casal; o filtro de imagem é chamado como 'cinemaimg'.
+  // Excluir a chave interna 'cinema' evita que o filtro capture o comando romântico antes do handler de relacionamento.
+  const imageCommand = Object.keys(imagemHandler.FILTROS).filter(name => name !== 'cinema').find(name => matchPrefixCmd(caption, name, jid))
     || Object.keys(imageCommandAliases).find(name => matchPrefixCmd(caption, name, jid));
   if (imageCommand && imageCommand !== 'cinema') {
     const filterName = imageCommandAliases[imageCommand] || imageCommand;
@@ -956,7 +958,7 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'segredo'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'segredo', author, caption); return; }
   if (matchCmdStart(cmd, 'detetive'))       { await diversaoHandler.handleMiniGame(sock, msg, jid, 'detetive', author, caption); return; }
   if (matchCmdStart(cmd, 'sobrevivencia'))  { await diversaoHandler.handleMiniGame(sock, msg, jid, 'sobrevivencia', author, caption); return; }
-  if (matchCmdStart(cmd, 'campeonato'))     { await diversaoHandler.handleMiniGame(sock, msg, jid, 'campeonato', author, caption); return; }
+  if (matchCmdStart(cmd, 'campeonatozoeira')) { await diversaoHandler.handleMiniGame(sock, msg, jid, 'campeonato', author, caption); return; }
   if (matchCmdStart(cmd, 'dilema'))         { await diversaoHandler.handleMiniGame(sock, msg, jid, 'dilema', author, caption); return; }
   if (matchCmdStart(cmd, 'palavra'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'palavra', author, caption); return; }
   if (matchCmdStart(cmd, 'memoria'))        { await diversaoHandler.handleMiniGame(sock, msg, jid, 'memoria', author, caption); return; }

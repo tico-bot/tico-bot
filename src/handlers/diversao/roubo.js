@@ -156,19 +156,13 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
     texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
   }
 
-  texto += `\n🏦 *FERRAMENTAS PARA ASSALTO A BANCO*\n`;
-  for (const [key, item] of Object.entries(ITENS_ROUBO_BANCO)) {
-    texto += `  ▸ ${item.nome} — *${item.preco}* Plata\n`;
-    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
-  }
-
   texto += `
 📜 *COMANDOS*
   ▸ ${P}buyroubo _(item)_ — Comprar item/ferramenta
   ▸ ${P}equiparroubo _(item)_ — Equipar para o tipo de roubo
   ▸ ${P}invroubo — Ver inventários de roubo e banco
   ▸ ${P}roubar @pessoa — Roubar alguém
-  ▸ ${P}roubarbanco @pessoa — Assaltar o banco de alguém
+  ▸ ${P}roubarbanco @pessoa — Assaltar o banco de alguém\r\n  ▸ ${P}policia @ladrão — tentar recuperar o que foi roubado
 
 ⚠️ *REGRAS*
   • Item equipado é obrigatório para roubar!
