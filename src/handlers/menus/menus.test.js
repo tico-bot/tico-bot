@@ -72,6 +72,15 @@ test('main and category menus include key working commands', async () => {
   assert.match(main, /menubaixar/);
   assert.match(main, /menufutebol/);
   assert.doesNotMatch(main, /Use o prefixo configurado neste grupo/);
+  assert.match(main, /╔══════════════════════╗/);
+  assert.match(main, /━━━━━━━━━━━━━━━━━━━━━━━━/);
+  assert.match(main, /  ▸ !menufutebol/);
+  assert.match(main, /  ▸ !meupainel/);
+
+  const hashPrefixMenu = await renderMenu('principal with alternate prefix', () =>
+    utilidade.handleMenu(sock, msg, jid, '#menu', () => '#', 'Tester'));
+  assert.match(hashPrefixMenu, /  ▸ #menujogos/);
+  assert.doesNotMatch(hashPrefixMenu, /  ▸ !menujogos/);
 
   const utility = await renderMenu('utilidades', () =>
     utilidade.handleMenuUtil(sock, msg, jid, getPrefix));
