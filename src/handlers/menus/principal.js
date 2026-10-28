@@ -52,8 +52,6 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
     '',
     '⚽ *FUTEBOL*',
     '  ▸ ' + P + 'menufutebol — tabelas, jogos e artilheiros',
-    '',
-    'Use o prefixo configurado neste grupo: *' + P + '*',
     '━━━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n');
 

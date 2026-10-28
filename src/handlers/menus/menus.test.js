@@ -71,6 +71,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(main, /menujogos/);
   assert.match(main, /menubaixar/);
   assert.match(main, /menufutebol/);
+  assert.doesNotMatch(main, /Use o prefixo configurado neste grupo/);
 
   const utility = await renderMenu('utilidades', () =>
     utilidade.handleMenuUtil(sock, msg, jid, getPrefix));
