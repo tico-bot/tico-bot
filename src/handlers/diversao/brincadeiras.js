@@ -2604,7 +2604,10 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
   }, { quoted: msg });
 
   try {
-    const baseUrl = String(process.env.FUTEBOL_API_URL || process.env.BRASILEIRAO_API_URL || 'http://127.0.0.1:3100').replace(/\/+$/, '');
+    const configuredApiUrl = String(process.env.FUTEBOL_API_URL || process.env.BRASILEIRAO_API_URL || '').trim().replace(/\/+$/, '');
+    const baseUrl = configuredApiUrl && !/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(configuredApiUrl)
+      ? configuredApiUrl
+      : 'https://brasileirao-api-dczc.onrender.com';
     const headers = { Accept: 'application/json' };
     const apiKey = process.env.FUTEBOL_API_KEY || process.env.BRASILEIRAO_API_KEY;
     if (apiKey) headers['X-API-Key'] = apiKey;

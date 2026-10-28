@@ -2,13 +2,18 @@
 
 // Integração do Tico com a Futebol API própria.
 // Em desenvolvimento usa localhost; em produção configure FUTEBOL_API_URL.
-const DEFAULT_API_URL = 'http://127.0.0.1:3100';
+const DEFAULT_API_URL = 'https://brasileirao-api-dczc.onrender.com';
 const TIME_ZONE = 'America/Cuiaba';
 const API_TIMEOUT_MS = 10000;
 
 function getApiBaseUrl() {
-  return String(process.env.FUTEBOL_API_URL || process.env.BRASILEIRAO_API_URL || DEFAULT_API_URL)
+  const configured = String(process.env.FUTEBOL_API_URL || process.env.BRASILEIRAO_API_URL || '')
     .trim().replace(/\/+$/, '');
+  // Prevent an old localhost setting from breaking the bot on Render.
+  if (!configured || /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(configured)) {
+    return DEFAULT_API_URL;
+  }
+  return configured;
 }
 
 function getApiHeaders() {
@@ -24,6 +29,48 @@ function apiError(message, code) {
   return error;
 }
 
+function directFootballDataPath(endpoint) {
+  const parsed = new URL(endpoint, 'https://api.local');
+  if (!parsed.pathname.startsWith('/api/futebol/')) return null;
+  const apiPath = parsed.pathname.slice('/api/futebol'.length);
+  if (apiPath === '/competitions') return null; // The public API already serves this catalogue without a key.
+  return '/v4' + apiPath + parsed.search;
+}
+
+async function requestFootballDataDirect(endpoint) {
+  const token = process.env.FOOTBALL_DATA_API_KEY || process.env.FOOTBALL_API_KEY;
+  if (!token) {
+    throw apiError(
+      'O servidor da API está online, mas o provedor internacional não está configurado. Configure FOOTBALL_DATA_API_KEY no ambiente do Tico.',
+      'PROVIDER_NOT_CONFIGURED'
+    );
+  }
+  const path = directFootballDataPath(endpoint);
+  if (!path) throw apiError('Esta consulta não tem fallback direto disponível.', 'DIRECT_FALLBACK_UNAVAILABLE');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(new URL(path, 'https://api.football-data.org'), {
+      headers: { Accept: 'application/json', 'X-Auth-Token': token },
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = response.status === 403 || response.status === 401
+        ? 'A chave FOOTBALL_DATA_API_KEY foi recusada ou não tem acesso a esta competição.'
+        : (data?.message || ('football-data.org respondeu com HTTP ' + response.status + '.'));
+      throw apiError(message, response.status === 403 || response.status === 401 ? 'PROVIDER_AUTH_ERROR' : 'PROVIDER_HTTP_ERROR');
+    }
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError') throw apiError('O provedor internacional demorou para responder.', 'FOOTBALL_API_TIMEOUT');
+    if (error.code) throw error;
+    throw apiError('Não consegui conectar ao provedor internacional de futebol.', 'PROVIDER_UNAVAILABLE');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requestApi(endpoint) {
   const url = new URL(endpoint, getApiBaseUrl() + '/');
   const controller = new AbortController();
@@ -32,6 +79,12 @@ async function requestApi(endpoint) {
     const response = await fetch(url, { headers: getApiHeaders(), signal: controller.signal });
     const payload = await response.json().catch(() => null);
     if (!response.ok || payload?.success !== true) {
+      // Brazilian tables/matches always come from our API. The public deployment's
+      // international provider may lack its key, so international requests fall back
+      // to the same football-data.org provider using the bot's existing environment key.
+      if (payload?.error?.code === 'PROVIDER_NOT_CONFIGURED' && endpoint.startsWith('/api/futebol/')) {
+        return requestFootballDataDirect(endpoint);
+      }
       throw apiError(payload?.error?.message || ('A API respondeu com HTTP ' + response.status + '.'), payload?.error?.code || ('HTTP_' + response.status));
     }
     return payload.data;
@@ -82,42 +135,55 @@ function numberOr(...values) {
 function formatInternationalStandings(data, code) {
   const competition = data?.competition || {};
   const standings = Array.isArray(data?.standings) ? data.standings : [];
-  const season = data?.season?.startDate ? ' · ' + data.season.startDate.slice(0, 4) : '';
-  const lines = ['⚽ *' + (competition.name || code.toUpperCase()) + season + '*', '━━━━━━━━━━━━━━━━━━'];
+  const season = data?.season?.startDate ? ' ' + data.season.startDate.slice(0, 4) : '';
+  const lines = [
+    '🌍 *' + (competition.name || code.toUpperCase()) + season + '* ⚽',
+    '━━━━━━━━━━━━━━━━━━',
+    '🏆 *CLASSIFICAÇÃO ATUAL*',
+    '',
+    '*POS. CLUBE — PTS | J | V | E | D | SG*'
+  ];
   let total = 0;
   for (const group of standings) {
     const table = Array.isArray(group?.table) ? group.table : [];
     if (!table.length) continue;
     const groupCode = typeof group.group === 'string' && /^GROUP_[A-Z0-9]+$/.test(group.group)
       ? group.group.replace(/^GROUP_/, 'Grupo ') : null;
-    if (standings.length > 1 || groupCode) {
-      lines.push('', '🔹 *' + (groupCode || (group.type === 'TOTAL' ? 'Classificação geral' : group.type || 'Classificação')) + '*');
-    }
+    if (standings.length > 1 || groupCode) lines.push('', '📋 *' + (groupCode || (group.type === 'TOTAL' ? 'Classificação geral' : group.type || 'Classificação')) + '*');
     for (const row of table) {
       if (total >= 48) {
-        lines.push('… classificação abreviada. Use os outros filtros para consultar mais dados.');
+        lines.push('', '… classificação abreviada para caber na mensagem.');
         lines.push('━━━━━━━━━━━━━━━━━━');
         return lines.join('\n');
       }
       const team = row.team || {};
-      const name = String(team.shortName || team.name || 'Clube').slice(0, 25);
+      const name = String(team.shortName || team.name || 'Clube').slice(0, 24);
       const pos = numberOr(row.position) || '–';
       const gd = numberOr(row.goalDifference);
-      lines.push(pos + '. ' + name + ' — *' + numberOr(row.points) + ' pts* | ' +
-        numberOr(row.playedGames) + 'J | ' + numberOr(row.won) + 'V ' + numberOr(row.draw) +
-        'E ' + numberOr(row.lost) + 'D | SG ' + (gd > 0 ? '+' : '') + gd);
+      lines.push(String(pos) + '. ' + name + ' — *' + numberOr(row.points) + ' pts* | ' +
+        numberOr(row.playedGames) + 'J | ' + numberOr(row.won) + 'V | ' + numberOr(row.draw) +
+        'E | ' + numberOr(row.lost) + 'D | SG ' + (gd > 0 ? '+' : '') + gd);
+      if (Number(pos) === 4 && ['PL', 'PD', 'BL1', 'SA'].includes(String(code).toUpperCase())) {
+        lines.push('━━━━━━━━━━━━━━━━━━', '🏆 *G4 — ZONA DE CLASSIFICAÇÃO*', '━━━━━━━━━━━━━━━━━━');
+      }
       total++;
     }
   }
   if (!total) return null;
-  lines.push('', '━━━━━━━━━━━━━━━━━━', '🔄 _Consulta: ' + new Date().toLocaleString('pt-BR', { timeZone: TIME_ZONE }) + '_');
+  lines.push(
+    '',
+    '📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols',
+    '━━━━━━━━━━━━━━━━━━',
+    '🔄 _Consultado em ' + new Date().toLocaleString('pt-BR', { timeZone: TIME_ZONE }) + '_'
+  );
   return lines.join('\n');
 }
 
 function formatMatches(data) {
   const matches = Array.isArray(data?.matches) ? data.matches : [];
   if (!matches.length) return '📅 Não encontrei jogos nesse filtro e período. Tente outra data ou competição.';
-  const lines = ['⚽ *JOGOS DE FUTEBOL*', '━━━━━━━━━━━━━━━━━━'];
+  const competitionName = matches.find((match) => match.competition?.name)?.competition?.name;
+  const lines = ['⚽ *JOGOS — ' + (competitionName || 'FUTEBOL').toUpperCase() + '*', '━━━━━━━━━━━━━━━━━━'];
   for (const match of matches.slice(0, 35)) {
     const home = match.homeTeam?.shortName || match.homeTeam?.name || 'A definir';
     const away = match.awayTeam?.shortName || match.awayTeam?.name || 'A definir';
@@ -133,31 +199,42 @@ function formatMatches(data) {
       : ['IN_PLAY', 'PAUSED', 'LIVE'].includes(status) ? '🔴 Ao vivo'
       : ['POSTPONED', 'SUSPENDED'].includes(status) ? '⚠️ Adiado/suspenso'
       : ['CANCELED', 'CANCELLED'].includes(status) ? '❌ Cancelado' : '🕒 Agendado';
-    lines.push('', '📅 ' + displayDate(match.utcDate) + ' — ' + label,
-      home + ' ' + score + ' ' + away);
-    if (match.competition?.name) lines.push('🏆 ' + match.competition.name);
+    lines.push('', '📅 ' + displayDate(match.utcDate) + ' — ' + label, home + ' ' + score + ' ' + away);
   }
   if (matches.length > 35) lines.push('', '… e mais ' + (matches.length - 35) + ' partidas.');
   lines.push('━━━━━━━━━━━━━━━━━━');
   return lines.join('\n');
 }
 
-
 const FOOTBALL_LEAGUE_ALIASES = Object.freeze({
   champions: 'CL', ucl: 'CL', premier: 'PL', premierleague: 'PL',
   laliga: 'PD', espanhola: 'PD', bundesliga: 'BL1', alema: 'BL1',
   seriea: 'SA', italiana: 'SA', ligue1: 'FL1', francesa: 'FL1',
   portuguesa: 'PPL', ligaportuguesa: 'PPL', eredivisie: 'DED',
-  brasileirao: 'BSA', mundial: 'WC', copadomundo: 'WC'
+  mundial: 'WC', copadomundo: 'WC'
 });
+
+function normalizeAlias(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
 
 function resolveFootballAlias(rawCommand, prefixes = ['!', '.', '/', ',']) {
   const word = String(rawCommand || '').trim().toLowerCase();
   const prefix = prefixes.find((item) => item && word.startsWith(item));
   if (!prefix) return null;
-  const alias = word.slice(prefix.length);
+  const alias = normalizeAlias(word.slice(prefix.length));
   const wantsMatches = alias.endsWith('jg');
   const base = wantsMatches ? alias.slice(0, -2) : alias;
+
+  // The Brazilian table uses the same handler/data source as !brasileirao;
+  // its fixtures use the same rounds endpoint as !rodada.
+  if (base === 'brasileirao') {
+    return {
+      code: 'A',
+      action: wantsMatches ? 'brazilian-matches' : 'brazilian-standings'
+    };
+  }
+
   const code = FOOTBALL_LEAGUE_ALIASES[base];
   return code ? { code, action: wantsMatches ? 'matches' : 'standings' } : null;
 }
@@ -173,10 +250,11 @@ function helpText(prefix = '!') {
     '╚══════════════════════╝',
     '',
     '🇧🇷 *BRASILEIRÃO*',
-    '▸ ' + prefix + 'brasileirao A — Série A',
-    '▸ ' + prefix + 'brasileirao B — Série B',
-    '▸ ' + prefix + 'brasileirao C — Série C',
-    '▸ ' + prefix + 'brasileirao D — Série D',
+    '▸ ' + prefix + 'brasileirao / brasileirao A — tabela da Série A',
+    '▸ ' + prefix + 'brasileiraojg — jogos da Série A',
+    '▸ ' + prefix + 'brasileirao B — tabela da Série B',
+    '▸ ' + prefix + 'brasileirao C — tabela da Série C',
+    '▸ ' + prefix + 'brasileirao D — tabela da Série D',
     '▸ ' + prefix + 'rodada A — jogos da rodada atual',
     '▸ ' + prefix + 'rodada D A1 — calendário por grupo quando disponível',
     '',
@@ -403,7 +481,7 @@ async function handleScorers(sock, msg, jid, args = []) {
 }
 
 module.exports = {
-  getApiBaseUrl, requestApi, validDate, parseGameArgs,
+  getApiBaseUrl, requestApi, directFootballDataPath, validDate, parseGameArgs,
   formatInternationalStandings, formatMatches, helpText, resolveFootballAlias,
   handleFutebol, handleCompetition, handleClassification, handleMatches,
   handleTeams, handleScorers, formatBrazilianRound, handleBrazilianRound

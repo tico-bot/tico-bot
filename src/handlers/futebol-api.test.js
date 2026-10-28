@@ -10,6 +10,7 @@ const {
   formatMatches,
   helpText,
   getApiBaseUrl,
+  directFootballDataPath,
   resolveFootballAlias
 } = require('./futebol-api');
 
@@ -45,7 +46,7 @@ test('international standings format club stats as a readable WhatsApp table', (
   assert.match(text, /Arsenal/);
   assert.match(text, /24 pts/);
   assert.doesNotMatch(text, /Matchday/);
-  assert.match(text, /8V 0E 2D/);
+  assert.match(text, /8V \| 0E \| 2D/);
 });
 
 test('match formatter handles scheduled matches and empty schedules', () => {
@@ -63,7 +64,7 @@ test('match formatter handles scheduled matches and empty schedules', () => {
   });
   assert.match(text, /Arsenal/);
   assert.match(text, /2 × 1/);
-  assert.match(text, /Premier League/);
+  assert.match(text, /PREMIER LEAGUE/);
 });
 
 test('Brazilian round formatter presents matches and score safely', () => {
@@ -86,7 +87,8 @@ test('Brazilian round formatter presents matches and score safely', () => {
 
 test('football help includes commands for tables, fixtures and scorers', () => {
   const text = helpText('.');
-  assert.match(text, /\.brasileirao A/);
+  assert.match(text, /\.brasileirao/);
+  assert.match(text, /\.brasileiraojg/);
   assert.match(text, /\.classificacao PL/);
   assert.match(text, /\.jogos/);
   assert.match(text, /\.artilheiros/);
@@ -97,13 +99,26 @@ test('league aliases recognise configured prefixes and distinguish standings fro
   assert.deepEqual(resolveFootballAlias('!premier', ['!', '.', '/', ',']), { code: 'PL', action: 'standings' });
   assert.deepEqual(resolveFootballAlias('.championsjg', ['!', '.', '/', ',']), { code: 'CL', action: 'matches' });
   assert.deepEqual(resolveFootballAlias('/bundesligajg', ['!', '.', '/', ',']), { code: 'BL1', action: 'matches' });
+  assert.deepEqual(resolveFootballAlias('/brasileirao', ['!', '.', '/', ',']), { code: 'A', action: 'brazilian-standings' });
+  assert.deepEqual(resolveFootballAlias('/brasileirão', ['!', '.', '/', ',']), { code: 'A', action: 'brazilian-standings' });
+  assert.deepEqual(resolveFootballAlias('/brasileiraojg', ['!', '.', '/', ',']), { code: 'A', action: 'brazilian-matches' });
+  assert.deepEqual(resolveFootballAlias('/brasileirãojg', ['!', '.', '/', ',']), { code: 'A', action: 'brazilian-matches' });
   assert.equal(resolveFootballAlias('/naoliga', ['!', '.', '/', ',']), null);
+});
+
+test('direct fallback maps competition and matches URLs to football-data.org v4', () => {
+  assert.equal(directFootballDataPath('/api/futebol/competitions/CL/standings'), '/v4/competitions/CL/standings');
+  assert.equal(directFootballDataPath('/api/futebol/competitions/PL/scorers?limit=5'), '/v4/competitions/PL/scorers?limit=5');
+  assert.equal(directFootballDataPath('/api/futebol/matches?dateFrom=2026-10-28&dateTo=2026-10-29&competitions=PL'), '/v4/matches?dateFrom=2026-10-28&dateTo=2026-10-29&competitions=PL');
+  assert.equal(directFootballDataPath('/api/brasileirao/A/standings'), null);
 });
 
 test('API URL can be configured for local and hosted environments', () => {
   const before = process.env.FUTEBOL_API_URL;
   process.env.FUTEBOL_API_URL = 'https://example.test/';
   assert.equal(getApiBaseUrl(), 'https://example.test');
+  process.env.FUTEBOL_API_URL = 'http://127.0.0.1:3100';
+  assert.equal(getApiBaseUrl(), 'https://brasileirao-api-dczc.onrender.com');
   if (before === undefined) delete process.env.FUTEBOL_API_URL;
   else process.env.FUTEBOL_API_URL = before;
 });

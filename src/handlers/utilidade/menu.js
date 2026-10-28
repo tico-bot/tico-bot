@@ -215,6 +215,8 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 
 ⚽ *FUTEBOL*
   ▸ ${P}brasileirao [A/B/C/D] — Tabelas do Brasileirão 🇧🇷
+  ▸ ${P}brasileirao — tabela da Série A
+  ▸ ${P}brasileiraojg — jogos da Série A
   ▸ ${P}rodada [A/B/C/D] [grupo] — jogos da rodada atual
   ▸ ${P}futebol — menu de futebol
   ▸ ${P}campeonato — competições disponíveis

@@ -1007,9 +1007,16 @@ async function handleMessage(sock, msg) {
   // Atalhos diretos para tabelas e jogos das principais ligas internacionais.
   const footballAlias = futebolApiHandler.resolveFootballAlias(cmdWord, VALID_PREFIXES);
   if (footballAlias) {
-    const aliasArgs = [footballAlias.code, ...caption.trim().split(/\s+/).slice(1)];
-    if (footballAlias.action === 'matches') await futebolApiHandler.handleMatches(sock, msg, jid, aliasArgs);
-    else await futebolApiHandler.handleClassification(sock, msg, jid, aliasArgs);
+    const aliasArgs = caption.trim().split(/\s+/).slice(1);
+    if (footballAlias.action === 'brazilian-standings') {
+      await diversaoHandler.handleBrasileirao(sock, msg, jid, aliasArgs);
+    } else if (footballAlias.action === 'brazilian-matches') {
+      await futebolApiHandler.handleBrazilianRound(sock, msg, jid, aliasArgs);
+    } else {
+      const competitionArgs = [footballAlias.code, ...aliasArgs];
+      if (footballAlias.action === 'matches') await futebolApiHandler.handleMatches(sock, msg, jid, competitionArgs);
+      else await futebolApiHandler.handleClassification(sock, msg, jid, competitionArgs);
+    }
     return;
   }
   if (matchCmd(cmdWord, 'brasileirao') || matchCmd(cmdWord, 'brasileirão')) { await diversaoHandler.handleBrasileirao(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
