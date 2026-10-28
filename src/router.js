@@ -39,6 +39,7 @@ const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 const menuHandler           = require('./handlers/menus');
 const figurinhaHandler      = require('./handlers/figurinha');
 const diversaoHandler       = require('./handlers/diversao');
+const futebolApiHandler     = require('./handlers/futebol-api');
 const relacionamentoHandler = require('./handlers/relacionamento');
 const grupoHandler          = require('./handlers/grupo');
 const medievalHandler       = require('./handlers/medieval');
@@ -1002,7 +1003,22 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'julgamento'))    { await diversaoHandler.handleJulgamento(sock, msg, jid, author, content, contactNames); return; }
   if (matchCmdStart(cmd, 'maldizer'))      { await diversaoHandler.handleMaldizer(sock, msg, jid, author, content, contactNames); return; }
   if (matchCmdStart(cmd, 'fortuna'))       { await diversaoHandler.handleFortuna(sock, msg, jid, author, content, contactNames); return; }
+  if (matchCmd(cmdWord, 'futebol') || matchCmd(cmdWord, 'menufutebol')) { await futebolApiHandler.handleFutebol(sock, msg, jid, getPrefix(jid)); return; }
+  // Atalhos diretos para tabelas e jogos das principais ligas internacionais.
+  const footballAlias = futebolApiHandler.resolveFootballAlias(cmdWord, VALID_PREFIXES);
+  if (footballAlias) {
+    const aliasArgs = [footballAlias.code, ...caption.trim().split(/\s+/).slice(1)];
+    if (footballAlias.action === 'matches') await futebolApiHandler.handleMatches(sock, msg, jid, aliasArgs);
+    else await futebolApiHandler.handleClassification(sock, msg, jid, aliasArgs);
+    return;
+  }
   if (matchCmd(cmdWord, 'brasileirao') || matchCmd(cmdWord, 'brasileirão')) { await diversaoHandler.handleBrasileirao(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'rodada') || matchCmd(cmdWord, 'rodadaatual')) { await futebolApiHandler.handleBrazilianRound(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'campeonato') || matchCmd(cmdWord, 'competicoes') || matchCmd(cmdWord, 'competições')) { await futebolApiHandler.handleCompetition(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'classificacao') || matchCmd(cmdWord, 'classificação') || matchCmd(cmdWord, 'tabela')) { await futebolApiHandler.handleClassification(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'jogos') || matchCmd(cmdWord, 'partidas')) { await futebolApiHandler.handleMatches(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'clubes') || matchCmd(cmdWord, 'times')) { await futebolApiHandler.handleTeams(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'artilheiros') || matchCmd(cmdWord, 'goleadores')) { await futebolApiHandler.handleScorers(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz') ||
       matchCmd(cmdWord, 'quizfut') || matchCmd(cmdWord, 'quizctec') ||
       matchCmd(cmdWord, 'quizgeo') || matchCmd(cmdWord, 'quizmat') ||

@@ -2604,11 +2604,20 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
   }, { quoted: msg });
 
   try {
-    const baseUrl = String(process.env.BRASILEIRAO_API_URL || 'https://brasileirao-api-dczc.onrender.com').replace(/\/+$/, '');
+    const baseUrl = String(process.env.FUTEBOL_API_URL || process.env.BRASILEIRAO_API_URL || 'http://127.0.0.1:3100').replace(/\/+$/, '');
     const headers = { Accept: 'application/json' };
-    if (process.env.BRASILEIRAO_API_KEY) headers['X-API-Key'] = process.env.BRASILEIRAO_API_KEY;
+    const apiKey = process.env.FUTEBOL_API_KEY || process.env.BRASILEIRAO_API_KEY;
+    if (apiKey) headers['X-API-Key'] = apiKey;
 
-    const tabelaRes = await fetch(`${baseUrl}/api/brasileirao/${divisao}/standings`, { headers });
+    const grupoSolicitado = String(args[1] || '').trim();
+    if (grupoSolicitado && divisao !== 'D') {
+      await sock.sendMessage(jid, {
+        text: 'ℹ️ O filtro por grupo está disponível para a Série D. Use *!brasileirao D A1*, por exemplo.',
+      }, { quoted: msg });
+      return;
+    }
+    const grupoQuery = grupoSolicitado ? '?group=' + encodeURIComponent(grupoSolicitado) : '';
+    const tabelaRes = await fetch(`${baseUrl}/api/brasileirao/${divisao}/standings${grupoQuery}`, { headers });
     if (!tabelaRes.ok) throw new Error(`API do Brasileirão: HTTP ${tabelaRes.status}`);
     const tabelaData = await tabelaRes.json();
     if (tabelaData?.success !== true) throw new Error(tabelaData?.error?.message || 'Resposta inválida da API');
@@ -2635,6 +2644,19 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
         urlFonteCBF = oficial.url;
         tabelas = oficial.tabelas;
         tabela = tabelas.flatMap(grupo => grupo.entries.map(row => ({ ...row, grupo: grupo.name })));
+      }
+    }
+    if (grupoSolicitado) {
+      const groupKey = value => String(value || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/^(grupo|group)\s*/i, '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+      const gruposDisponiveis = tabelas.map(grupo => grupo.name).filter(Boolean).join(', ');
+      tabelas = tabelas.filter(grupo => groupKey(grupo.name) === groupKey(grupoSolicitado));
+      tabela = tabelas.flatMap(grupo => (Array.isArray(grupo.entries) ? grupo.entries : [])
+        .map(row => ({ ...row, grupo: grupo.name })));
+      if (!tabela.length) {
+        throw new Error('Grupo ' + grupoSolicitado + ' não encontrado na classificação da CBF' +
+          (gruposDisponiveis ? ' (disponíveis: ' + gruposDisponiveis + ')' : ''));
       }
     }
     if (!tabela.length) {

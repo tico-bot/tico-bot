@@ -7,7 +7,8 @@
     "build": "npm install && node src/scripts/install-ytdlp.js",
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
-    "test:security": "node --test src/handlers/utilidade/downloads.security.test.js"
+    "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
+    "test:futebol": "node --test src/handlers/futebol-api.test.js"
   },
   "engines": {
     "node": ">=20.0.0"

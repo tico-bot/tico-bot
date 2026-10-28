@@ -215,6 +215,17 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
 
 ⚽ *FUTEBOL*
   ▸ ${P}brasileirao [A/B/C/D] — Tabelas do Brasileirão 🇧🇷
+  ▸ ${P}rodada [A/B/C/D] [grupo] — jogos da rodada atual
+  ▸ ${P}futebol — menu de futebol
+  ▸ ${P}campeonato — competições disponíveis
+  ▸ ${P}classificacao [código] — tabela internacional
+  ▸ ${P}jogos [código] [data] — partidas
+  ▸ ${P}clubes [código] — clubes da competição
+  ▸ ${P}artilheiros [código] [n] — goleadores
+  ▸ ${P}champions / ${P}premier — tabelas
+  ▸ ${P}championsjg / ${P}premierjg — jogos
+  ▸ ${P}laliga, ${P}bundesliga, ${P}seriea, ${P}ligue1, ${P}portuguesa — tabelas
+  ▸ Adicione jg ao nome da liga para ver os jogos
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
