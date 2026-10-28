@@ -2625,11 +2625,13 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
       throw new Error(`A API está online, mas ainda não possui classificação disponível para a Série ${divisao}`);
     }
     let texto = `🇧🇷 *BRASILEIRÃO ${selecionada.nome.toUpperCase()} ${temporada}* ⚽\n`;
-    texto += '_Classificação atual_\n\n';
-    texto += '```Pos  Clube                  Pts  J  V  E  D  SG```\n';
+    texto += '━━━━━━━━━━━━━━━━━━\n';
+    texto += '🏆 *CLASSIFICAÇÃO ATUAL*\n\n';
+    texto += '```Pos Clube                Pts  J  V  E  D  SG\n';
 
     for (const row of tabela) {
       const time = row.time ?? row.clube ?? row.equipe ?? row.team ?? {};
+      const posNum = Number(row.posicao ?? row.position ?? row.colocacao);
       const pos = String(row.posicao ?? row.position ?? row.colocacao ?? '–').padStart(2, ' ');
       const nomeTime = typeof time === 'string' ? time : (time.nome ?? time.name ?? time.nome_popular ?? 'Clube');
       const nome = String(nomeTime).slice(0, 20).padEnd(20, ' ');
@@ -2640,9 +2642,12 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
       const derrotas = String(row.derrotas ?? row.losses ?? row.lost ?? 0).padStart(2, ' ');
       const saldo = Number(row.saldo ?? row.saldo_gols ?? row.goalDifference ?? (Number(row.gols_pro ?? row.goalsFor ?? 0) - Number(row.gols_contra ?? row.goalsAgainst ?? 0)));
       texto += `${pos}. ${nome} ${pts} ${jogos} ${vitorias} ${empates} ${derrotas} ${saldo > 0 ? '+' : ''}${saldo}\n`;
+      if (divisao === 'A' && posNum === 16) texto += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     }
 
-    texto += '```\n📊 Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols\n';
+    texto += '```\n📊 *LEGENDA*\n';
+    texto += '• Pts: pontos  • J: jogos\n• V: vitórias  • E: empates  • D: derrotas\n• SG: saldo de gols\n';
+    texto += '━━━━━━━━━━━━━━━━━━\n';
     texto += `🔄 _Atualizado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
   } catch (err) {
