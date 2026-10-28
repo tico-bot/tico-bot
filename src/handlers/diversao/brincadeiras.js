@@ -2627,27 +2627,25 @@ async function handleBrasileirao(sock, msg, jid, args = []) {
     let texto = `🇧🇷 *BRASILEIRÃO ${selecionada.nome.toUpperCase()} ${temporada}* ⚽\n`;
     texto += '━━━━━━━━━━━━━━━━━━\n';
     texto += '🏆 *CLASSIFICAÇÃO ATUAL*\n\n';
-    texto += '```\n';
-    texto += 'Pos Clube                Pts  J  V  E  D  SG\n';
+    texto += '*POS.  CLUBE — PTS | J | V | E | D | SG*\n';
 
     for (const row of tabela) {
       const time = row.time ?? row.clube ?? row.equipe ?? row.team ?? {};
       const posNum = Number(row.posicao ?? row.position ?? row.colocacao);
-      const pos = String(row.posicao ?? row.position ?? row.colocacao ?? '–').padStart(2, ' ');
+      const pos = String(row.posicao ?? row.position ?? row.colocacao ?? '–');
       const nomeTime = typeof time === 'string' ? time : (time.nome ?? time.name ?? time.nome_popular ?? 'Clube');
-      const nome = String(nomeTime).slice(0, 20).padEnd(20, ' ');
-      const pts = String(row.pontos ?? row.points ?? row.pts ?? 0).padStart(3, ' ');
-      const jogos = String(row.jogos ?? row.partidas ?? row.matches ?? row.playedGames ?? 0).padStart(2, ' ');
-      const vitorias = String(row.vitorias ?? row.wins ?? row.won ?? 0).padStart(2, ' ');
-      const empates = String(row.empates ?? row.draws ?? row.draw ?? 0).padStart(2, ' ');
-      const derrotas = String(row.derrotas ?? row.losses ?? row.lost ?? 0).padStart(2, ' ');
+      const nome = String(nomeTime).slice(0, 24);
+      const pts = Number(row.pontos ?? row.points ?? row.pts ?? 0);
+      const jogos = Number(row.jogos ?? row.partidas ?? row.matches ?? row.playedGames ?? 0);
+      const vitorias = Number(row.vitorias ?? row.wins ?? row.won ?? 0);
+      const empates = Number(row.empates ?? row.draws ?? row.draw ?? 0);
+      const derrotas = Number(row.derrotas ?? row.losses ?? row.lost ?? 0);
       const saldo = Number(row.saldo ?? row.saldo_gols ?? row.goalDifference ?? (Number(row.gols_pro ?? row.goalsFor ?? 0) - Number(row.gols_contra ?? row.goalsAgainst ?? 0)));
-      texto += `${pos}. ${nome} ${pts} ${jogos} ${vitorias} ${empates} ${derrotas} ${saldo > 0 ? '+' : ''}${saldo}\n`;
-      if (divisao === 'A' && posNum === 16) texto += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      texto += `${pos}. ${nome} — *${pts} pts* | ${jogos}J | ${vitorias}V | ${empates}E | ${derrotas}D | SG ${saldo > 0 ? '+' : ''}${saldo}\n`;
+      if (divisao === 'A' && posNum === 16) texto += '━━━━━━━━━━━━━━━━━━\n';
     }
 
-    texto += '```\n📊 *LEGENDA*\n';
-    texto += '• Pts: pontos  • J: jogos\n• V: vitórias  • E: empates  • D: derrotas\n• SG: saldo de gols\n';
+    texto += '\n📊 *LEGENDA:* Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols\n';
     texto += '━━━━━━━━━━━━━━━━━━\n';
     texto += `🔄 _Atualizado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
