@@ -570,9 +570,10 @@ if (!carteiras.length) {
     const telefoneResolvido = usuario.telefone || idWhatsApp.split('@')[0] || null;
 
     return res.json({
-      nome:     nomeResolvido,
-      telefone: telefoneResolvido,
-      bio:      usuario.bio,
+      nome:        nomeResolvido,
+      displayName: usuario.displayName || null,
+      telefone:    telefoneResolvido,
+      bio:         usuario.bio,
 
       xp:         xpTotal,
       level:      levelGlobal,
@@ -603,6 +604,36 @@ if (!carteiras.length) {
   } catch (err) {
     console.error('[API] GET /user/me:', err);
     return res.status(500).json({ error: 'Erro interno.' });
+  }
+});
+
+// PATCH /api/user/display-name
+router.patch('/user/display-name', auth, async (req, res) => {
+  try {
+    const valor = req.body?.displayName;
+    if (typeof valor !== 'string') {
+      return res.status(400).json({ error: 'Informe um nome de exibição válido.' });
+    }
+
+    const displayName = valor.trim();
+    if (!displayName || displayName.length > 40 || /[\r\n\u0000-\u001f\u007f]/.test(displayName)) {
+      return res.status(400).json({ error: 'O nome deve ter de 1 a 40 caracteres em uma única linha.' });
+    }
+
+    const atualizado = await Usuario.findOneAndUpdate(
+      { idWhatsApp: req.user.idWhatsApp },
+      { $set: { displayName } },
+      { new: true, runValidators: true }
+    ).select('displayName').lean();
+
+    if (!atualizado) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    return res.json({ displayName: atualizado.displayName });
+  } catch (err) {
+    console.error('[API] PATCH /user/display-name:', err);
+    return res.status(500).json({ error: 'Não foi possível atualizar o nome de exibição.' });
   }
 });
 

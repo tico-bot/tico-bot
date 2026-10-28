@@ -10,6 +10,7 @@
     "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
     "test:api-helpers": "node --test src/utils/mapas.test.js",
     "test:progressao": "node --test src/models/CarteiraGrupo.test.js",
+    "test:profile-api": "node --test src/routes/api.display-name.test.js",
     "test:menus": "node --test --test-force-exit src/handlers/menus/menus.test.js",
     "test:futebol": "node --test src/handlers/futebol-api.test.js"
   },

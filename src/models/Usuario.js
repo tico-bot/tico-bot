@@ -69,6 +69,7 @@ const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp: { type: String, required: true, unique: true, trim: true, lowercase: true },
   nome:         { type: String, default: null,  trim: true },
+  displayName:  { type: String, default: null,  trim: true, maxlength: 40 },
   telefone:     { type: String, default: null,  trim: true },
   uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
