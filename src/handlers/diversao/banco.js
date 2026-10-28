@@ -47,7 +47,7 @@ async function resolverUserId(sock, msg) {
   // Mesma normalização de economia.js/roubo.js/utils/carteira.js — mantém
   // @lid como está (não tenta converter para telefone) e só normaliza
   // JIDs de telefone. Garante que !banco aponte para a MESMA carteira
-  // usada por !gold, !comprar etc.
+  // usada por !plata, !comprar etc.
   // (a versão anterior tentava resolver @lid via sock.onWhatsApp, usando a
   // parte numérica do @lid como se fosse telefone — nunca é.)
   //
@@ -55,7 +55,7 @@ async function resolverUserId(sock, msg) {
   // (":12") nem forçar lowercase — diferente do que normalizarJid()/
   // resolveGlobalId() fazem no resto do bot. Em WhatsApp multi-dispositivo
   // isso criava uma CarteiraGrupo "fantasma" (idWhatsApp diferente) só para
-  // o banco, separada da carteira real usada por !gold — o gold depositado
+  // o banco, separada da carteira real usada por !plata — o gold depositado
   // ficava preso lá, invisível em qualquer outro comando.
   if (raw.endsWith('@lid')) {
     const userPart = raw.split('@')[0].split(':')[0];
@@ -99,7 +99,7 @@ async function handleBanco(sock, msg, jid, caption) {
   const linkedWallet = await getWalletBalance(userId);
   if (linkedWallet.linked) {
     await sock.sendMessage(jid, {
-      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !reais (ou !real). Novos investimentos do banco do bot não estão disponíveis para contas vinculadas.',
+      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !plata. Novos investimentos do banco do bot não estão disponíveis para contas vinculadas.',
     }, { quoted: msg });
     return;
   }
@@ -229,7 +229,7 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Debitar gold do grupo ────────────────────────────────────────────────────
+  // ── Debitar Plata do grupo ────────────────────────────────────────────────────
   let saldoAposDebito;
   try {
     const carteiraAtualizada = await carteiraService.alterarGold(
@@ -345,7 +345,7 @@ async function handleResgatar(sock, msg, jid) {
   const linkedWallet = await getWalletBalance(userId);
   if (linkedWallet.linked) {
     await sock.sendMessage(jid, {
-      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !reais (ou !real). Investimentos do banco do bot não estão disponíveis para contas vinculadas.',
+      text: '🏦 Seu dinheiro da conta vinculada é compartilhado entre os grupos e fica disponível em !plata. Investimentos do banco do bot não estão disponíveis para contas vinculadas.',
     }, { quoted: msg });
     return;
   }
@@ -459,7 +459,7 @@ async function handleResgatar(sock, msg, jid) {
   // ── Progresso de missão no Usuario ──────────────────────────────────────────
   if (ganho > 0) {
     // Era um $inc direto sem cap — "!missao" podia mostrar progresso acima
-    // de 500 (a meta de gold500) pra quem resgatava investimentos grandes.
+    // de 500 (a meta de Plata500) pra quem resgatava investimentos grandes.
     // incrementMission() trava no alvo com $min e marca completed uma vez.
     await incrementMission(userId, 'gold500', ganho).catch(() => {});
   }
@@ -507,7 +507,7 @@ async function handleHistoricoBanco(sock, msg, jid) {
     .slice()
     .reverse()
     .map((h, i) => {
-      const data = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const data = new Date(h.data).toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' });
       return (
         `*${i + 1}.* ${data}\n` +
         `   💵 ${carteiraService.formatarSaldo(h.investido, carteira)} → 💎 ${carteiraService.formatarSaldo(h.resgate, carteira)} (+${carteiraService.formatarSaldo(h.lucro, carteira)}) | ${h.juros}%`

@@ -1,7 +1,9 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleMenuAdm(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
     🛡️ MENU ADMINISTRAÇÃO
@@ -49,7 +51,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuAdm };

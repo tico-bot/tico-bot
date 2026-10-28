@@ -5,7 +5,7 @@
 const { handleMenu }                         = require('./principal');
 const { handleMenuUtil, handleMenuBaixar }   = require('./utilidades');
 const { handleMenuJogos, handleBrincadeiras } = require('./jogos');
-const { handleMenuGold, handleSistemaGold }  = require('./gold');
+const { handleMenuGold, handleSistemaGold }  = require('./plata');
 const { handleMenuPet, handleSistemaPet }    = require('./pet');
 const { handleSistemaMedieval }             = require('./medieval');
 const { handleMenuMarket }                  = require('./market');

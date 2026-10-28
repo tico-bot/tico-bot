@@ -1,11 +1,11 @@
 /**
  * Handler de Filtros de Imagem — Tico Bot
- * Comandos: !blur, !pb, !pbiphone, !espelhar, !flipv, !girar, !girar180, !girar270,
+ * Comandos: !blur, !pb, !pbiphone, !espelhar, !espelho, !flipv, !girar, !girar180, !girar270,
  *           !pixelar, !pixel, !negativo, !sepia, !vintage, !brilho, !contraste,
  *           !saturar, !nitido, !desfazer, !corecore, !sfundo, !menuefeitos,
  *           !cartoon, !glitch, !vinheta, !radiancia, !matrix,
  *           !polaroid, !sketch, !calor, !gelo, !dourado,
- *           !neon, !cinema, !old, !halloween, !aquarela
+ *           !neon, !cinemaimg, !old, !halloween, !aquarela, !solarizar, !posterizar
  */
 
 'use strict';
@@ -26,6 +26,9 @@ function setLogger(newLogger) { logger = newLogger; }
 
 const JPEG_QUALITY  = 92;
 const VIDEO_TIMEOUT = 120_000;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 40_000_000;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPER: baixar mídia (imagem ou vídeo, direto ou quoted)
@@ -36,7 +39,8 @@ const VIDEO_TIMEOUT = 120_000;
  */
 async function getMediaBuffer(sock, msg, content, jid) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
-  const quoted      = contextInfo?.quotedMessage;
+  let quoted = contextInfo?.quotedMessage;
+  quoted = quoted?.ephemeralMessage?.message ?? quoted?.viewOnceMessage?.message ?? quoted?.viewOnceMessageV2?.message ?? quoted;
 
   const imageMsg = content.imageMessage ?? quoted?.imageMessage ?? null;
   const videoMsg = content.videoMessage ?? quoted?.videoMessage ?? null;
@@ -155,10 +159,6 @@ function screenBlend(bufA, bufB, info) {
 function dodgeBlend(baseData, blurData) {
   const out = Buffer.alloc(baseData.length);
   for (let i = 0; i < baseData.length; i++) {
-    if (baseData.length % 4 === 0 && (i % 4 === 3)) {
-      out[i] = baseData[i]; // Preserva canal alpha
-      continue;
-    }
     const b = blurData[i] / 255;
     out[i]  = b >= 1 ? 255 : Math.min(255, Math.round(baseData[i] / (1 - b)));
   }
@@ -304,6 +304,30 @@ const FILTROS = {
       .modulate({ saturation: 0.5, brightness: 1.2 })
       .linear(0.7, 0)
       .blur(0.5),
+  },
+
+  solarizar: {
+    label: '🌞 Solarizado',
+    ffmpegVf: 'negate,eq=contrast=1.25:saturation=1.35',
+    sharpFn: (p) => p.negate().modulate({ saturation: 1.35 }).linear(1.15, -12),
+  },
+  posterizar: {
+    label: '🖼️ Posterização',
+    ffmpegVf: 'posterize=5',
+    sharpFn: async (p) => {
+      const { data, info } = await p.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const levels = 5;
+      const step = 255 / (levels - 1);
+      for (let i = 0; i < data.length; i += info.channels) {
+        for (let c = 0; c < 3; c++) data[i + c] = Math.round(Math.round(data[i + c] / step) * step);
+      }
+      return sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } });
+    },
+  },
+  espelho: {
+    label: '🪞 Espelho horizontal',
+    ffmpegVf: 'hflip',
+    sharpFn: (p) => p.flop(),
   },
 
   // ── Tons & Temperatura ───────────────────────────────────────────────────
@@ -580,11 +604,19 @@ async function handleImageFilter(sock, msg, content, jid, filtro, prefix) {
     return;
   }
 
+  const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  if (buffer.length > maxBytes) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ O arquivo é muito grande. Limite: ${isVideo ? '40 MB para vídeos' : '20 MB para imagens'}.`,
+    }, { quoted: msg });
+    return;
+  }
+
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
   // ── Vídeo ──────────────────────────────────────────────────────────────
   if (isVideo) {
-    if (!cfg.ffmpegVf) {
+    if (!cfg.ffmpegVf || /\[[a-z]+\]|;/.test(cfg.ffmpegVf)) {
       await sock.sendMessage(jid, {
         text: `⚠️ O filtro *${cfg.label}* não está disponível para vídeos.\n_Use uma imagem! 📸_`,
       }, { quoted: msg });
@@ -609,8 +641,11 @@ async function handleImageFilter(sock, msg, content, jid, filtro, prefix) {
 
   // ── Imagem ─────────────────────────────────────────────────────────────
   try {
-    const meta     = await sharp(buffer).metadata();
-    let   pipeline = sharp(buffer);
+    const meta = await sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
+    if (!meta.width || !meta.height || meta.width * meta.height > MAX_IMAGE_PIXELS) {
+      throw new Error('A imagem excede o limite de 40 megapixels ou não possui dimensões válidas.');
+    }
+    let pipeline = sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS });
 
     if (typeof cfg.sharpFn === 'function') {
       const result = cfg.sharpFn(pipeline, meta);
@@ -628,7 +663,7 @@ async function handleImageFilter(sock, msg, content, jid, filtro, prefix) {
   } catch (err) {
     console.error(`[handleImageFilter] Erro no filtro "${filtro}":`, err.message);
     await sock.sendMessage(jid, {
-      text: `❌ Falha ao aplicar *${cfg.label}*.\n_${err.message.slice(0, 120)}_`,
+      text: `❌ Não consegui aplicar *${cfg.label}*. Tente outra imagem ou um arquivo menor.`,
     }, { quoted: msg });
     await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
   }
@@ -707,13 +742,14 @@ async function handleSfundo(sock, msg, content, jid) {
       const https    = require('https');
       const boundary = `----FormBoundary${crypto.randomBytes(8).toString('hex')}`;
       // CORRIGIDO: usa o buffer já baixado, não o PNG reconvertido (economiza memória)
+      const uploadBuffer = await sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS }).png().toBuffer();
       const body = Buffer.concat([
         Buffer.from(
           `--${boundary}\r\n` +
           `Content-Disposition: form-data; name="image_file"; filename="image.png"\r\n` +
           `Content-Type: image/png\r\n\r\n`
         ),
-        buffer,
+        uploadBuffer,
         Buffer.from(`\r\n--${boundary}--\r\n`),
       ]);
 
@@ -845,6 +881,7 @@ _Responda uma foto ou vídeo com o comando_
 
 🔄 *TRANSFORMAÇÕES*
 ▸ ${P}espelhar — Espelha na horizontal
+▸ ${P}espelho — Alias de espelhar
 ▸ ${P}flipv — Vira de cabeça pra baixo
 ▸ ${P}girar — Gira 90° horário
 ▸ ${P}girar180 — Gira 180°
@@ -853,6 +890,8 @@ _Responda uma foto ou vídeo com o comando_
 🟫 *PIXEL & ESTILO*
 ▸ ${P}pixelar — Efeito pixelado
 ▸ ${P}pixel — Pixel art retrô 🎮
+▸ ${P}posterizar — Cores em blocos
+▸ ${P}solarizar — Efeito solarizado
 ▸ ${P}cartoon — Efeito cartoon animado 🎭
 ▸ ${P}sketch — Efeito desenho a lápis ✏️
 

@@ -6,14 +6,14 @@ const { normalizarJid } = require('./jid');
 const { prepareDailyMissionState, incrementMission } = require('../handlers/diversao/missoes');
 
 /**
- * Retorna a hora atual no fuso horário oficial de Brasília (America/Sao_Paulo / UTC-3).
+ * Retorna a hora atual no fuso horário oficial de Brasília (America/Cuiaba / UTC-3).
  *
  * @param {Date} [date]
  * @returns {number} hora de 0 a 23
  */
 function getHorarioBrasilia(date = new Date()) {
   try {
-    const horaStr = date.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+    const horaStr = date.toLocaleTimeString('pt-BR', { timeZone: 'America/Cuiaba', hour: '2-digit', hour12: false });
     const hora = parseInt(horaStr, 10);
     return Number.isNaN(hora) ? date.getHours() : hora;
   } catch {

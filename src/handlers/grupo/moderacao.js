@@ -21,6 +21,7 @@ const {
 } = require('./helpers');
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imageban.jpg');
+const BAN_VIDEO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'ban.mp4');
 const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'audioban.mp4');
 
 // ═══════════════════════════════════════════════════════════════
@@ -130,10 +131,22 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
 
   // Tenta enviar mídias sem deixar falhas de mídia abortarem o banimento
   try {
-    if (fs.existsSync(BAN_IMAGE_PATH)) {
+    const banCaption = `🔨 @${normalizeJidBase(targetJid)} foi banido(a) do grupo! Tchau! 👋`;
+    if (fs.existsSync(BAN_VIDEO_PATH)) {
+      await sock.sendMessage(jid, {
+        video:    fs.readFileSync(BAN_VIDEO_PATH),
+        gifPlayback: true,
+        caption:  banCaption,
+        mentions: [targetJid],
+      }).catch(async () => {
+        if (fs.existsSync(BAN_IMAGE_PATH)) {
+          await sock.sendMessage(jid, { image: fs.readFileSync(BAN_IMAGE_PATH), caption: banCaption, mentions: [targetJid] }).catch(() => {});
+        }
+      });
+    } else if (fs.existsSync(BAN_IMAGE_PATH)) {
       await sock.sendMessage(jid, {
         image:    fs.readFileSync(BAN_IMAGE_PATH),
-        caption:  `🔨 @${normalizeJidBase(targetJid)} foi banido(a) do grupo! Tchau! 👋`,
+        caption:  banCaption,
         mentions: [targetJid],
       }).catch(() => {});
     }

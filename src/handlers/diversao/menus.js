@@ -37,32 +37,32 @@ async function handleBrincadeiras(sock, msg, jid, getPrefix) {
   }, { quoted: msg });
 }
 
-// ─── handleMenuGold ───────────────────────────────────────────────────────────
-async function handleMenuGold(sock, msg, jid, getPrefix) {
+// ─── handleMenuPlata ───────────────────────────────────────────────────────────
+async function handleMenuPlata(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
-      `💵 *SISTEMA DE REAIS* 💵\n\n` +
-      `${P}reais / ${P}real — ver saldo (${P}gold continua como alias)\n` +
+      `💵 *SISTEMA DE PLATA* 💵\n\n` +
+      `${P}plata — ver saldo (comandos antigos continuam funcionando)\n` +
       `${P}loja — loja geral\n` +
       `${P}lojafood — loja de comida\n` +
-      `${P}lojapet — loja de pets\n` +
+      `${P}lojapet — loja de itens para personagens\n` +
       `${P}lojatec — loja de tecnologia\n` +
       `${P}lojacasal — loja de casal\n` +
       `${P}buy [item] — comprar item\n` +
       `${P}vender [item] — vender item\n` +
       `${P}inventario — ver inventário\n` +
-      `${P}pix [@] [valor] — transferir Reais\n` +
+      `${P}pix [@] [valor] — transferir Plata\n` +
       `${P}pixmulti [@1] [@2] [valor] — transferir para vários\n` +
-      `${P}pixdoar [valor] — doar Reais para um membro\n` +
-      `${P}apostar [valor] — apostar Reais\n` +
+      `${P}pixdoar [valor] — doar Plata para um membro\n` +
+      `${P}apostar [valor] — apostar Plata\n` +
       `${P}slots [valor] — jogar slots\n` +
       `${P}corrida [valor] — corrida de bichos\n` +
       `${P}garimpar — garimpar recursos\n` +
       `${P}extrato — histórico de transações\n` +
       `${P}banco [valor] — investir no banco\n` +
       `${P}resgatar — resgatar do banco\n` +
-      `${P}rankgold — ranking de saldo\n` +
+      `${P}rankplata — ranking de saldo\n` +
       `${P}give [@] [item] — dar item do inventário`,
   }, { quoted: msg });
 }
@@ -72,44 +72,44 @@ async function handleMenuPet(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
-        🐾 MENU PETS
+        🎭 MENU DE PERSONAGENS
 ╚══════════════════════╝
 
 🎯 *CAPTURA & COLEÇÃO*
-  ▸ ${P}capturar — capturar pet selvagem
-  ▸ ${P}pets — ver todos os pets
-  ▸ ${P}abrigo — colocar pet no abrigo
+  ▸ ${P}capturar — capturar personagem
+  ▸ ${P}pets — ver seus personagens
+  ▸ ${P}abrigo — colocar personagem no abrigo
   ▸ ${P}renomearpet _(nome)_ — renomear
 
 ❤️ *CUIDADOS*
-  ▸ ${P}alimentar — alimentar o pet
-  ▸ ${P}brincar — brincar com o pet
-  ▸ ${P}curar — curar o pet
+  ▸ ${P}alimentar — alimentar o personagem
+  ▸ ${P}brincar — interagir com o personagem
+  ▸ ${P}curar — cuidar do personagem
 
 📊 *STATUS & RANKING*
-  ▸ ${P}statuspet — ver status do seu pet
-  ▸ ${P}petrank — ranking de pets
+  ▸ ${P}statuspet — ver status do personagem
+  ▸ ${P}petrank — ranking de personagens
 
 🛒 *LOJA & AJUDA*
-  ▸ ${P}lojapet — loja de pets
+  ▸ ${P}lojapet — loja de itens para personagens
   ▸ ${P}sistempet — como funciona
 
 ⚙️ *GRUPO*
-  ▸ ${P}pet _(on/off/status)_ — ligar ou desligar os pets
+  ▸ ${P}pet _(on/off/status)_ — ligar ou desligar os spawns
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
   await sock.sendMessage(jid, { text: menu }, { quoted: msg });
 }
 
-// ─── handleSistemaGold ───────────────────────────────────────────────────────
-async function handleSistemaGold(sock, msg, jid, getPrefix) {
+// ─── handleSistemaPlata ───────────────────────────────────────────────────────
+async function handleSistemaPlata(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   await sock.sendMessage(jid, {
     text:
       `📖 *COMO FUNCIONA A MOEDA* 📖\n\n` +
-      `💰 *Reais*\n` +
-      `Os saldos e valores da economia do bot são exibidos em Reais ou na moeda local da conta vinculada. Use para comprar itens, apostar e muito mais!\n\n` +
+      `💰 *Plata*\n` +
+      `Os saldos e valores da economia do bot são exibidos em Plata ou na moeda local da conta vinculada. Use para comprar itens, apostar e muito mais!\n\n` +
       `📥 *Como ganhar:*\n` +
       `• Bônus diário ao mandar mensagem\n` +
       `• Trabalhar com ${P}trabalhar\n` +
@@ -122,7 +122,7 @@ async function handleSistemaGold(sock, msg, jid, getPrefix) {
       `• Apostar em jogos\n` +
       `• Transferir para outros\n` +
       `• Investir no banco (indisponível para contas vinculadas)\n\n` +
-      `💡 *Dica:* Use ${P}menugold para ver todos os comandos!`,
+      `💡 *Dica:* Use ${P}menuplata para ver todos os comandos!`,
   }, { quoted: msg });
 }
 
@@ -131,7 +131,7 @@ async function handleSistemaPet(sock, msg, jid, getPrefix) {
   const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const menu =
 `╔══════════════════════╗
-     🐾 COMO FUNCIONAM
+     🎭 COMO FUNCIONAM
           OS PETS
 ╚══════════════════════╝
 
@@ -168,12 +168,12 @@ async function handleMenuAuxiliar(sock, msg, jid, getPrefix) {
       `📋 *MENU AUXILIAR* 📋\n\n` +
       `🎮 *Jogos e Diversão:*\n` +
       `▸ ${P}brincadeiras — ver brincadeiras\n` +
-      `▸ ${P}menugold — comandos da economia em Reais\n` +
+      `▸ ${P}menuplata — comandos da economia em Plata\n` +
       `▸ ${P}menupet — comandos de pets\n` +
       `▸ ${P}menumarket — marketplace\n` +
       `▸ ${P}menuwork — empregos\n\n` +
       `⚙️ *Sistemas:*\n` +
-      `▸ ${P}sistemgold — como funciona a moeda\n` +
+      `▸ ${P}sistemplata — como funciona a moeda\n` +
       `▸ ${P}sistempet — como funciona os pets\n` +
       `▸ ${P}sistemmedieval — sistema medieval\n\n` +
       `👥 *Grupos:*\n` +
@@ -197,8 +197,9 @@ Crie seu personagem, batalhe, evolua e domine o reino.
 👤 *PERSONAGEM*
   • Ao usar ${P}ficha pela primeira vez, um personagem
     é criado automaticamente com classe e elemento aleatórios
-  • 7 classes: Guerreiro, Mago, Arqueiro, Paladino,
-    Assassino, Druida e Necromante
+  • 12 classes: Guerreiro, Mago, Arqueiro, Paladino,
+    Assassino, Druida, Necromante, Bárbaro, Berserker,
+    Monge, Bardo e Engenheiro Arcano
   • Cada classe tem ataque, defesa, HP e mana únicos
 
 🔥 *ELEMENTOS*
@@ -291,9 +292,9 @@ _Obs: ${P}aceitaroferta foi descontinuado. Use ${P}buyoferta para comprar direta
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   handleBrincadeiras,
-  handleMenuGold,
+  handleMenuPlata,
   handleMenuPet,
-  handleSistemaGold,
+  handleSistemaPlata,
   handleSistemaPet,
   handleMenuAuxiliar,
   handleSistemaMedieval,

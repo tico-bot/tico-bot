@@ -69,7 +69,6 @@ const usuarioSchema = new mongoose.Schema({
   // ── Identificação ────────────────────────────────────────────
   idWhatsApp: { type: String, required: true, unique: true, trim: true, lowercase: true },
   nome:         { type: String, default: null,  trim: true },
-  displayName:  { type: String, default: null, trim: true, maxlength: 40 },
   telefone:     { type: String, default: null,  trim: true },
   uid:          { type: String, unique: true,   sparse: true, default: () => new mongoose.Types.ObjectId().toHexString() },
   bio:          { type: String, default: null,  trim: true, maxlength: 150 },
@@ -82,8 +81,7 @@ const usuarioSchema = new mongoose.Schema({
   // o campo quando ele não é informado, e o sparse index volta a funcionar.
   username:     { type: String, trim: true, lowercase: true, minlength: 3, maxlength: 30 },
   passwordHash: { type: String, default: null },
-  // Conta do painel pode ser recriada no máximo 3 vezes; o contador fica no registro do WhatsApp.
-  recriacoesContaSite: { type: Number, default: 0, min: 0, max: 3 },
+  tokenVersion: { type: Number, default: 0, min: 0 },
   email:        { type: String, trim: true, lowercase: true },
 
   // ── Banimento global ─────────────────────────────────────────

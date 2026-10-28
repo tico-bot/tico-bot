@@ -398,8 +398,9 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'recuperar') || matchCmd(cmdWord, 'recuperarsenha') || matchCmd(cmdWord, 'token') || matchCmd(cmdWord, 'codigo')) {
     // Em grupos, o WhatsApp pode entregar participant como @lid. Prefira
     // participantPn para obter o telefone real; use LidMapping como fallback.
-    const senderBase = String(senderJid || '').replace(/:\d+(?=@)/, '').toLowerCase();
-    let pnInformado = String(msg.key.participantPn || '').replace(/:\d+(?=@)/, '').toLowerCase();
+    const LidMapping = require('./models/LidMapping');
+    const senderBase = String(senderJid || '').split(':')[0].toLowerCase();
+    let pnInformado = String(msg.key.participantPn || '').split(':')[0].toLowerCase();
     if (!pnInformado.endsWith('@s.whatsapp.net')) pnInformado = '';
     let mapaLid = null;
     if (!pnInformado && senderBase.endsWith('@lid')) {
@@ -415,6 +416,7 @@ async function handleMessage(sock, msg) {
 
     const codigo = String(require('crypto').randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
     const OtpCadastro = require('./models/OtpCadastro');
     const pnJid = `${rawNum}@s.whatsapp.net`;
     const mapaAtual = mapaLid || await LidMapping.findOne({ pn: pnJid }).lean();
@@ -444,7 +446,7 @@ async function handleMessage(sock, msg) {
     await sock.sendMessage(jid, {
       text:
         `🔑 Para redefinir sua senha, acesse o painel e use a opção *"Recuperar conta"* com o código gerado via *!recuperar* no grupo.\n\n` +
-        `🌐 https://piroquinhasbot.github.io/painel-piroquinhas-bot/recuperar.html`,
+        `🌐 Acesse o site oficial do Tico Bot e abra a opção *Recuperar conta*.`,
     }, { quoted: msg });
     return;
   }
@@ -468,15 +470,28 @@ async function handleMessage(sock, msg) {
     { await figurinhaHandler.handleMenuFig(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuefeitos'))
     { await imagemHandler.handleMenuEfeitos(sock, msg, jid, getPrefix(jid)); return; }
+
+  if (matchPrefixCmd(caption, 'sfundo', jid)) {
+    await imagemHandler.handleSfundo(sock, msg, content, jid);
+    return;
+  }
+  const imageCommandAliases = { espelho: 'espelho', cinemaimg: 'cinema' };
+  const imageCommand = Object.keys(imagemHandler.FILTROS).find(name => matchPrefixCmd(caption, name, jid))
+    || Object.keys(imageCommandAliases).find(name => matchPrefixCmd(caption, name, jid));
+  if (imageCommand && imageCommand !== 'cinema') {
+    const filterName = imageCommandAliases[imageCommand] || imageCommand;
+    await imagemHandler.handleImageFilter(sock, msg, content, jid, filterName, getPrefix(jid));
+    return;
+  }
   if (matchCmd(cmdWord, 'menuaniversario'))
     { await aniversarioHandler.handleMenuAniversario(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'brincadeiras'))
     { await diversaoHandler.handleBrincadeiras(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'sistemgold'))
+  if (matchCmd(cmdWord, 'sistemplata') || matchCmd(cmdWord, 'sistemgold'))
     { await diversaoHandler.handleSistemaGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'sistempet'))
   { await diversaoHandler.handleSistemaPet(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'menugold'))
+  if (matchCmd(cmdWord, 'menuplata') || matchCmd(cmdWord, 'menugold'))
     { await diversaoHandler.handleMenuGold(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
@@ -546,7 +561,7 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleStatsGrupo(sock, msg, jid); return; }
 
   // ── ECONOMIA ──────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'reais') || matchCmd(cmdWord, 'real') || matchCmd(cmdWord, 'gold'))
+  if (matchCmd(cmdWord, 'plata') || matchCmd(cmdWord, 'reais') || matchCmd(cmdWord, 'real') || matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
   if (matchCmd(cmdWord, 'loja'))
     { await diversaoHandler.handleLoja(sock, msg, jid, getPrefix); return; }
@@ -568,7 +583,7 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleInventario(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'pixmulti') || matchCmd(cmdWord, 'pixtodos') || matchCmdStart(cmd, 'pixmulti ') || matchCmdStart(cmd, 'pixtodos '))
     { await diversaoHandler.handlePixMulti(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doargold '))
+  if (matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doarplata') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doarplata ') || matchCmdStart(cmd, 'doargold '))
     { await diversaoHandler.handlePixDoar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
@@ -580,7 +595,7 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'extrato'))
     { await diversaoHandler.handleExtrato(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'rankgold'))
+  if (matchCmd(cmdWord, 'rankplata') || matchCmd(cmdWord, 'rankgold'))
     { await handleRankGold(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }
@@ -987,7 +1002,7 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'julgamento'))    { await diversaoHandler.handleJulgamento(sock, msg, jid, author, content, contactNames); return; }
   if (matchCmdStart(cmd, 'maldizer'))      { await diversaoHandler.handleMaldizer(sock, msg, jid, author, content, contactNames); return; }
   if (matchCmdStart(cmd, 'fortuna'))       { await diversaoHandler.handleFortuna(sock, msg, jid, author, content, contactNames); return; }
-  if (matchCmdStart(cmd, 'worldcup'))      { await diversaoHandler.handleWorldCup(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'brasileirao') || matchCmd(cmdWord, 'brasileirão')) { await diversaoHandler.handleBrasileirao(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz') ||
       matchCmd(cmdWord, 'quizfut') || matchCmd(cmdWord, 'quizctec') ||
       matchCmd(cmdWord, 'quizgeo') || matchCmd(cmdWord, 'quizmat') ||

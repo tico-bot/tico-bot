@@ -201,7 +201,7 @@ async function handleAura(sock, msg, content, jid, author, contactNames) {
   let emoji, frase, barEmoji, imagemNome;
   if (pct <= 10)      { emoji = '💀'; frase = 'Aura MORTA! Nem Deus salva! 👹';          barEmoji = '🟥'; imagemNome = 'imageaura5.jpg'; }
   else if (pct <= 30) { emoji = '😈'; frase = 'Aura podre! Cheira mal daqui! 🤢';        barEmoji = '🟧'; imagemNome = 'imageaura8.jpg'; }
-  else if (pct <= 50) { emoji = '😐'; frase = 'Aura neutra. Nem frio nem quente.';       barEmoji = '🟨'; imagemNome = 'imageaura3.jpg'; }
+  else if (pct <= 50) { emoji = '😐'; frase = 'Aura neutra. Nem frio nem quente.';       barEmoji = '🟨'; imagemNome = 'imageaura4.jpg'; }
   else if (pct <= 70) { emoji = '🌿'; frase = 'Aura ok! Mas pode melhorar! 💪';          barEmoji = '🟩'; imagemNome = 'imageaura2.jpg'; }
   else if (pct <= 89) { emoji = '✨'; frase = 'Aura brilhante! Que energia boa! ☀️';     barEmoji = '🟩'; imagemNome = 'imageaura6.jpg'; }
   else if (pct <= 99) { emoji = '🌟'; frase = 'Aura ÉPICA! Ilumina qualquer sala! 🙌';   barEmoji = '🟦'; imagemNome = 'imageaura7.jpg'; }
@@ -2581,8 +2581,78 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }, { quoted: msg });
 }
 
-// !worldcup           → mata-mata (padrão novo)
-// !worldcup grupos    → fase de grupos (comportamento antigo, ainda acessível)
+// !brasileirao / !brasileirão → classificação atual do Brasileirão Série A
+async function handleBrasileirao(sock, msg, jid, args = []) {
+  const divisao = String(args[0] || 'A').trim().toUpperCase().replace(/^SÉRIE\s*/, '').replace(/^SERIE\s*/, '');
+  const competicoes = {
+    A: { nome: 'Série A', busca: /brasileirão\s*série\s*a/i },
+    B: { nome: 'Série B', busca: /brasileirão\s*série\s*b/i },
+    C: { nome: 'Série C', busca: /brasileirão\s*série\s*c/i },
+    D: { nome: 'Série D', busca: /brasileirão\s*série\s*d/i },
+  };
+  const selecionada = competicoes[divisao];
+  if (!selecionada) {
+    await sock.sendMessage(jid, {
+      text: '⚽ Escolha uma divisão válida: *!brasileirao A*, *!brasileirao B*, *!brasileirao C* ou *!brasileirao D*.',
+    }, { quoted: msg });
+    return;
+  }
+
+  await sock.sendMessage(jid, {
+    text: `⏳ Buscando a tabela atualizada do Brasileirão ${selecionada.nome}...`,
+  }, { quoted: msg });
+
+  try {
+    const baseUrl = String(process.env.BRASILEIRAO_API_URL || 'https://brasileirao-api-dczc.onrender.com').replace(/\/+$/, '');
+    const headers = { Accept: 'application/json' };
+    if (process.env.BRASILEIRAO_API_KEY) headers['X-API-Key'] = process.env.BRASILEIRAO_API_KEY;
+
+    const tabelaRes = await fetch(`${baseUrl}/api/brasileirao/${divisao}/standings`, { headers });
+    if (!tabelaRes.ok) throw new Error(`API do Brasileirão: HTTP ${tabelaRes.status}`);
+    const tabelaData = await tabelaRes.json();
+    if (tabelaData?.success !== true) throw new Error(tabelaData?.error?.message || 'Resposta inválida da API');
+
+    const dados = tabelaData.data;
+    const temporada = dados?.competition?.season || new Date().getFullYear();
+    const tabelas = Array.isArray(dados?.tables) ? dados.tables : [];
+    const tabela = tabelas.flatMap(grupo =>
+      (Array.isArray(grupo?.entries) ? grupo.entries : []).map(row => ({
+        ...row,
+        grupo: grupo.name && grupo.name !== 'Classificacao geral' ? grupo.name : undefined,
+      }))
+    );
+    if (!tabela.length) {
+      throw new Error(`A API está online, mas ainda não possui classificação disponível para a Série ${divisao}`);
+    }
+    let texto = `🇧🇷 *BRASILEIRÃO ${selecionada.nome.toUpperCase()} ${temporada}* ⚽\n`;
+    texto += '_Classificação atual_\n\n';
+    texto += '```Pos  Clube                  Pts  J  V  E  D  SG```\n';
+
+    for (const row of tabela) {
+      const time = row.time ?? row.clube ?? row.equipe ?? row.team ?? {};
+      const pos = String(row.posicao ?? row.position ?? row.colocacao ?? '–').padStart(2, ' ');
+      const nomeTime = typeof time === 'string' ? time : (time.nome ?? time.name ?? time.nome_popular ?? 'Clube');
+      const nome = String(nomeTime).slice(0, 20).padEnd(20, ' ');
+      const pts = String(row.pontos ?? row.points ?? row.pts ?? 0).padStart(3, ' ');
+      const jogos = String(row.jogos ?? row.partidas ?? row.matches ?? row.playedGames ?? 0).padStart(2, ' ');
+      const vitorias = String(row.vitorias ?? row.wins ?? row.won ?? 0).padStart(2, ' ');
+      const empates = String(row.empates ?? row.draws ?? row.draw ?? 0).padStart(2, ' ');
+      const derrotas = String(row.derrotas ?? row.losses ?? row.lost ?? 0).padStart(2, ' ');
+      const saldo = Number(row.saldo ?? row.saldo_gols ?? row.goalDifference ?? (Number(row.gols_pro ?? row.goalsFor ?? 0) - Number(row.gols_contra ?? row.goalsAgainst ?? 0)));
+      texto += `${pos}. ${nome} ${pts} ${jogos} ${vitorias} ${empates} ${derrotas} ${saldo > 0 ? '+' : ''}${saldo}\n`;
+    }
+
+    texto += '```\n📊 Pts = pontos • J = jogos • V = vitórias • E = empates • D = derrotas • SG = saldo de gols\n';
+    texto += `🔄 _Atualizado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+  } catch (err) {
+    console.error(`[brasileirao-${divisao.toLowerCase()}] Erro ao buscar tabela:`, err.message);
+    await sock.sendMessage(jid, {
+      text: `❌ Não consegui buscar a tabela do Brasileirão ${selecionada.nome} agora. A API pode não disponibilizar essa divisão com a chave atual. Tente novamente mais tarde.`,
+    }, { quoted: msg });
+  }
+}
+
 async function handleWorldCup(sock, msg, jid, args = []) {
   const querGrupos = args[0] && ['grupos', 'grupo', 'fase-de-grupos', 'classificacao', 'classificação'].includes(args[0].toLowerCase());
   if (querGrupos) return handleWorldCupGroups(sock, msg, jid);
@@ -2627,7 +2697,7 @@ async function handleWorldCupGroups(sock, msg, jid) {
       texto += `\n`;
     }
 
-    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
+    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
@@ -2692,7 +2762,7 @@ function formatMatchLine(match) {
   }
 
   const data = new Date(match.utcDate).toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Cuiaba', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   });
   return `${home} 🆚 ${away}  _(🗓️ ${data})_`;
 }
@@ -2742,7 +2812,7 @@ async function handleWorldCupKnockout(sock, msg, jid) {
       texto += `\n`;
     }
 
-    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}_`;
+    texto += `🔄 _${new Date().toLocaleString('pt-BR', { timeZone: 'America/Cuiaba' })}_`;
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
@@ -2878,6 +2948,7 @@ module.exports = {
   handleCuzudo,
   handleSexo,
   handleBucetudo,
+  handleBrasileirao,
   handleWorldCup,
   handleWorldCupGroups,
   handleWorldCupKnockout,

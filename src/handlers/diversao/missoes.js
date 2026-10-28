@@ -15,7 +15,7 @@ const dailyMissionDefinitions = [
   { id: 'xp100',   label: 'Ganhe 100 XP',       target: 100, reward: 50,  emoji: '⭐', desc: 'Suba de level' },
   { id: 'msg50',   label: 'Mande 50 mensagens',  target: 50,  reward: 30,  emoji: '💬', desc: 'Seja ativo!' },
   { id: 'quiz5',   label: 'Acerte 5 quiz',       target: 5,   reward: 75,  emoji: '🧠', desc: 'Mostre inteligência' },
-  { id: 'gold500', label: 'Ganhe 500 em saldo',  target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
+  { id: 'gold500', label: 'Ganhe 500 Plata',  target: 500, reward: 100, emoji: '💰', desc: 'Fique rico' },
   { id: 'pet10',   label: 'Cuide do pet 10x',    target: 10,  reward: 60,  emoji: '🐾', desc: 'Ame seu pet' },
   { id: 'roubo3',  label: 'Faça 3 roubos',       target: 3,   reward: 80,  emoji: '🎭', desc: 'Seja um ladrão!' },
 ];
@@ -54,7 +54,7 @@ async function getUserId(msg) {
 // local, 3h antes do que o texto "Missões renovam à meia-noite" promete.
 function getTodayStr(ts = Date.now()) {
   const partes = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
+    timeZone: 'America/Cuiaba',
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(new Date(ts));
   const map = Object.fromEntries(partes.map(p => [p.type, p.value]));
@@ -301,7 +301,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
           `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
           `${mission.emoji} *${mission.label}*\n` +
           `💰 Recompensa: *${formatarSaldo(mission.reward)}* adicionada!\n` +
-          `💵 Seu saldo atual: *${formatarSaldo(updated.gold)}*\n\n` +
+          `💵 Seu saldo atual em Plata: *${formatarSaldo(updated.gold)}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
     } catch (e) {
@@ -343,7 +343,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
   const rodape     = allClaimed
     ? `🏆 *Parabéns! Você completou todas as missões de hoje!*`
     : totalGoldDisponivel > 0
-      ? `🎁 *Você tem ${formatarSaldo(totalGoldDisponivel, walletInfo || {})} para resgatar!*\n💡 Use *${P}missao <id>* para resgatar.`
+      ? `🎁 *Você tem ${formatarSaldo(totalGoldDisponivel, walletInfo || {})} Plata para resgatar!*\n💡 Use *${P}missao <id>* para resgatar.`
       : `💪 Continue jogando para completar suas missões!`;
 
   const comoResgatar = dailyMissionDefinitions

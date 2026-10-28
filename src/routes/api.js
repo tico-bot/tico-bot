@@ -13,22 +13,6 @@ const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
 
-// Converte campos Map do Mongoose e objetos comuns para JSON simples.
-// Usado por /user/me, inventário, histórico de XP e rotas administrativas.
-function mapParaObjeto(valor) {
-  if (valor == null) return {};
-  if (valor instanceof Map) return Object.fromEntries(valor.entries());
-  if (typeof valor.toObject === 'function') {
-    const convertido = valor.toObject();
-    if (convertido && typeof convertido === 'object') return convertido;
-  }
-  if (typeof valor.entries === 'function') {
-    try { return Object.fromEntries(valor.entries()); } catch { /* usa fallback abaixo */ }
-  }
-  if (typeof valor === 'object' && !Array.isArray(valor)) return { ...valor };
-  return {};
-}
-
 // Helpers usados pelas rotas públicas de ranking e grupos.
 // Mantêm a fórmula de nível igual à usada no site.
 function calcularLevel(xp = 0) {
@@ -42,19 +26,16 @@ function nomeGrupo(grupo = {}, jid = '') {
   return String(jid).split('@')[0] || 'Grupo sem nome';
 }
 
-// Gera variantes de números brasileiros com e sem o nono dígito.
+// Retorna variantes de números brasileiros com e sem o nono dígito.
+// Para números de outros países, mantém apenas o número original.
 function gerarVariantesNumero(numero = '') {
   const original = String(numero).replace(/\D/g, '');
   if (!original) return [];
 
   const variantes = new Set([original]);
-  const temCodigoPais = original.startsWith('55') &&
-    (original.length === 12 || original.length === 13);
+  const temCodigoPais = original.startsWith('55') && (original.length === 12 || original.length === 13);
   const nacional = temCodigoPais ? original.slice(2) : original;
-
-  if (nacional.length !== 10 && nacional.length !== 11) {
-    return [...variantes];
-  }
+  if (nacional.length !== 10 && nacional.length !== 11) return [...variantes];
 
   const ddd = nacional.slice(0, 2);
   const assinante = nacional.slice(2);
@@ -87,12 +68,24 @@ const CONTAS_KEY      = process.env.CONTAS_KEY || ADMIN_KEY;
 if (!ADMIN_KEY) console.warn('⚠️  ADMIN_KEY não definida — rotas /admin/* vão recusar acesso.');
 
 // ─── MIDDLEWARE: JWT de sessão ────────────────────────────────────────────────
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token ausente.' });
   try {
-    req.user = jwt.verify(token, getJwtSecret());
+    const payload = jwt.verify(token, getJwtSecret());
+    if (!payload.idWhatsApp) return res.status(401).json({ error: 'Sessão inválida.' });
+    const conta = await Usuario.findOne({ idWhatsApp: payload.idWhatsApp })
+      .select('idWhatsApp username passwordHash tokenVersion')
+      .lean();
+    if (!conta || Number(payload.tokenVersion || 0) !== Number(conta.tokenVersion || 0)) {
+      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+    }
+    // Tokens de link do WhatsApp permitem abrir o perfil, mas não são login de conta.
+    if (payload.tokenType !== 'profile' && (!conta.username || !conta.passwordHash)) {
+      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+    }
+    req.user = payload;
     next();
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -120,7 +113,7 @@ const LOGIN_JANELA_MS = 15 * 60 * 1000;
 const rateLimitAdmin = rateLimit({
   windowMs:     LOGIN_JANELA_MS,
   max:          LOGIN_MAX,
-  keyGenerator: (req) => ipKeyGenerator(req.ip) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitas tentativas. Tente novamente mais tarde.'
@@ -151,8 +144,11 @@ router.post('/auth/token', async (req, res) => {
       return res.status(410).json({ error: 'Token expirado.' });
     }
 
+    const usuarioToken = await Usuario.findOne({ idWhatsApp: registro.idWhatsApp })
+      .select('tokenVersion').lean();
+    if (!usuarioToken) return res.status(404).json({ error: 'Perfil não encontrado.' });
     const sessionJwt = jwt.sign(
-      { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp },
+      { telefone: registro.telefone, idWhatsApp: registro.idWhatsApp, tokenType: 'profile', tokenVersion: Number(usuarioToken.tokenVersion || 0) },
       getJwtSecret(),
       { expiresIn: '2h' }
     );
@@ -1382,7 +1378,7 @@ const CASSINO_JANELA = 60 * 1000;
 const cassinoRateLimit = rateLimit({
   windowMs:     CASSINO_JANELA,
   max:          CASSINO_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({
       error: 'Muitos giros! Aguarde antes de tentar novamente.'
@@ -1554,7 +1550,7 @@ const CORRIDA_RATE_JANELA = 60 * 1000;
 const corridaRateLimit = rateLimit({
   windowMs:     CORRIDA_RATE_JANELA,
   max:          CORRIDA_RATE_MAX,
-  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip),
+  keyGenerator: (req) => req.user?.idWhatsApp || ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) => {
     return res.status(429).json({ error: 'Muitas apostas! Aguarde antes de tentar novamente.' });
   },
@@ -1913,11 +1909,19 @@ const bcrypt = require('bcryptjs');
 
 // Rate limit específico pro cadastro — evita criação em massa
 const rateLimitCadastro = rateLimit({
-  windowMs:     60 * 60 * 1000,
-  max:          5,
-  keyGenerator: (req) => ipKeyGenerator(req.ip) ?? 'desconhecido',
-  handler: (req, res) =>
-    res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
+  windowMs: 60 * 60 * 1000, max: 5,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de cadastro. Tente novamente em 1 hora.' }),
+});
+const rateLimitRecuperacao = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 5,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de recuperação. Aguarde 15 minutos.' }),
+});
+const rateLimitLogin = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
+  handler: (req, res) => res.status(429).json({ error: 'Muitas tentativas de login. Aguarde 15 minutos.' }),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1928,7 +1932,7 @@ const OtpCadastro = require('../models/OtpCadastro');
 const rateLimitOtp = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 3,
-  keyGenerator: (req) => ipKeyGenerator(req.ip) ?? 'desconhecido',
+  keyGenerator: (req) => ipKeyGenerator(req.ip || '0.0.0.0'),
   handler: (req, res) =>
     res.status(429).json({ error: 'Muitas tentativas. Aguarde 5 minutos.' }),
 });
@@ -1958,7 +1962,10 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     if (usuarioFinal.username && usuarioFinal.passwordHash)
       return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
-    const codigo    = String(Math.floor(100000 + Math.random() * 900000));
+    const { sock: botSock } = require('../bot');
+    if (!botSock) return res.status(503).json({ error: 'Bot não conectado. Tente novamente em instantes.' });
+
+    const codigo    = String(crypto.randomInt(100000, 1000000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await OtpCadastro.findOneAndUpdate(
@@ -1975,14 +1982,15 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
     }
 
     // Envia código via WhatsApp
-    const { sock: botSock } = require('../bot');
-    if (!botSock)
-      return res.status(503).json({ error: 'Bot não conectado. Tente novamente em instantes.' });
-
     const numeroDestino = `${digitosBase}@s.whatsapp.net`;
-    await botSock.sendMessage(numeroDestino, {
-      text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
-    });
+    try {
+      await botSock.sendMessage(numeroDestino, {
+        text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código de verificação é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
+      });
+    } catch (sendError) {
+      await OtpCadastro.updateMany({ idWhatsApp: usuarioFinal.idWhatsApp, codigo }, { $set: { usado: true } });
+      throw sendError;
+    }
 
     return res.json({ ok: true, message: 'Código enviado no seu WhatsApp!' });
   } catch (err) {
@@ -1992,14 +2000,16 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
 });
 
 router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
+  let otpCadastroClaimId = null;
   try {
-    const { idWhatsApp, username, password } = req.body || {};
+    const { idWhatsApp, username, password, codigo } = req.body || {};
 
     // ── Validação de presença ─────────────────────────────────────────────────
     if (!idWhatsApp || typeof idWhatsApp !== 'string' ||
         !username   || typeof username   !== 'string' ||
-        !password   || typeof password   !== 'string')
-      return res.status(400).json({ error: 'idWhatsApp, username e password são obrigatórios.' });
+        !password   || typeof password   !== 'string' ||
+        !codigo || typeof codigo !== 'string')
+      return res.status(400).json({ error: 'WhatsApp, usuário, senha e código de verificação são obrigatórios.' });
 
     // ── Sanitização básica ────────────────────────────────────────────────────
     const usernameLimpo = username.trim().toLowerCase();
@@ -2035,69 +2045,58 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 
     const idWhatsAppReal = usuarioFinal.idWhatsApp;
 
-    // Recriar a conta do site preserva o documento do WhatsApp e todo o progresso.
-    // O contador vive no próprio registro do usuário e não pode ser resetado trocando email/username.
-    const recriandoConta = Boolean(usuarioFinal.username && usuarioFinal.passwordHash);
-    const recriacoesUsadas = Math.max(0, Number(usuarioFinal.recriacoesContaSite) || 0);
-    if (recriandoConta && recriacoesUsadas >= 3)
-      return res.status(429).json({ error: 'Você já usou as 3 recriações permitidas para este número.' });
+    // ── Verifica se já tem conta ──────────────────────────────────────────────
+    if (usuarioFinal.username && usuarioFinal.passwordHash)
+      return res.status(409).json({ error: 'Você já possui uma conta. Faça login normalmente.' });
 
-    // Não considerar o próprio registro como conflito ao recriar com o mesmo email/username.
-    const usernameEmUso = await Usuario.exists({
-      username: usernameLimpo,
-      _id: { $ne: usuarioFinal._id },
-    });
+    // ── Verifica disponibilidade do username (case-insensitive) ───────────────
+    const usernameEmUso = await Usuario.exists({ username: usernameLimpo });
     if (usernameEmUso)
       return res.status(409).json({ error: 'Este nome de usuário já está em uso.' });
 
+    // ── Salva email se fornecido ──────────────────────────────────────────────
     const { email } = req.body || {};
-    const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : null;
+    const emailLimpo = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!emailLimpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo))
+      return res.status(400).json({ error: 'Digite um email válido.' });
     if (emailLimpo) {
-      const emailEmUso = await Usuario.exists({
-        email: emailLimpo,
-        _id: { $ne: usuarioFinal._id },
-      });
+      const emailEmUso = await Usuario.exists({ email: emailLimpo });
       if (emailEmUso)
         return res.status(409).json({ error: 'Este email já está sendo usado por outra conta.' });
     }
 
+    const jidsOtpCadastro = [...new Set([usuarioFinal.idWhatsApp, ...variantesPn, lidMap?.lid].filter(Boolean).map(v => String(v).trim().toLowerCase()))];
+    const otpCadastro = await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: { $in: jidsOtpCadastro }, codigo: String(codigo).trim(), usado: false, expiresAt: { $gt: new Date() } },
+      { $set: { usado: true } }, { new: true, sort: { createdAt: -1 } }
+    );
+    if (!otpCadastro) return res.status(400).json({ error: 'Código inválido ou expirado. Solicite um novo código pelo WhatsApp.' });
+    otpCadastroClaimId = otpCadastro._id;
+
     const passwordHash = await bcrypt.hash(passwordLimpa, 12);
-    const credenciais = {
-      username: usernameLimpo,
-      passwordHash,
-      ...(digitosBase && { telefone: digitosBase }),
-      ...(emailLimpo && { email: emailLimpo }),
-    };
+    await Usuario.findOneAndUpdate(
+      { idWhatsApp: idWhatsAppReal },
+      { $set: {
+          username:     usernameLimpo,
+          passwordHash,
+          ...(digitosBase && { telefone: digitosBase }),
+          ...(emailLimpo  && { email: emailLimpo }),
+      }},
+      { new: true }
+    );
 
-    if (recriandoConta) {
-      // Atualização atômica: requisições simultâneas não podem ultrapassar o limite de 3.
-      const atualizado = await Usuario.findOneAndUpdate(
-        {
-          _id: usuarioFinal._id,
-          username: { $exists: true, $nin: [null, ''] },
-          passwordHash: { $exists: true, $nin: [null, ''] },
-          $or: [
-            { recriacoesContaSite: { $lt: 3 } },
-            { recriacoesContaSite: { $exists: false } },
-            { recriacoesContaSite: null },
-          ],
-        },
-        { $set: credenciais, $inc: { recriacoesContaSite: 1 } },
-        { new: true }
-      );
-      if (!atualizado)
-        return res.status(429).json({ error: 'Você já usou as 3 recriações permitidas para este número.' });
-    } else {
-      await Usuario.findOneAndUpdate(
-        { _id: usuarioFinal._id },
-        { $set: credenciais, $setOnInsert: { recriacoesContaSite: 0 } },
-        { new: true }
-      );
-    }
-
+    otpCadastroClaimId = null;
     return res.json({ ok: true, message: 'Conta criada com sucesso! Faça login para acessar o painel.' });
 
   } catch (err) {
+    if (otpCadastroClaimId) {
+      try { await OtpCadastro.updateOne({ _id: otpCadastroClaimId, usado: true, expiresAt: { $gt: new Date() } }, { $set: { usado: false } }); } catch {}
+    }
+    if (err?.code === 11000) {
+      const campo = Object.keys(err.keyPattern || {})[0];
+      const mensagem = campo === 'email' ? 'Este email já está sendo usado por outra conta.' : 'Este nome de usuário já está em uso.';
+      return res.status(409).json({ error: mensagem });
+    }
     console.error('[API] POST /auth/cadastrar:', err);
     return res.status(500).json({ error: 'Erro interno.' });
   }
@@ -2108,53 +2107,32 @@ router.post('/auth/cadastrar', rateLimitCadastro, async (req, res) => {
 // Login com usuário e senha. Retorna JWT de sessão.
 // Body: { username, password }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/auth/login', rateLimitAdmin, async (req, res) => {
+router.post('/auth/login', rateLimitLogin, async (req, res) => {
   try {
-    const { identifier, username, password } = req.body || {};
-    const identificador = String(identifier ?? username ?? '').trim();
+    const { username, password } = req.body || {};
 
-    if (!identificador || typeof password !== 'string' || !password)
-      return res.status(400).json({ error: 'Email, telefone ou nome de usuário e senha são obrigatórios.' });
+    if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password)
+      return res.status(400).json({ error: 'username/email e password são obrigatórios.' });
+    if (username.length > 254 || password.length > 128)
+      return res.status(400).json({ error: 'Credenciais inválidas.' });
 
-    const emailOuUsuario = identificador.toLowerCase();
-    const digitos = identificador.replace(/\D/g, '');
-    const variantesTelefone = digitos.length >= 8 && digitos.length <= 15
-      ? gerarVariantesNumero(digitos)
-      : [];
-    const idsWhatsApp = variantesTelefone.map(n => `${n}@s.whatsapp.net`);
-
-    let usuario = await Usuario.findOne({
-      $or: [
-        { username: emailOuUsuario },
-        { email: emailOuUsuario },
-        { $expr: { $eq: [{ $toLower: { $ifNull: ['$username', ''] } }, emailOuUsuario] } },
-        { $expr: { $eq: [{ $toLower: { $ifNull: ['$email', ''] } }, emailOuUsuario] } },
-        ...(variantesTelefone.length ? [
-          { telefone: { $in: variantesTelefone } },
-          { idWhatsApp: { $in: idsWhatsApp } },
-        ] : []),
-      ],
-    }).lean();
-
-    // Contas WhatsApp que usam identificador @lid também podem entrar pelo telefone.
-    if (!usuario && idsWhatsApp.length) {
-      const lidMap = await LidMapping.findOne({ pn: { $in: idsWhatsApp } }).select('lid').lean();
-      if (lidMap?.lid) usuario = await Usuario.findOne({ idWhatsApp: lidMap.lid }).lean();
-    }
-
+    const identificador = username.trim().toLowerCase();
+    const usuario = await Usuario.findOne({ $or: [{ username: identificador }, { email: identificador }] }).lean();
     if (!usuario || !usuario.passwordHash)
-      return res.status(401).json({ error: 'Email, telefone, usuário ou senha inválidos.' });
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
 
     const senhaCorreta = await bcrypt.compare(password, usuario.passwordHash);
     if (!senhaCorreta)
-      return res.status(401).json({ error: 'Email, telefone, usuário ou senha inválidos.' });
+      return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
 
     const sessionJwt = jwt.sign(
-      { idWhatsApp: usuario.idWhatsApp, telefone: usuario.telefone },
+      { idWhatsApp: usuario.idWhatsApp, telefone: usuario.telefone, tokenVersion: Number(usuario.tokenVersion || 0) },
       getJwtSecret(),
       { expiresIn: '7d' }
     );
+
     return res.json({ jwt: sessionJwt });
+
   } catch (err) {
     console.error('[API] POST /auth/login:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -2166,7 +2144,7 @@ router.post('/auth/login', rateLimitAdmin, async (req, res) => {
 // Redefine a senha do usuário usando o código OTP obtido via !recuperar no grupo
 // Body: { idWhatsApp, codigo, novaSenha }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
+router.post('/auth/recuperar', rateLimitRecuperacao, async (req, res) => {
   let otpClaimId = null;
   try {
     const { idWhatsApp, codigo, novaSenha } = req.body || {};
@@ -2182,6 +2160,7 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
       return res.status(400).json({ error: 'Número de WhatsApp inválido.' });
 
     const variantesPn = gerarVariantesNumero(digitosBase).map(d => `${d}@s.whatsapp.net`);
+
     const [lidMap, usuario] = await Promise.all([
       LidMapping.findOne({ pn: { $in: variantesPn } }).lean(),
       Usuario.findOne({ idWhatsApp: { $in: variantesPn } }),
@@ -2193,8 +2172,9 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
     if (!usuarioFinal)
       return res.status(404).json({ error: 'Perfil não encontrado. Digite !recuperar em um grupo no WhatsApp primeiro.' });
 
-    // O comando pode gravar o OTP usando PN (@s.whatsapp.net) ou LID (@lid).
-    // Aceite todas as identidades vinculadas ao mesmo número.
+    // O WhatsApp pode identificar a mesma pessoa pelo PN (@s.whatsapp.net)
+    // ou pelo LID (@lid). O comando !recuperar pode gravar o OTP em qualquer
+    // um desses identificadores; consulte todos antes de rejeitar o código.
     const jidsAceitos = [...new Set([
       usuarioFinal.idWhatsApp,
       lidMap?.lid,
@@ -2202,8 +2182,7 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
     ].filter(Boolean).map(jid => String(jid).trim().toLowerCase()))];
     const otpValido = await OtpCadastro.findOneAndUpdate(
       { idWhatsApp: { $in: jidsAceitos }, codigo: String(codigo).trim(), usado: false, expiresAt: { $gt: new Date() } },
-      { $set: { usado: true } },
-      { new: true, sort: { createdAt: -1 } }
+      { $set: { usado: true } }, { new: true, sort: { createdAt: -1 } }
     );
     if (!otpValido)
       return res.status(400).json({ error: 'Código inválido ou expirado. Digite !recuperar em um grupo no WhatsApp para gerar um novo código.' });
@@ -2211,19 +2190,17 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
 
     const passwordHash = await bcrypt.hash(novaSenha, 12);
     usuarioFinal.passwordHash = passwordHash;
-    if (!usuarioFinal.telefone && digitosBase) usuarioFinal.telefone = digitosBase;
+    usuarioFinal.tokenVersion = (usuarioFinal.tokenVersion || 0) + 1;
+    if (!usuarioFinal.telefone && digitosBase) {
+      usuarioFinal.telefone = digitosBase;
+    }
     await usuarioFinal.save();
     otpClaimId = null;
 
     return res.json({ ok: true, message: 'Senha redefinida com sucesso! Faça login com a nova senha.' });
   } catch (err) {
     if (otpClaimId) {
-      try {
-        await OtpCadastro.updateOne(
-          { _id: otpClaimId, usado: true, expiresAt: { $gt: new Date() } },
-          { $set: { usado: false } }
-        );
-      } catch {}
+      try { await OtpCadastro.updateOne({ _id: otpClaimId, usado: true, expiresAt: { $gt: new Date() } }, { $set: { usado: false } }); } catch {}
     }
     console.error('[API] POST /auth/recuperar:', err);
     return res.status(500).json({ error: 'Erro interno ao redefinir senha.' });
@@ -2236,14 +2213,15 @@ router.post('/auth/recuperar', rateLimitCadastro, async (req, res) => {
 // Body: { senhaAtual, novaSenha }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/auth/resetsenha', auth, async (req, res) => {
+  if (req.user.tokenType === 'profile') return res.status(403).json({ error: 'Entre com usuário/email e senha para alterar sua senha.' });
   try {
     const { senhaAtual, novaSenha } = req.body || {};
     const idWhatsApp = req.user.idWhatsApp;
 
-    if (!senhaAtual || !novaSenha)
+    if (typeof senhaAtual !== 'string' || !senhaAtual || typeof novaSenha !== 'string')
       return res.status(400).json({ error: 'senhaAtual e novaSenha são obrigatórios.' });
-    if (novaSenha.length < 6)
-      return res.status(400).json({ error: 'Nova senha deve ter no mínimo 6 caracteres.' });
+    if (novaSenha.length < 6 || novaSenha.length > 128)
+      return res.status(400).json({ error: 'Nova senha deve ter entre 6 e 128 caracteres.' });
 
     const usuario = await Usuario.findOne({ idWhatsApp }).lean();
     if (!usuario || !usuario.passwordHash)
@@ -2254,7 +2232,7 @@ router.post('/auth/resetsenha', auth, async (req, res) => {
       return res.status(401).json({ error: 'Senha atual incorreta.' });
 
     const novoHash = await bcrypt.hash(novaSenha, 12);
-    await Usuario.findOneAndUpdate({ idWhatsApp }, { $set: { passwordHash: novoHash } });
+    await Usuario.findOneAndUpdate({ idWhatsApp }, { $set: { passwordHash: novoHash }, $inc: { tokenVersion: 1 } });
 
     return res.json({ ok: true, message: 'Senha alterada com sucesso!' });
 
@@ -2696,15 +2674,20 @@ router.get('/admin/contas', adminAuth, async (req, res) => {
 // Apaga os dados de conta do usuário (mantém dados do jogo).
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/auth/conta', auth, async (req, res) => {
+  if (req.user.tokenType === 'profile') return res.status(403).json({ error: 'Entre com usuário/email e senha para apagar a conta.' });
   try {
     const idWhatsApp = req.user.idWhatsApp;
 
     await Usuario.findOneAndUpdate(
       { idWhatsApp },
-      { $unset: { username: '', passwordHash: '', email: '' } }
+      { $unset: { username: '', passwordHash: '', email: '' }, $inc: { tokenVersion: 1 } }
     );
 
-    await OtpCadastro.deleteMany({ idWhatsApp });
+    const numero = String(idWhatsApp).split('@')[0].replace(/\D/g, '');
+    const variantesPn = gerarVariantesNumero(numero).map(n => `${n}@s.whatsapp.net`);
+    const mapas = await LidMapping.find({ $or: [{ lid: idWhatsApp }, { pn: { $in: variantesPn } }] }).select('lid').lean();
+    const idsOtp = [...new Set([idWhatsApp, ...variantesPn, ...mapas.map(m => m.lid)].filter(Boolean))];
+    await OtpCadastro.deleteMany({ idWhatsApp: { $in: idsOtp } });
 
     return res.json({ ok: true });
   } catch (err) {

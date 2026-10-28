@@ -1,62 +1,64 @@
 'use strict';
 
+const { obterPrefixo, enviarMenu } = require('./helpers');
+
 async function handleMenuPet(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
-        🐾 MENU PETS
+        🎭 MENU DE PERSONAGENS
 ╚══════════════════════╝
 
 🎯 *CAPTURA & COLEÇÃO*
-  ▸ ${P}capturar — capturar pet selvagem
-  ▸ ${P}pets — ver todos os seus pets
-  ▸ ${P}abrigo — colocar pet no abrigo
+  ▸ ${P}capturar — capturar personagem
+  ▸ ${P}pets — ver seus personagens
+  ▸ ${P}abrigo — colocar personagem no abrigo
   ▸ ${P}renomearpet _(nome)_ — renomear
 
 ❤️ *CUIDADOS*
-  ▸ ${P}alimentar — alimentar o pet
-  ▸ ${P}brincar — brincar com o pet
-  ▸ ${P}curar — curar o pet
+  ▸ ${P}alimentar — alimentar o personagem
+  ▸ ${P}brincar — interagir com o personagem
+  ▸ ${P}curar — cuidar do personagem
 
 📊 *STATUS & RANKING*
-  ▸ ${P}statuspet — ver status do seu pet
-  ▸ ${P}petrank — ranking de pets
+  ▸ ${P}statuspet — ver status do personagem
+  ▸ ${P}petrank — ranking de personagens
 
 🛒 *LOJA & AJUDA*
-  ▸ ${P}lojapet — loja de pets
+  ▸ ${P}lojapet — loja de itens para personagens
   ▸ ${P}sistempet — como funciona
 
 ⚙️ *GRUPO*
-  ▸ ${P}pet _(on/off/status)_ — ligar ou desligar os pets
+  ▸ ${P}pet _(on/off/status)_ — ligar ou desligar os spawns
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 async function handleSistemaPet(sock, msg, jid, getPrefix) {
-  const P = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const P = obterPrefixo(jid, getPrefix);
   const menu =
 `╔══════════════════════╗
-     🐾 COMO FUNCIONA
+     🎭 COMO FUNCIONA
 ╚══════════════════════╝
 
 🎯 *CAPTURA*
-Pets aparecem aleatoriamente nos grupos. Use ${P}capturar quando um aparecer!
+Personagens aparecem aleatoriamente nos grupos. Use ${P}capturar quando um aparecer!
 
 ❤️ *CUIDADOS*
-Mantenha seu pet com Fome, Felicidade e Saúde em alta usando itens da ${P}lojapet.
+Cuide do personagem e mantenha seus atributos em alta usando itens da ${P}lojapet.
 
 ⭐ *EVOLUÇÃO*
-Brincar e cuidar do seu pet aumenta a experiência dele!
+Interagir e cuidar do personagem aumenta a experiência dele!
 
 📋 *ATALHOS*
   ▸ ${P}menupet — todos os comandos
-  ▸ ${P}statuspet — ver como seu pet está
+  ▸ ${P}statuspet — ver os atributos do personagem
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-  await sock.sendMessage(jid, { text: menu }, { quoted: msg });
+  await enviarMenu(sock, msg, jid, menu);
 }
 
 module.exports = { handleMenuPet, handleSistemaPet };

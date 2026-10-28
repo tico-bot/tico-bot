@@ -418,7 +418,10 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
     const mencao  = numero ? `@${numero}` : nomeDisplay;
     const mensagem = mensagemBase.replace(/\{nome\}/gi, mencao);
 
-    const joinImagePath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagejoin3.jpg');
+    const audioImageDir = path.join(__dirname, '..', '..', '..', 'Audio-Image');
+    const joinImages = ['imagejoin.jpg', 'imagejoin2.jpg', 'imagejoin3.jpg'];
+    const joinImageName = joinImages[Math.floor(Math.random() * joinImages.length)];
+    const joinImagePath = path.join(audioImageDir, joinImageName);
 
     if (fs.existsSync(joinImagePath)) {
       try {

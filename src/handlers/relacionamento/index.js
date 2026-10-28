@@ -31,7 +31,7 @@ const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
 // ─── HELPERS ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-const FUSO = 'America/Sao_Paulo';
+const FUSO = 'America/Cuiaba';
 
 /** Número puro de um JID (sem sufixo de dispositivo nem domínio). */
 function numeroDe(jid) {
@@ -486,10 +486,12 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
       }, { quoted: msg });
       return;
     }
+
     const inicioNamoro = Number(relacionamentoAtual.desde) || new Date(relacionamentoAtual.desde).getTime();
     const tempoNamoro = Date.now() - inicioNamoro;
     if (!Number.isFinite(inicioNamoro) || tempoNamoro < tresDiasMs) {
-      const horasRestantes = Math.ceil((tresDiasMs - Math.max(0, tempoNamoro)) / (60 * 60 * 1000));
+      const restanteMs = tresDiasMs - Math.max(0, tempoNamoro);
+      const horasRestantes = Math.ceil(restanteMs / (60 * 60 * 1000));
       await sock.sendMessage(jid, {
         text: `⏳ Pedido de casamento bloqueado! Vocês precisam namorar por *3 dias completos*. Ainda faltam aproximadamente *${horasRestantes} hora(s)*. 💕`,
         mentions: [alvoJid],
@@ -511,7 +513,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
 
   const jaSender = findRelByJid(jid, senderJid, relacionamentos);
-  if (jaSender && !relacionamentoAtual) {
+  if (jaSender) {
     const frases = [
       `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *${prefixo(jid)}terminar*? 😤`,
       `🤡 Boa tentativa de bigamia! Termina seu relacionamento primeiro, seu(ua) miserável!`,
@@ -524,7 +526,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
 
   const jaAlvo = findRelByJid(jid, alvoJid, relacionamentos);
-  if (jaAlvo && !relacionamentoAtual) {
+  if (jaAlvo) {
     const frases = [
       `😂 *${nomeAlvo}* JÁ tá comprometido(a)! Vai afastar esse lobisomem aí!`,
       `💔 Deprimente! *${nomeAlvo}* tá numa relação! Esse é o seu sinal pra desistir!`,
@@ -607,22 +609,12 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   const grupoOrigem = jidOrigem || jid;
 
   // Durante os 5 minutos de espera, um dos dois pode ter entrado em outro relacionamento.
-  const relSender = findRelByJid(grupoOrigem, senderNorm, relacionamentos);
-  const relPedinte = findRelByJid(grupoOrigem, pedinteNorm, relacionamentos);
-  const podeVirarCasamento = tipo === 'casamento' && relSender && relPedinte &&
-    relSender.key === relPedinte.key && relSender.rel.tipo === 'namoro' &&
-    [relSender.rel.jidA, relSender.rel.jidB].map(jidNormalizedUser).includes(senderNorm) &&
-    [relSender.rel.jidA, relSender.rel.jidB].map(jidNormalizedUser).includes(pedinteNorm);
-  if ((relSender || relPedinte) && !podeVirarCasamento) {
+  if (findRelByJid(grupoOrigem, senderNorm, relacionamentos) ||
+      findRelByJid(grupoOrigem, pedinteNorm, relacionamentos)) {
     await sock.sendMessage(jid, {
       text: '⚠️ Um de vocês já está em outro relacionamento. O pedido foi cancelado.',
     }, { quoted: msg });
     return;
-  }
-  if (podeVirarCasamento) {
-    relacionamentos.delete(relSender.key);
-    xpCasais.delete(relSender.key);
-    xpBonus.delete(relSender.key);
   }
 
   const key   = relKey(grupoOrigem, senderNorm, pedinteNorm);
@@ -743,9 +735,14 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   const caption = frases[Math.floor(Math.random() * frases.length)] +
     `\n\n⏳ Ambos ficam bloqueados por *10 minutos* antes de se comprometer novamente.`;
   const imagemPath = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imagecasal4.jpg');
+
   try {
     const imageBuffer = fs.readFileSync(imagemPath);
-    await sock.sendMessage(jid, { image: imageBuffer, caption, mentions: [senderNorm, parcJid] }, { quoted: msg });
+    await sock.sendMessage(jid, {
+      image: imageBuffer,
+      caption,
+      mentions: [senderNorm, parcJid],
+    }, { quoted: msg });
   } catch {
     await sock.sendMessage(jid, { text: caption, mentions: [senderNorm, parcJid] }, { quoted: msg });
   }
