@@ -274,12 +274,22 @@ async function startBot() {
 
   // Mensagens
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+    // Diagnóstico temporário: confirma se o Baileys entrega mensagens ao roteador,
+    // sem registrar conteúdo, texto ou números dos participantes.
+    console.log(`[Messages] upsert recebido — type=${type} count=${messages?.length ?? 0}`);
+    if (type !== 'notify') {
+      console.log(`[Messages] upsert ignorado pelo filtro — type=${type}`);
+      return;
+    }
 
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
-      if (!msg.message) continue;
+      if (!msg.message) {
+        console.warn('[Messages] Mensagem recebida sem payload de conteúdo.');
+        continue;
+      }
 
+      console.log(`[Messages] Encaminhando ao roteador — jidType=${msg.key.remoteJid?.split('@')[1] || 'unknown'}`);
       try {
         await handleMessage(sock, msg);
       } catch (err) {
