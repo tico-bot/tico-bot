@@ -176,9 +176,9 @@ npm run test:cloud-downloads
 npm run test:security
 ```
 
-## Buscar letras de m�asicas
+## Buscar letras de músicas
 
-Use `/letram�asica <nome da m�asica e artista>` para pesquisar uma faixa. Os aliases `/letramusica` e `/letramsc` também são aceitos. O bot retorna os dados da faixa, uma prévia curta de até 90 caracteres e um link para continuar a busca; ele não republica a letra completa.
+Use `!letramusica <nome da música e artista>` para pesquisar uma faixa. Os aliases `!letramusica` e `!letramsc` também são aceitos. O bot retorna os dados da faixa, uma prévia curta de até 90 caracteres e um link para continuar a busca; ele não republica a letra completa.
 
 ## Testes e verificações
 
