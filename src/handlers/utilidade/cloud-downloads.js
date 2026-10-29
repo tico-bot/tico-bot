@@ -457,7 +457,7 @@ function formatFileSize(bytes) {
 
 function formatDownloadCaption(result, provider, sourceUrl) {
   const providerName = provider === 'mediafire' ? 'MediaFire' : 'Google Drive';
-  const extension = path.extname(result.fileName || '').replace(/^\\./, '').toUpperCase();
+  const extension = path.extname(result.fileName || '').slice(1).toUpperCase();
   const type = extension || result.mimetype || 'desconhecido';
   const size = Number(result.size);
   const sizeText = Number.isFinite(size)
