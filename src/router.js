@@ -853,6 +853,10 @@ async function handleMessage(sock, msg) {
   // ── DOWNLOADS ─────────────────────────────────────────────────
   if (matchCmdStart(cmd, 'tiktok'))
     { await utilidadeHandler.handleTiktok(sock, msg, jid, caption, getPrefix); return; }
+  if (matchCmd(cmdWord, 'mediafire') || matchCmdStart(cmd, 'mediafire '))
+    { await utilidadeHandler.handleMediafire(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'googledriver') || matchCmdStart(cmd, 'googledriver '))
+    { await utilidadeHandler.handleGoogleDrive(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'save') || matchCmdStart(cmd, 'save '))
     { await utilidadeHandler.handleSave(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'saverec'))
@@ -865,6 +869,8 @@ async function handleMessage(sock, msg) {
     { await utilidadeHandler.handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic); return; }
   if (matchCmd(cmdWord, 'playdoc'))
     { await utilidadeHandler.handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic); return; }
+  if (['letramúsica', 'letramusica', 'letramsc'].some((name) => matchCmd(cmdWord, name)))
+    { await utilidadeHandler.handleLetraMusica(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pinterest') || matchCmd(cmdWord, 'pinterest2'))
     { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
 
@@ -885,6 +891,7 @@ async function handleMessage(sock, msg) {
   if (matchCmdStart(cmd, 'figtexto '))    { await figurinhaHandler.handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount); return; }
   if (matchCmd(cmdWord, 'attp') || matchCmdStart(cmd, 'attp '))   { await figurinhaHandler.handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, 1); return; }
   if (matchCmd(cmdWord, 'attp2') || matchCmdStart(cmd, 'attp2 ')) { await figurinhaHandler.handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, 2); return; }
+  if (matchCmd(cmdWord, 'attp3') || matchCmdStart(cmd, 'attp3 ')) { await figurinhaHandler.handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, 3); return; }
   if (matchCmdStart(cmd, 'qc '))          { await figurinhaHandler.handleQc(sock, msg, jid, caption, getPrefix, stickerCount, 1); return; }
   if (matchCmdStart(cmd, 'qc2 '))         { await figurinhaHandler.handleQc(sock, msg, jid, caption, getPrefix, stickerCount, 2); return; }
   if (matchCmdStart(cmd, 'emojimix'))     { await figurinhaHandler.handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount); return; }

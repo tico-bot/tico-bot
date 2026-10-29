@@ -18,6 +18,8 @@ const {
   handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs,
   getFfmpegPath, getFfprobePath,
 } = require('./downloads');
+const { handleMediafire, handleGoogleDrive } = require('./cloud-downloads');
+const { handleLetraMusica } = require('./letras-musica');
 
 const { handleCep, handleClima, handleMoeda, handleCalcular, handleTraduzir } = require('./consultas');
 const {
@@ -49,6 +51,9 @@ module.exports = {
   handleSom,
   handlePlayMp4,
   handlePlayDoc,
+  handleMediafire,
+  handleGoogleDrive,
+  handleLetraMusica,
   getYtDlpPath,
   getYtDlpArgs,
   getFfmpegPath,

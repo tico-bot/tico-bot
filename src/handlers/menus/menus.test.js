@@ -65,6 +65,15 @@ test('all active Tico menus render with a configured prefix and no missing value
   }
 });
 
+test('sticker menu documents all ATTP styles without a text placeholder', async () => {
+  const menu = await renderMenu('figurinhas', () =>
+    figurinha.handleMenuFig(sock, msg, jid, getPrefix));
+  assert.match(menu, /▸ !attp — texto animado/);
+  assert.match(menu, /▸ !attp2 — texto animado v2/);
+  assert.match(menu, /▸ !attp3 — texto animado colorido/);
+  assert.doesNotMatch(menu, /!attp(?:2|3)? _\(texto\)_/i);
+});
+
 test('main and category menus include key working commands', async () => {
   const main = await renderMenu('principal', () =>
     utilidade.handleMenu(sock, msg, jid, '!menu', getPrefix, 'Tester'));
@@ -92,6 +101,14 @@ test('main and category menus include key working commands', async () => {
   for (const command of ['quizfut', 'forca', 'pescar', 'eredivisie', 'mundial', 'campeonatozoeira']) {
     assert.ok(games.includes(command), 'menujogos should include ' + command);
   }
+
+  const downloads = await renderMenu('downloads', () =>
+    utilidade.handleMenuBaixar(sock, msg, jid, getPrefix));
+  assert.match(downloads, /!mediafire <link>/);
+  assert.match(downloads, /!googledriver <link>/);
+  assert.match(downloads, /DOCX\/XLSX\/PPTX/);
+  assert.match(downloads, /!letram\u00fasica <m\u00fasica\/artista>/);
+  assert.match(downloads, /!letramusica \/ !letramsc/);
 
   const family = await renderMenu('filhos', () =>
     utilidade.handleMenuFilho(sock, msg, jid, getPrefix));

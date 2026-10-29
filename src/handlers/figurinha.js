@@ -2,7 +2,7 @@
 
 /**
  * Handler de Figurinhas — Tico Bot
- * Comandos: !s, !f, !desfig, !brat, !figtexto, !attp, !attp2,
+ * Comandos: !s, !f, !desfig, !brat, !figtexto, !attp, !attp2, !attp3,
  *           !toimg, !togif,
  *           !figemoji, !figroblox, !figmeme,
  *           !figcoreana, !figraiva, !figengracada, !figdesenho,
@@ -23,6 +23,7 @@ const {
   convertVideoToSticker,
   convertBratSticker,
   convertTextoSticker,
+  convertAttp3Sticker,
   isSupportedRasterImage,
 } = require(path.join(__dirname, '..', 'sticker'));
 
@@ -770,44 +771,81 @@ async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) 
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !attp / !attp2 ───────────────────────────────────────────
+// ─── !attp / !attp2 / !attp3 ──────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
 async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, versao = 1) {
-  const P   = getPrefix(jid);
-  const cmd = versao === 2 ? 'attp2' : 'attp';
+  const P = getPrefix(jid);
+  const cmd = versao === 2 ? 'attp2' : versao === 3 ? 'attp3' : 'attp';
   const text = caption.replace(new RegExp(`^[!.,\\/]*${cmd}\\s*`, 'i'), '').trim();
 
   if (!text) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Digite um texto!\nEx: *${P}${cmd} Olá mundo*`,
+      text: `⚠️ Escreva a frase que deseja colocar na figurinha.\nEx: *${P}${cmd} Bom dia galera!*`,
     }, { quoted: msg });
-    return;
+    return false;
+  }
+
+  if (Array.from(text).length > 80) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use até 80 caracteres para a figurinha ficar legível.',
+    }, { quoted: msg });
+    return false;
   }
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const registerSticker = () => {
+    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+  };
+
+  // O terceiro estilo é produzido localmente e não depende de API externa.
+  if (versao === 3) {
+    try {
+      const sticker = await convertAttp3Sticker(text);
+      await sock.sendMessage(jid, { sticker });
+      registerSticker();
+      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+      return true;
+    } catch (err) {
+      console.error('[attp3] Falha ao gerar animação local:', err.message);
+      await sock.sendMessage(jid, { text: '❌ Não consegui gerar a figurinha animada agora. Tente novamente mais tarde.' }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return false;
+    }
+  }
+
   try {
     const endpoint = versao === 1 ? 'textsticker' : 'textsticker2';
-    const url      = `https://api.lolhuman.xyz/api/${endpoint}?apikey=galanggg&text=${encodeURIComponent(text)}`;
-    const buf      = await fetchBuffer(url);
+    const url = `https://api.lolhuman.xyz/api/${endpoint}?apikey=galanggg&text=${encodeURIComponent(text)}`;
+    const buf = await fetchBuffer(url);
 
     if (!buf || buf.length < 100) throw new Error('Buffer inválido ou vazio');
-
-    const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (!isAnimatedWebp(buf)) throw new Error('A API não retornou um WebP animado válido');
 
     await sock.sendMessage(jid, { sticker: buf });
+    registerSticker();
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+    return true;
   } catch (err) {
-    console.error(`[${cmd}] API falhou, usando fallback figtexto:`, err.message);
-
-    // Remove a reação de loading antes de passar pro fallback (evita reação "presa" em ⏳)
+    console.error(`[${cmd}] API falhou; tentando gerar animação local:`, err.message);
     await sock.sendMessage(jid, { react: { text: '', key: msg.key } });
 
-    // Fallback para figtexto local — repassa a caption adaptada
-    const captionFallback = caption.replace(new RegExp(`^[!.,\\/]*${cmd}`, 'i'), '!figtexto');
-    await handleFigtexto(sock, msg, jid, captionFallback, getPrefix, stickerCount);
+    try {
+      const sticker = await convertAttp3Sticker(text);
+      await sock.sendMessage(jid, { sticker });
+      registerSticker();
+      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+      return true;
+    } catch (fallbackErr) {
+      console.error(`[${cmd}] Fallback animado falhou:`, fallbackErr.message);
+      await sock.sendMessage(jid, {
+        text: '❌ Não consegui gerar a figurinha animada agora. Tente novamente mais tarde.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } });
+      return false;
+    }
   }
 }
 
@@ -1159,8 +1197,9 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
 🖼️ *CRIAR*
   ▸ ${P}s — imagem/vídeo → sticker
   ▸ ${P}f — alias do ${P}s
-  ▸ ${P}attp _(texto)_ — texto animado
-  ▸ ${P}attp2 _(texto)_ — texto animado v2
+  ▸ ${P}attp — texto animado
+  ▸ ${P}attp2 — texto animado v2
+  ▸ ${P}attp3 — texto animado colorido
   ▸ ${P}brat _(texto)_
   ▸ ${P}figtexto _(texto)_
   ▸ ${P}qc _(texto)_

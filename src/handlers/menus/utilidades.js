@@ -61,6 +61,8 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'audio <link> — baixar áudio de um link',
     '  ▸ ' + P + 'playmp4 — baixar o vídeo da música pesquisada mais recentemente',
     '  ▸ ' + P + 'playdoc — enviar a música recente como documento',
+    '  ▸ ' + P + 'letramúsica <música/artista> — pesquisar letra',
+    '  ▸ ' + P + 'letramusica / ' + P + 'letramsc — aliases do comando',
     '',
     '📱 *VÍDEO & REDES SOCIAIS*',
     '  ▸ ' + P + 'tiktok <link> — baixar vídeo do TikTok',
@@ -68,6 +70,11 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'saverec <link> — recortar trecho inicial da mídia',
     '  ▸ ' + P + 'pinterest <link> — baixar mídia do Pinterest',
     '  ▸ ' + P + 'pinterest2 <link> — alias de pinterest',
+    '',
+    '📁 *ARQUIVOS*',
+    '  ▸ ' + P + 'mediafire <link> — baixar arquivo do MediaFire',
+    '  ▸ ' + P + 'googledriver <link> — baixar arquivo do Google Drive',
+    '  ▸ ' + P + 'googledriver <link do Docs/Sheets/Slides> — exportar para DOCX/XLSX/PPTX',
     '',
     '━━━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n');

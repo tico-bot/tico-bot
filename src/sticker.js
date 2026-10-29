@@ -395,6 +395,74 @@ async function convertTextoSticker(text) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ─── convertAttp3Sticker ──────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Gera localmente uma figurinha WebP animada com fundo em gradiente
+ * multicolorido. Não depende de APIs externas.
+ * @param {string} text
+ * @returns {Promise<Buffer>}
+ */
+async function convertAttp3Sticker(text) {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new TypeError('convertAttp3Sticker: texto inválido.');
+  }
+  if (Array.from(text.trim()).length > 80) {
+    const error = new Error('O texto deve ter no máximo 80 caracteres.');
+    error.code = 'ATTP_TEXT_TOO_LONG';
+    throw error;
+  }
+
+  const frameCount = 16;
+  const fps = 8;
+  const tempDir = path.join(os.tmpdir(), `tico-attp3-${randomUUID()}`);
+  const outputPath = path.join(tempDir, 'attp3.webp');
+
+  const runFfmpeg = (bin, args) => new Promise((resolve, reject) => {
+    execFile(bin, args, { timeout: 45_000, maxBuffer: 2 * 1024 * 1024 }, (err, _stdout, stderr) => {
+      if (err) reject(new Error(`Não foi possível montar a animação: ${String(stderr || err.message).slice(-500)}`));
+      else resolve();
+    });
+  });
+
+  try {
+    const ffmpegBin = resolveFfmpegBin();
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    for (let i = 0; i < frameCount; i++) {
+      const hue = Math.round((i / frameCount) * 360);
+      const nextHue = (hue + 120) % 360;
+      const lastHue = (hue + 240) % 360;
+      const baseSvg = makeTextSVG(text.trim(), '#ff00a8', '#ffffff');
+      const gradient = `<defs><linearGradient id="attp3-gradient" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate(${hue} 256 256)"><stop offset="0%" stop-color="hsl(${hue},100%,48%)"/><stop offset="50%" stop-color="hsl(${nextHue},100%,45%)"/><stop offset="100%" stop-color="hsl(${lastHue},100%,48%)"/></linearGradient></defs><rect width="512" height="512" fill="url(#attp3-gradient)"/>`;
+      const frameSvg = baseSvg
+        .replace('<rect width="512" height="512" fill="#ff00a8"/>', gradient)
+        .replace(/<text\b/g, '<text stroke="#111827" stroke-width="5" paint-order="stroke" stroke-linejoin="round"');
+      const framePath = path.join(tempDir, `frame-${String(i).padStart(3, '0')}.png`);
+      await sharp(Buffer.from(frameSvg)).png().toFile(framePath);
+    }
+
+    await runFfmpeg(ffmpegBin, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-framerate', String(fps), '-start_number', '0',
+      '-i', path.join(tempDir, 'frame-%03d.png'),
+      '-frames:v', String(frameCount),
+      '-c:v', 'libwebp', '-lossless', '0', '-quality', '80',
+      '-loop', '0', '-an', outputPath,
+    ]);
+
+    const output = fs.readFileSync(outputPath);
+    if (!isAnimatedWebp(output)) {
+      throw new Error('O FFmpeg não gerou um WebP animado válido.');
+    }
+    return output;
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ─── roubarSticker ────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
@@ -434,5 +502,7 @@ module.exports = {
   convertVideoToSticker,
   convertBratSticker,
   convertTextoSticker,
+  convertAttp3Sticker,
+  isAnimatedWebp,
   roubarSticker,
 };

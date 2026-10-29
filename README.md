@@ -159,6 +159,27 @@ src/
 
 A estrutura acima destaca os principais diretórios; outros módulos e arquivos auxiliares também fazem parte do projeto.
 
+## Downloads de arquivos
+
+O bot disponibiliza comandos para receber arquivos públicos diretamente pelo WhatsApp:
+
+- `!mediafire <link>` — baixa um arquivo público do MediaFire.
+- `!googledriver <link>` — baixa um arquivo público do Google Drive.
+- Links de Documentos, Planilhas e Apresentações Google são exportados para DOCX, XLSX e PPTX, respectivamente.
+
+Os arquivos precisam estar acessíveis sem login, sem senha e sem permissão especial. O limite por arquivo é de 64 MiB. Links para pastas, arquivos privados, downloads bloqueados pelo proprietário e arquivos acima do limite são recusados. Os downloads são limitados por usuário e têm um intervalo entre requisições para reduzir abuso e consumo excessivo de memória.
+
+Teste os utilitários e os casos de segurança com:
+
+```bash
+npm run test:cloud-downloads
+npm run test:security
+```
+
+## Buscar letras de m�asicas
+
+Use `/letram�asica <nome da m�asica e artista>` para pesquisar uma faixa. Os aliases `/letramusica` e `/letramsc` também são aceitos. O bot retorna os dados da faixa, uma prévia curta de até 90 caracteres e um link para continuar a busca; ele não republica a letra completa.
+
 ## Testes e verificações
 
 O projeto disponibiliza um teste automatizado de segurança para downloads:

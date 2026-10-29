@@ -19,8 +19,8 @@ const AVISO_INTERVALO_MS = 30_000;
 
 // Comandos (sem prefixo) considerados pesados.
 const PESADOS = new Set([
-  'tiktok', 'save', 'saverec', 'audio', 'som', 'play', 'playmp4', 'playdoc', 'pinterest', 'pinterest2',
-  'brat', 'figtexto', 'attp', 'attp2', 'qc', 'qc2', 'emojimix', 'toimg', 'togif', 'desfig', 'estourar',
+  'tiktok', 'save', 'saverec', 'audio', 'som', 'play', 'playmp4', 'playdoc', 'pinterest', 'pinterest2', 'letramúsica', 'letramusica', 'letramsc',
+  'brat', 'figtexto', 'attp', 'attp2', 'attp3', 'qc', 'qc2', 'emojimix', 'toimg', 'togif', 'desfig', 'estourar',
   'pesquisafig', 'fig', 'figemoji', 'figroblox', 'figmeme', 'figcoreana', 'figraiva', 'figengracada', 'figdesenho',
   'videolento', 'videorapido', 'videocontrario', 'reversevideo', 'audiolento', 'audiorapido',
   'grave', 'esquilo', 'bass', 'vozmenino', 'vozgrossa', 'vozmulher', 'audioreverse', 'vozrobo',
