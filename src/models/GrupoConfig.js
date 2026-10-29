@@ -17,6 +17,8 @@ const grupoConfigSchema = new mongoose.Schema(
 
     // ── Moderação ────────────────────────────────────────────────
     antiLink:          { type: Boolean, default: false },
+    linksPermitidos:   { type: [String], default: [] },
+    admsPermissao:     { type: [String], default: [] },
     autoSticker:       { type: Boolean, default: false },
     slowModeAtivo:     { type: Boolean, default: false },
     slowModeSegundos:  { type: Number,  default: 30,  min: 1  },

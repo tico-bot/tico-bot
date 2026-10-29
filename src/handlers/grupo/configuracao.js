@@ -40,8 +40,9 @@ async function handleAntiLink(sock, msg, content, jid) {
       { $set: { antiLink: true } },
       { upsert: true }
     );
+    try { require('../../router').invalidateGrupoConfigCache(jid); } catch {}
     await sock.sendMessage(jid, {
-      text: '🔗 Anti-link ativado! Quem mandar link leva ban.',
+      text: '🔗 Anti-link ativado! Links fora da lista branca serão removidos.'
     }, { quoted: msg });
 
   } else if (['off', 'desativar', 'desativado'].includes(arg)) {
@@ -54,6 +55,7 @@ async function handleAntiLink(sock, msg, content, jid) {
       { $set: { antiLink: false } },
       { upsert: true }
     );
+    try { require('../../router').invalidateGrupoConfigCache(jid); } catch {}
     await sock.sendMessage(jid, { text: '🔗 Anti-link desativado.' }, { quoted: msg });
 
   } else {

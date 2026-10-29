@@ -78,6 +78,7 @@ const { registerActiveGroup }                                       = require('.
 
 const { prepareDailyMissionState, incrementMission } = require('./handlers/diversao/missoes');
 const { addUserXp, getBonusHorario }                 = require('./utils/xp');
+const { extrairDominiosDeLinks, todosLinksPermitidos } = require('./utils/links');
 
 // Fix #1: unmuteUser agora é corretamente re-exportado por handlers/grupo/index.js!
 const { isMuted, unmuteUser } = require('./handlers/grupo');
@@ -276,22 +277,35 @@ async function handleMessage(sock, msg) {
 
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
-  // ── Anti-Link ────────────────────────────────────────────────
-  // Roda inclusive em mensagens que começam com prefixo: senão "!http://spam" escapava.
-  if (isGroup) {
-    const hasLink = /(https?:\/\/|wa\.me\/|chat\.whatsapp\.com)/i.test(caption);
-    if (hasLink) {
+  // ── Anti-Link com lista branca ───────────────────────────────
+  // Os comandos que gerenciam a lista branca podem conter domínios nos argumentos.
+  const comandosGestaoLinks = new Set(['permlink', 'rmpermlink', 'listlinkbranco', 'antilink', 'gimage']);
+  const comandoGestaoLinks = VALID_PREFIXES.some(prefix => {
+    if (!caption.startsWith(prefix)) return false;
+    const palavra = caption.slice(prefix.length).trim().split(/\s+/)[0]?.toLowerCase();
+    return comandosGestaoLinks.has(palavra);
+  });
+
+  if (isGroup && !comandoGestaoLinks) {
+    const dominios = extrairDominiosDeLinks(caption);
+    if (dominios.length > 0) {
       const cfgLink = await getCachedGrupoConfig(jid);
       if (cfgLink?.antiLink) {
         const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
-        if (!isAdm) {
+        if (!isAdm && !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
+          let removida = false;
           try {
-            await sock.sendMessage(jid, {
-              text: `🚫 *${getSenderName(msg)}*, links não são permitidos neste grupo!`,
-              mentions: [senderJid],
-            });
-            await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
-          } catch {}
+            await sock.sendMessage(jid, { delete: msg.key });
+            removida = true;
+          } catch (err) {
+            console.error('[AntiLink] Não consegui remover mensagem:', err.message);
+          }
+          await sock.sendMessage(jid, {
+            text: removida
+              ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida porque contém link(s) fora da lista branca.`
+              : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
+            mentions: senderJid ? [senderJid] : [],
+          }).catch(() => {});
           return;
         }
       }
@@ -514,6 +528,10 @@ async function handleMessage(sock, msg) {
     { await figurinhaHandler.handleMenuFig(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menuefeitos'))
     { await imagemHandler.handleMenuEfeitos(sock, msg, jid, getPrefix(jid)); return; }
+  if (matchPrefixCmd(caption, 'gimage', jid)) {
+    await utilidadeHandler.handleGoogleImageSearch(sock, msg, jid, extractPrefixArgs(caption, 'gimage', jid));
+    return;
+  }
 
   if (matchPrefixCmd(caption, 'sfundo', jid)) {
     await imagemHandler.handleSfundo(sock, msg, content, jid);
@@ -581,8 +599,22 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleSorteio(sock, msg, content, jid, botJid, contactNames); return; }
   if (matchCmd(cmdWord, 'enquete') || matchCmdStart(cmd, 'enquete '))
     { await grupoHandler.handleEnquete(sock, msg, jid, caption); return; }
+  if (matchPrefixCmd(caption, 'fotogp', jid) || matchPrefixCmd(caption, 'setfotogp', jid))
+    { await grupoHandler.handleFotoGrupo(sock, msg, content, jid); return; }
   if (matchCmd(cmdWord, 'antilink') || matchCmdStart(cmd, 'antilink '))
     { await grupoHandler.handleAntiLink(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'permlink') || matchCmdStart(cmd, 'permlink '))
+    { await grupoHandler.handlePermLink(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'rmpermlink') || matchCmdStart(cmd, 'rmpermlink '))
+    { await grupoHandler.handleRemovePermLink(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'listlinkbranco'))
+    { await grupoHandler.handleListLinkBranco(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'permadm') || matchCmdStart(cmd, 'permadm '))
+    { await grupoHandler.handlePermAdm(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'rmpermadm') || matchCmdStart(cmd, 'rmpermadm '))
+    { await grupoHandler.handleRemovePermAdm(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'admsperm'))
+    { await grupoHandler.handleAdmsPerm(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'autosticker') || matchCmdStart(cmd, 'autosticker '))
     { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
   if (matchCmd(cmdWord, 'slowmode') || matchCmdStart(cmd, 'slowmode '))

@@ -3,6 +3,8 @@
 const fs   = require('fs');
 const path = require('path');
 const Usuario = require('../../models/Usuario');
+const GrupoConfig = require('../../models/GrupoConfig');
+const LidMapping = require('../../models/LidMapping');
 const { normalizarJid } = require('../../utils/jid');
 const { resolveUsuarioInfo } = require('../../utils/identity');
 
@@ -18,6 +20,7 @@ const {
   mutedCount,
   clearMuted,
   getGroupMetadataCached,
+  isAdmin,
 } = require('./helpers');
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imageban.jpg');
@@ -331,11 +334,81 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
   }
-  if (!await checkAdmin(sock, msg, jid, acao === 'promote' ? 'promover' : 'rebaixar')) return;
+  const comando = acao === 'promote' ? 'promover' : 'rebaixar';
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  if (!await isAdmin(sock, jid, senderJid)) {
+    await checkAdmin(sock, msg, jid, comando);
+    return;
+  }
+
+  // A permissão especial vale apenas para este grupo. O dono do grupo tem
+  // autorização automática; um ADM comum sem permissão é rebaixado ao tentar.
+  let metaPermissao;
+  try {
+    metaPermissao = await getGroupMetadataCached(sock, jid, true);
+  } catch {
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui verificar as permissões do grupo. A ação foi cancelada por segurança.',
+    }, { quoted: msg });
+    return;
+  }
+  if (!metaPermissao?.participants) {
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui verificar os administradores. A ação foi cancelada por segurança.',
+    }, { quoted: msg });
+    return;
+  }
+
+  let senderPart = metaPermissao.participants.find(p => p && (
+    normalizeJidBase(p.id) === normalizeJidBase(senderJid) ||
+    normalizeJidBase(p.lid) === normalizeJidBase(senderJid)
+  ));
+  if (!senderPart) {
+    const mapping = await LidMapping.findOne({ $or: [{ pn: senderJid }, { lid: senderJid }] }).lean().catch(() => null);
+    const alternateJid = mapping
+      ? (normalizarJid(mapping.pn) === normalizarJid(senderJid) ? mapping.lid : mapping.pn)
+      : null;
+    if (alternateJid) {
+      const alternateBase = normalizeJidBase(alternateJid);
+      senderPart = metaPermissao.participants.find(p => p && (
+        normalizeJidBase(p.id) === alternateBase || normalizeJidBase(p.lid) === alternateBase
+      ));
+    }
+  }
+  if (!senderPart?.admin) {
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui confirmar que você é administrador deste grupo. A ação foi cancelada.',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (senderPart.admin === 'admin') {
+    const cfgPermissao = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+    const basesSender = new Set([senderJid, senderPart.id, senderPart.lid]
+      .filter(Boolean).map(normalizeJidBase));
+    const autorizado = (Array.isArray(cfgPermissao?.admsPermissao) ? cfgPermissao.admsPermissao : [])
+      .some(id => basesSender.has(normalizeJidBase(id)));
+
+    if (!autorizado) {
+      let rebaixado = false;
+      try {
+        await sock.groupParticipantsUpdate(jid, [senderPart.id || senderJid], 'demote');
+        rebaixado = true;
+      } catch (err) {
+        console.error('[handlePromoverRebaixar] Falha ao rebaixar ADM sem permissão:', err.message);
+      }
+      await sock.sendMessage(jid, {
+        text: rebaixado
+          ? `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* tentou usar !${comando} sem permissão especial e foi rebaixado automaticamente.`
+          : `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* não tem permissão especial para !${comando}. Não consegui rebaixá-lo; confirme se o bot é administrador do grupo.`,
+        mentions: [senderPart.id || senderJid],
+      }, { quoted: msg });
+      return;
+    }
+  }
 
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const isAll     = /@all\b/i.test(textMsg);
-  const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderBase = normalizeJidBase(senderJid);
 
   if (isAll) {

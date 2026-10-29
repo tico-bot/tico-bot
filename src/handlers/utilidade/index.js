@@ -20,6 +20,7 @@ const {
 } = require('./downloads');
 const { handleMediafire, handleGoogleDrive } = require('./cloud-downloads');
 const { handleLetraMusica } = require('./letras-musica');
+const { handleGoogleImageSearch } = require('./google-images');
 
 const { handleCep, handleClima, handleMoeda, handleCalcular, handleTraduzir } = require('./consultas');
 const {
@@ -54,6 +55,7 @@ module.exports = {
   handleMediafire,
   handleGoogleDrive,
   handleLetraMusica,
+  handleGoogleImageSearch,
   getYtDlpPath,
   getYtDlpArgs,
   getFfmpegPath,

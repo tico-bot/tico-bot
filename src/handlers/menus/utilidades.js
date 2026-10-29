@@ -19,6 +19,7 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'traduzir <idioma> <texto> — traduzir texto',
     '  ▸ ' + P + 'inverter <texto> — inverter o texto',
     '  ▸ ' + P + 'gerarnome — gerar um nickname',
+    '  ▸ ' + P + 'gimage <termo> — pesquisar imagens no Google Imagens',
     '  ▸ ' + P + 'fofoca [@pessoa] — brincadeira social',
     '',
     '📡 *CÓDIGO MORSE*',

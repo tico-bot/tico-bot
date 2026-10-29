@@ -60,6 +60,9 @@ const {
   setBemVindo,
 } = require('./helpers');
 
+const segurancaHandler = require('./seguranca');
+const fotoHandler = require('./foto');
+
 // ═══════════════════════════════════════════════════════════════
 // ─── !menuadm ─────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -130,4 +133,6 @@ module.exports = {
   handleAdvertencia,
   setBemVindo,
   handleBotToggle,
+  ...segurancaHandler,
+  ...fotoHandler,
 };
