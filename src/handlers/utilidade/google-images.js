@@ -129,7 +129,10 @@ function formatImageCaption(item, index, total, query, details = {}) {
   const title = item.title || `Imagem ${index + 1}`;
   let sourceHost = '';
   try {
-    if (item.sourceUrl) sourceHost = new URL(item.sourceUrl).hostname.replace(/^www\\./i, '');
+    if (item.sourceUrl) {
+      const hostname = new URL(item.sourceUrl).hostname;
+      sourceHost = hostname.toLowerCase().startsWith('www.') ? hostname.slice(4) : hostname;
+    }
   } catch {}
   const source = item.sourceUrl ? `\\n🌐 *Site:* ${sourceHost || 'fonte externa'}\\n🔗 *Fonte:* ${item.sourceUrl}` : '';
   const dimensions = details.width && details.height
