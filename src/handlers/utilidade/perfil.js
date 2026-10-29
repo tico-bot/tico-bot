@@ -9,6 +9,8 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
 const { resolveUsuarioInfo } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { calcularMensagensPerfil, somarContagensIdentidades } = require(path.join(__dirname, '..', '..', 'utils', 'message-count'));
+const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 const PET_EMOJIS = {
@@ -97,14 +99,25 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   } catch {}
 
   const identities = jidEquivalentes(userInfo, alvoJid);
-  const findCount = (map, field = null) => {
-    for (const id of identities) {
-      const value = map?.get?.(id);
-      if (value !== undefined && value !== null) return numeroSeguro(field ? value?.[field] : value);
-    }
-    return 0;
-  };
-  const msgsRec = numeroSeguro(userData?.mensagens, findCount(msgCount, 'count'));
+  const findCount = (map, field = null) => somarContagensIdentidades(
+    map, identities, normalizarJid, field,
+  );
+
+  let usuariosEquivalentes = userData ? [userData] : [];
+  try {
+    const docs = await Usuario.find({ idWhatsApp: { $in: [...identities] } })
+      .select('idWhatsApp mensagens').lean();
+    if (Array.isArray(docs) && docs.length) usuariosEquivalentes = docs;
+  } catch (err) {
+    console.warn('⚠️ Não foi possível consolidar mensagens PN/LID no perfil:', err.message);
+  }
+  // O contador local é uma segunda fonte para compatibilidade histórica. Nunca
+  // deixe um `mensagens: 0` do Mongo esconder um total válido dessa fonte.
+  const msgsRec = calcularMensagensPerfil({
+    usuarios: usuariosEquivalentes,
+    fallback: userData?.mensagens,
+    contadorLocal: findCount(msgCount, 'count'),
+  });
   const cmdsRec = findCount(cmdCount);
   const sticks  = findCount(stickerCount);
   const total   = msgsRec + cmdsRec + sticks;
@@ -116,7 +129,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   let rankText = '';
   try {
     const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
-    const idx   = ranks.findIndex(([k]) => identities.has(k));
+    const idx   = ranks.findIndex(([k]) => identities.has(k) || identities.has(normalizarJid(k)));
     if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
   } catch {}
 

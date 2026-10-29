@@ -12,6 +12,7 @@ const JogoRequest   = require('../models/JogoRequest');
 const { normalizarJid } = require('../utils/jid');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const { mapParaObjeto, somarMap } = require('../utils/mapas');
+const { calcularTotalMensagens } = require('../utils/message-count');
 const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
@@ -60,6 +61,45 @@ function dadosPublicosUsuario(candidatos = [], fallbackJid = '') {
 
 // Retorna variantes de números brasileiros com e sem o nono dígito.
 // Para números de outros países, mantém apenas o número original.
+function gerarJidsTelefone(numero = '') {
+  const original = String(numero).replace(/\D/g, '');
+  if (!original) return [];
+  const variantes = new Set(gerarVariantesNumero(original));
+  // Também procura números brasileiros sem o DDI 55; o WhatsApp pode devolver
+  // o mesmo PN em formatos diferentes dependendo do registro histórico.
+  if (original.startsWith('55')) {
+    for (const variante of gerarVariantesNumero(original.slice(2))) variantes.add(variante);
+  }
+  return [...variantes].map(n => `${n}@s.whatsapp.net`);
+}
+
+async function resolverJidsEquivalentes(idWhatsApp) {
+  const id = normalizarJid(idWhatsApp) || String(idWhatsApp || '').trim().toLowerCase();
+  const ids = new Set(id ? [id] : []);
+  const pns = new Set(id.endsWith('@s.whatsapp.net') ? gerarJidsTelefone(id.split('@')[0]) : []);
+  const lids = new Set(id.endsWith('@lid') ? [id] : []);
+  for (const pn of pns) ids.add(pn);
+  const mapas = await LidMapping.find({
+    $or: [
+      { lid: { $in: [...lids] } },
+      { pn: { $in: [...pns] } },
+    ],
+  }).select('lid pn').lean();
+  for (const mapa of mapas) {
+    if (mapa.lid) {
+      const lid = normalizarJid(mapa.lid);
+      if (lid) { lids.add(lid); ids.add(lid); }
+    }
+    if (mapa.pn) {
+      for (const pn of gerarJidsTelefone(mapa.pn.split('@')[0])) {
+        pns.add(pn);
+        ids.add(pn);
+      }
+    }
+  }
+  return [...ids];
+}
+
 function gerarVariantesNumero(numero = '') {
   const original = String(numero).replace(/\D/g, '');
   if (!original) return [];
@@ -511,6 +551,25 @@ if (!carteiras.length) {
 
     if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
+    // Os contadores podem estar divididos entre registros PN (@s.whatsapp.net)
+    // e LID (@lid). Agrega todas as identidades ligadas antes de calcular o total.
+    let identidadesUsuario = [idWhatsApp];
+    let usuariosContadores = [];
+    let carteirasContadoras = [];
+    try {
+      identidadesUsuario = await resolverJidsEquivalentes(idWhatsApp);
+      [usuariosContadores, carteirasContadoras] = await Promise.all([
+        Usuario.find({ idWhatsApp: { $in: identidadesUsuario } })
+          .select('idWhatsApp mensagens').lean(),
+        CarteiraGrupo.find({
+          idWhatsApp: { $in: identidadesUsuario },
+          idGrupo: { $regex: /@g\.us$/ },
+        }).select('idWhatsApp idGrupo mensagens').lean(),
+      ]);
+    } catch (err) {
+      console.warn('[API] Não foi possível consolidar contadores PN/LID:', err.message);
+    }
+
     // Filtra APENAS carteiras de grupos válidos (terminados em @g.us)
     const carteirasGruposValidos = carteiras.filter(c => c.idGrupo && typeof c.idGrupo === 'string' && c.idGrupo.endsWith('@g.us'));
 
@@ -522,15 +581,13 @@ if (!carteiras.length) {
       ? Math.max(0, Number(xpSalvoUsuario))
       : xpGruposTotal;
     const goldTotal = carteirasGruposValidos.reduce((s, c) => s + (c.gold ?? 0), 0);
-    const mensagensGruposTotal = carteirasGruposValidos.reduce((s, c) => s + (c.mensagens ?? 0), 0);
-    const mensagensSalvasUsuario = Number(usuario.mensagens);
-    // Os contadores global e por grupo podem estar desencontrados em registros antigos.
-    // Prefere o maior contador disponível para não mostrar zero se a outra fonte já contou.
-    const mensagensTotal = Math.max(
-      Number.isFinite(mensagensSalvasUsuario) ? mensagensSalvasUsuario : 0,
-      mensagensGruposTotal,
-      0,
-    );
+    // Soma registros de identidades equivalentes dentro de cada fonte, mas não
+    // soma Usuario + carteiras entre si: ambas registram as mesmas mensagens.
+    const mensagensTotal = calcularTotalMensagens({
+      usuarios: usuariosContadores.length ? usuariosContadores : [usuario],
+      carteiras: carteirasContadoras.length ? carteirasContadoras : carteirasGruposValidos,
+      fallback: usuario.mensagens,
+    });
 
     const levelGlobal = calcularLevel(xpTotal);
 
