@@ -14,6 +14,7 @@
     "test:api-helpers": "node --test src/utils/mapas.test.js",
     "test:progressao": "node --test src/models/CarteiraGrupo.test.js",
     "test:pet-spawn": "node --test src/models/PetSpawn.test.js",
+    "test:lock": "node --test src/utils/acquireLockWithRetry.test.js",
     "test:boasvindas": "node --test src/handlers/grupo/boasvindas.test.js",
     "test:profile-api": "node --test src/routes/api.display-name.test.js",
     "test:ranking": "node --test src/routes/api.ranking.test.js",

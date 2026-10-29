@@ -33,6 +33,7 @@ const PetSpawn  = require('./models/PetSpawn');
 // ─── Scripts & Utils ──────────────────────────────────────────────────────────
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
 const { acquireLock, startHeartbeat, releaseLock } = require('./utils/instanceLock');
+const { acquireLockWithRetry } = require('./utils/acquireLockWithRetry');
 const { saveData } = require('./utils/persistence');
 
 // ─── Router & Handlers ────────────────────────────────────────────────────────
@@ -439,38 +440,28 @@ async function main() {
     process.exit(1);
   }
 
-  let acquired = await acquireLock();
-  if (!acquired) {
-    console.warn('⚠️ Outra instância do bot está segurando o lock. Aguardando liberação (até 30s)...');
-    for (let i = 0; i < 6; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      acquired = await acquireLock();
-      if (acquired) break;
-    }
+  // A nova instância aguarda a antiga liberar o lock. Não desistir após 30s:
+  // o Render pode encerrar a versão antiga só 60s depois da troca.
+  const acquired = await acquireLockWithRetry({ acquireLock });
+
+  // Só o processo que adquiriu o lock pode resetar a preferência global.
+  // Assim, uma instância concorrente não desliga o spawn do bot que já está ativo.
+  try {
+    const resultadoSpawn = await PetSpawn.desativarTodosNoBoot();
+    console.log(
+      `[PetScheduler] Inicialização segura: spawn automático OFF em ${resultadoSpawn.matchedCount ?? 0} grupo(s).`
+    );
+  } catch (err) {
+    console.error(
+      '❌ Não foi possível garantir o spawn automático OFF. O bot do WhatsApp não será iniciado:',
+      err.message
+    );
+    await releaseLock().catch(() => {});
+    return;
   }
 
-  if (acquired) {
-    // Só o processo que adquiriu o lock pode resetar a preferência global.
-    // Assim, uma instância concorrente não desliga o spawn do bot que já está ativo.
-    try {
-      const resultadoSpawn = await PetSpawn.desativarTodosNoBoot();
-      console.log(
-        `[PetScheduler] Inicialização segura: spawn automático OFF em ${resultadoSpawn.matchedCount ?? 0} grupo(s).`
-      );
-    } catch (err) {
-      console.error(
-        '❌ Não foi possível garantir o spawn automático OFF. O bot do WhatsApp não será iniciado:',
-        err.message
-      );
-      await releaseLock().catch(() => {});
-      return;
-    }
-
-    startHeartbeat();
-    startBot().catch(console.error);
-  } else {
-    console.warn('⚠️ Não foi possível adquirir o lock do WhatsApp após aguardar. O servidor API Web continua rodando.');
-  }
+  startHeartbeat();
+  startBot().catch(console.error);
 }
 
 main().catch(console.error);
