@@ -2,6 +2,8 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const sharp = require('sharp');
 const GrupoConfig = require('../../models/GrupoConfig');
 
 const {
@@ -322,125 +324,309 @@ async function verificarAntiFlood(sock, jid, userJid, botJid) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ─── !bemvindo (PERSISTIDO NO MONGODB - GrupoConfig) ──────────
+// ─── BOAS-VINDAS (foto ou texto, persistido no MongoDB) ────────
 // ═══════════════════════════════════════════════════════════════
 
-const BEMVINDO_MENSAGEM_PADRAO =
-  `👋 Bem-vindo(a) ao grupo, {nome}!\n\n` +
-  `📌 Para começar, que tal se *apresentar* para a galera?\n\n` +
-  `Conta pra gente:\n` +
-  `• 👤 *Nome:*\n` +
-  `• 🎂 *Idade:*\n` +
-  `• 📍 *De onde é:*\n` +
-  `• 📷 *Foto do semblante:*\n` +
-  `• 🎯 *O que te trouxe aqui:*\n\n` +
-  `_Seja bem vindo!! 😄_`;
+const LIMITE_MSG_BOAS_VINDAS = 5000;
+const IMAGENS_BOAS_VINDAS_PADRAO = ['imagejoin.jpg', 'imagejoin2.jpg', 'imagejoin3.jpg'];
 
-async function handleBemVindo(sock, msg, jid, caption) {
-  if (!jid.endsWith('@g.us')) {
+function extrairArgumentosBoasVindas(caption, comando) {
+  const texto = String(caption || '');
+  const variantes = {
+    boasvindas: ['boasvindas', 'bv'],
+    boasvindastexto: ['boasvindastexto', 'bvtexto'],
+    legendaboasvindas: ['legendaboasvindas', 'legendabv'],
+    legendaboasvindastexto: ['legendaboasvindastexto', 'legendabvtexto'],
+  };
+
+  for (const nome of (variantes[comando] || [comando])) {
+    const prefixoComando = new RegExp('^[!.,/#]' + nome + '(?:\\s+|$)', 'i');
+    const resultado = texto.match(prefixoComando);
+    if (resultado) return texto.slice(resultado[0].length).trim();
+  }
+  return texto.trim();
+}
+
+function substituirMarcadoresBoasVindas(template, numero, nomeGrupo, descricao) {
+  const mencao = numero ? '@' + numero : 'novo membro';
+  return String(template || '')
+    .replace(/#numerodele#/gi, mencao)
+    .replace(/#nomedogp#/gi, nomeGrupo || 'este grupo')
+    .replace(/#descri(?:ç|c)(?:ã|a)o#/gi, descricao || 'Descrição não definida.')
+    .replace(/\{nome\}/gi, mencao);
+}
+
+async function handleToggleBoasVindas(sock, msg, jid, caption, tipo) {
+  const comando = tipo === 'foto' ? 'boasvindas' : 'boasvindastexto';
+  if (!jid || !jid.endsWith('@g.us')) {
     await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
     return;
   }
-  if (!await checkAdmin(sock, msg, jid, 'bemvindo')) return;
+  if (!await checkAdmin(sock, msg, jid, comando)) return;
 
-  const args      = caption.replace(/^[!.,\/#]bemvindo\s*/i, '').trim();
+  const args = extrairArgumentosBoasVindas(caption, comando);
   const argsLower = args.toLowerCase();
-
+  const campoAtivo = tipo === 'foto' ? 'boasVindasFotoAtivo' : 'boasVindasTextoAtivo';
+  const campoOutro = tipo === 'foto' ? 'boasVindasTextoAtivo' : 'boasVindasFotoAtivo';
   const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
+  const estadoAtual = cfg?.[campoAtivo] === true;
 
-  if (argsLower === 'off' || argsLower === 'desativar') {
-    if (!cfg?.bemVindoAtivo) {
-      await sock.sendMessage(jid, { text: '😅 Boas-vindas já está desativado.' }, { quoted: msg });
-      return;
-    }
-    await GrupoConfig.findOneAndUpdate(
-      { idGrupo: jid },
-      { $set: { bemVindoAtivo: false } },
-      { upsert: true }
-    );
-    await sock.sendMessage(jid, { text: '👋 Boas-vindas desativado com sucesso.' }, { quoted: msg });
-    return;
-  }
-
-  if (argsLower === 'status') {
-    if (!cfg?.bemVindoAtivo) {
-      await sock.sendMessage(jid, {
-        text: 'ℹ️ Boas-vindas está *desativado* neste grupo.\n\n_Use *!bemvindo on* para ativar com a mensagem padrão._',
-      }, { quoted: msg });
-    } else {
-      const msgAtual = cfg.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
-      await sock.sendMessage(jid, {
-        text: `✅ Boas-vindas está *ativo*!\n\n📝 Mensagem atual:\n\n${msgAtual}`,
-      }, { quoted: msg });
-    }
-    return;
-  }
-
-  if (argsLower === 'on' || argsLower === 'ativar' || args === '') {
-    const mensagem = cfg?.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
-    await GrupoConfig.findOneAndUpdate(
-      { idGrupo: jid },
-      { $set: { bemVindoAtivo: true, bemVindoMensagem: mensagem } },
-      { upsert: true }
-    );
+  if (['ajuda', 'help'].includes(argsLower)) {
     await sock.sendMessage(jid, {
       text:
-        `✅ Boas-vindas ativado com sucesso!\n\n${mensagem}\n\n` +
-        `_Use *!bemvindo [sua mensagem]* para personalizar._\n` +
-        `_Use *{nome}* para mencionar quem entrou._\n` +
-        `_Use *!bemvindo off* para desativar._`,
+        '👋 *BOAS-VINDAS DO TICO*\n\n' +
+        '1️⃣ *Com foto:* *!boasvindas* (alterna ativado/desativado)\n' +
+        '2️⃣ *Só texto:* *!boasvindastexto* (alterna ativado/desativado)\n\n' +
+        '📝 Configure a mensagem que será enviada:\n' +
+        '• *!legendaboasvindas [mensagem]* — modo com foto\n' +
+        '• *!legendaboasvindastexto [mensagem]* — modo só texto\n\n' +
+        '🖼️ Para trocar o fundo, envie uma foto e responda a ela com *!fundoboasvindas*.\n\n' +
+        '✨ *Marcadores:*\n' +
+        '• *#numerodele#* — menciona quem entrou\n' +
+        '• *#nomedogp#* — nome do grupo\n' +
+        '• *#descrição#* — descrição do grupo\n\n' +
+        '📌 *Exemplo:*\n' +
+        '*!legendaboasvindas E aí, #numerodele#! Seja bem-vindo(a) ao grupo #nomedogp#! Regras: #descrição#*\n\n' +
+        '⚠️ Em grupos muito movimentados, muitas entradas seguidas podem fazer o WhatsApp limitar ou bloquear o envio por spam. Use com moderação.',
     }, { quoted: msg });
     return;
   }
 
-  // Mensagem personalizada enviada pelo admin
+  if (argsLower === 'status') {
+    await sock.sendMessage(jid, {
+      text: '👋 Boas-vindas ' + (tipo === 'foto' ? 'com foto' : 'só texto') +
+        ' está ' + (estadoAtual ? '*ATIVADO* ✅' : '*DESATIVADO* ❌') + '.',
+    }, { quoted: msg });
+    return;
+  }
+
+  let novoEstado;
+  if (['on', 'ativar', 'ativado'].includes(argsLower)) {
+    novoEstado = true;
+  } else if (['off', 'desativar', 'desativado'].includes(argsLower)) {
+    novoEstado = false;
+  } else if (!args) {
+    novoEstado = !estadoAtual;
+  } else {
+    await sock.sendMessage(jid, {
+      text: 'Uso: *' + (tipo === 'foto' ? '!boasvindas' : '!boasvindastexto') +
+        '* (alternar) ou acrescente *on*, *off* ou *status*.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const atualizacao = { [campoAtivo]: novoEstado, bemVindoAtivo: false };
+  // Os dois formatos são alternativas: ativar um desativa o outro para não duplicar saudações.
+  if (novoEstado) {
+    atualizacao[campoOutro] = false;
+  }
+
   await GrupoConfig.findOneAndUpdate(
     { idGrupo: jid },
-    { $set: { bemVindoAtivo: true, bemVindoMensagem: args } },
+    { $set: atualizacao },
     { upsert: true }
   );
+
+  if (novoEstado) {
+    const campoMensagem = tipo === 'foto' ? 'boasVindasFotoMensagem' : 'boasVindasTextoMensagem';
+    const temMensagem = Boolean(cfg?.[campoMensagem] && cfg[campoMensagem].trim());
+    const instrucao = tipo === 'foto'
+      ? '!legendaboasvindas [sua mensagem]'
+      : '!legendaboasvindastexto [sua mensagem]';
+    await sock.sendMessage(jid, {
+      text: '✅ Boas-vindas ' + (tipo === 'foto' ? 'com foto' : 'só texto') + ' ativado!' +
+        (temMensagem ? '' : '\n\n⚠️ Agora configure o texto com:\n*' + instrucao + '*') +
+        (tipo === 'foto' ? '\n\n🖼️ Para definir a foto de fundo, responda a uma imagem com *!fundoboasvindas*.' : '') +
+        '\n\nUse o mesmo comando sem argumentos para desativar.',
+    }, { quoted: msg });
+  } else {
+    await sock.sendMessage(jid, {
+      text: '❌ Boas-vindas ' + (tipo === 'foto' ? 'com foto' : 'só texto') + ' desativado.',
+    }, { quoted: msg });
+  }
+}
+
+async function handleBoasVindasFoto(sock, msg, jid, caption) {
+  return handleToggleBoasVindas(sock, msg, jid, caption, 'foto');
+}
+
+async function handleBoasVindasTexto(sock, msg, jid, caption) {
+  return handleToggleBoasVindas(sock, msg, jid, caption, 'texto');
+}
+
+async function handleLegendaBoasVindas(sock, msg, jid, caption, tipo) {
+  const comando = tipo === 'foto' ? 'legendaboasvindas' : 'legendaboasvindastexto';
+  if (!jid || !jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, comando)) return;
+
+  const mensagem = extrairArgumentosBoasVindas(caption, comando);
+  if (!mensagem) {
+    await sock.sendMessage(jid, {
+      text: 'Envie *!' + comando + ' [sua mensagem]* para personalizar as boas-vindas.\n\n' +
+        'Marcadores disponíveis: *#numerodele#*, *#nomedogp#* e *#descrição#*.',
+    }, { quoted: msg });
+    return;
+  }
+  if (mensagem.length > LIMITE_MSG_BOAS_VINDAS) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ A mensagem pode ter no máximo ' + LIMITE_MSG_BOAS_VINDAS + ' caracteres.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const campoMensagem = tipo === 'foto' ? 'boasVindasFotoMensagem' : 'boasVindasTextoMensagem';
+  await GrupoConfig.findOneAndUpdate(
+    { idGrupo: jid },
+    { $set: { [campoMensagem]: mensagem } },
+    { upsert: true }
+  );
+
   await sock.sendMessage(jid, {
-    text:
-      `✅ Mensagem de boas-vindas personalizada salva no banco de dados!\n\n${args}\n\n` +
-      `_Use *{nome}* para mencionar quem entrou._\n` +
-      `_Use *!bemvindo off* para desativar._`,
+    text: '✅ Mensagem de boas-vindas ' + (tipo === 'foto' ? 'com foto' : 'só texto') +
+      ' salva!\n\nPrévia do texto:\n' + mensagem,
   }, { quoted: msg });
 }
 
-// ─── Chamado pelo bot.js ao detectar novo membro ──────────────
+async function handleLegendaBoasVindasFoto(sock, msg, jid, caption) {
+  return handleLegendaBoasVindas(sock, msg, jid, caption, 'foto');
+}
+
+async function handleLegendaBoasVindasTexto(sock, msg, jid, caption) {
+  return handleLegendaBoasVindas(sock, msg, jid, caption, 'texto');
+}
+
+function obterConteudoMensagem(msg) {
+  return msg?.message?.ephemeralMessage?.message ||
+    msg?.message?.viewOnceMessage?.message ||
+    msg?.message?.viewOnceMessageV2?.message ||
+    msg?.message ||
+    {};
+}
+
+async function handleFundoBoasVindas(sock, msg, jid) {
+  if (!jid || !jid.endsWith('@g.us')) {
+    await sock.sendMessage(jid, { text: '⚠️ Esse comando só funciona em grupos.' }, { quoted: msg });
+    return;
+  }
+  if (!await checkAdmin(sock, msg, jid, 'fundoboasvindas')) return;
+
+  const conteudo = obterConteudoMensagem(msg);
+  const contexto = conteudo.extendedTextMessage?.contextInfo ||
+    conteudo.imageMessage?.contextInfo ||
+    conteudo.viewOnceMessage?.message?.imageMessage?.contextInfo;
+  const citado = contexto?.quotedMessage || {};
+  const imagem = conteudo.imageMessage ||
+    citado.imageMessage ||
+    citado.viewOnceMessage?.message?.imageMessage ||
+    citado.viewOnceMessageV2?.message?.imageMessage;
+
+  if (!imagem) {
+    await sock.sendMessage(jid, {
+      text: '🖼️ Envie uma foto e responda a ela com *!fundoboasvindas*.',
+    }, { quoted: msg });
+    return;
+  }
+
+  try {
+    const stream = await downloadContentFromMessage(imagem, 'image');
+    const partes = [];
+    for await (const parte of stream) partes.push(Buffer.from(parte));
+    const original = Buffer.concat(partes);
+    if (!original.length) throw new Error('A imagem recebida está vazia.');
+
+    // Reduz e converte a imagem para evitar documentos enormes no MongoDB.
+    const fundo = await sharp(original)
+      .rotate()
+      .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+
+    if (fundo.length > 4 * 1024 * 1024) {
+      throw new Error('A foto ficou grande demais após a compressão. Tente uma foto menor.');
+    }
+
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { boasVindasFotoFundo: fundo.toString('base64') } },
+      { upsert: true }
+    );
+    await sock.sendMessage(jid, {
+      text: '✅ Foto de fundo das boas-vindas atualizada! Ela será usada no modo com foto.',
+    }, { quoted: msg });
+  } catch (err) {
+    console.error('[handleFundoBoasVindas] Erro:', err.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui salvar essa foto. Tente responder a uma imagem comum (não figurinha) com *!fundoboasvindas*.',
+    }, { quoted: msg });
+  }
+}
+
 async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
   try {
-    const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
-    if (cfg && cfg.bemVindoAtivo === false) return; // Se desativado explicitamente, ignora
+    const cfg = await GrupoConfig.findOne({ idGrupo: jid })
+      .select('+boasVindasFotoFundo')
+      .lean();
 
-    const mensagemBase = cfg?.bemVindoMensagem || BEMVINDO_MENSAGEM_PADRAO;
-    const numero  = novoMembro.split('@')[0].split(':')[0];
-    const mencao  = numero ? `@${numero}` : nomeDisplay;
-    const mensagem = mensagemBase.replace(/\{nome\}/gi, mencao);
+    const modoFoto = cfg?.boasVindasFotoAtivo === true;
+    const modoTexto = cfg?.boasVindasTextoAtivo === true;
+    const modoLegado = !modoFoto && !modoTexto && cfg?.bemVindoAtivo === true;
+    if (!modoFoto && !modoTexto && !modoLegado) return;
 
-    const audioImageDir = path.join(__dirname, '..', '..', '..', 'Audio-Image');
-    const joinImages = ['imagejoin.jpg', 'imagejoin2.jpg', 'imagejoin3.jpg'];
-    const joinImageName = joinImages[Math.floor(Math.random() * joinImages.length)];
-    const joinImagePath = path.join(audioImageDir, joinImageName);
+    const meta = await sock.groupMetadata(jid).catch(() => null);
+    const numero = String(novoMembro || '').split('@')[0].split(':')[0];
+    const nomeGrupo = meta?.subject || 'este grupo';
+    const descricao = meta?.desc || 'Descrição não definida.';
 
-    if (fs.existsSync(joinImagePath)) {
-      try {
-        const imageBuf = fs.readFileSync(joinImagePath);
+    if (modoLegado) {
+      const mensagemBase = cfg?.bemVindoMensagem || '👋 Bem-vindo(a) ao grupo, {nome}!';
+      const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao);
+      const audioImageDir = path.join(__dirname, '..', '..', '..', 'Audio-Image');
+      const nomeImagem = IMAGENS_BOAS_VINDAS_PADRAO[Math.floor(Math.random() * IMAGENS_BOAS_VINDAS_PADRAO.length)];
+      const caminhoImagem = path.join(audioImageDir, nomeImagem);
+      if (fs.existsSync(caminhoImagem)) {
         await sock.sendMessage(jid, {
-          image:    imageBuf,
-          caption:  mensagem,
+          image: fs.readFileSync(caminhoImagem),
+          caption: mensagem,
+          mentions: [novoMembro],
+        });
+      } else {
+        await sock.sendMessage(jid, { text: mensagem, mentions: [novoMembro] });
+      }
+      return;
+    }
+
+    const mensagemBase = modoFoto ? cfg?.boasVindasFotoMensagem : cfg?.boasVindasTextoMensagem;
+    if (!mensagemBase || !mensagemBase.trim()) {
+      console.warn('[processarBemVindo] Boas-vindas ativas sem mensagem configurada para ' + jid + '.');
+      return;
+    }
+    const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao);
+
+    if (modoFoto) {
+      let imagemBuffer = null;
+      if (cfg?.boasVindasFotoFundo) {
+        imagemBuffer = Buffer.from(cfg.boasVindasFotoFundo, 'base64');
+      } else {
+        const audioImageDir = path.join(__dirname, '..', '..', '..', 'Audio-Image');
+        const nomeImagem = IMAGENS_BOAS_VINDAS_PADRAO[Math.floor(Math.random() * IMAGENS_BOAS_VINDAS_PADRAO.length)];
+        const caminhoImagem = path.join(audioImageDir, nomeImagem);
+        if (fs.existsSync(caminhoImagem)) imagemBuffer = fs.readFileSync(caminhoImagem);
+      }
+
+      if (imagemBuffer) {
+        await sock.sendMessage(jid, {
+          image: imagemBuffer,
+          caption: mensagem,
           mentions: [novoMembro],
         });
         return;
-      } catch (imgErr) {
-        console.error('[processarBemVindo] Erro ao ler imagem:', imgErr.message);
       }
     }
 
-    await sock.sendMessage(jid, {
-      text:     mensagem,
-      mentions: [novoMembro],
-    });
+    await sock.sendMessage(jid, { text: mensagem, mentions: [novoMembro] });
   } catch (e) {
     console.error('[processarBemVindo] Erro ao enviar:', e.message);
   }
@@ -549,7 +735,13 @@ module.exports = {
   verificarSlowMode,
   handleAntiFlood,
   verificarAntiFlood,
-  handleBemVindo,
+  handleBoasVindasFoto,
+  handleBoasVindasTexto,
+  handleLegendaBoasVindasFoto,
+  handleLegendaBoasVindasTexto,
+  handleFundoBoasVindas,
+  extrairArgumentosBoasVindas,
+  substituirMarcadoresBoasVindas,
   processarBemVindo,
   handleBotToggle,
   handleFecharAbrir,

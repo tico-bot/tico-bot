@@ -73,7 +73,7 @@ async function handleGrupInfo(sock, msg, jid) {
   const floodCfg = cfgGrupo?.antiFloodAtivo
     ? `✅ *${cfgGrupo.antiFloodLimite} msgs/${cfgGrupo.antiFloodJanelaMs / 1000}s*`
     : '❌ Inativo';
-  const bvCfg    = cfgGrupo?.bemVindoAtivo
+  const bvCfg    = (cfgGrupo?.boasVindasFotoAtivo || cfgGrupo?.boasVindasTextoAtivo || cfgGrupo?.bemVindoAtivo)
     ? '✅ Ativo'
     : '❌ Inativo';
   const antiLinkCfg = cfgGrupo?.antiLink ? '✅ Ativo' : '❌ Inativo';

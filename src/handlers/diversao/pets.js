@@ -1488,7 +1488,7 @@ function initPetScheduler(sock) {
         const registro = await PetSpawn.findOne({ idGrupo: jid }).lean();
 
         // ── Spawn desativado via !pet off — pula sem mexer no timestamp ──
-        if (registro?.spawnAtivo === false) {
+        if (registro?.spawnAtivo !== true) {
           desativados++;
           continue;
         }
@@ -1690,7 +1690,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
       return reply(sock, jid, msg, '❌ Erro ao consultar status. Tente novamente!');
     }
 
-    const ativo = registro?.spawnAtivo !== false; // default true se nunca configurado
+    const ativo = registro?.spawnAtivo === true; // default false se nunca configurado
     return reply(sock, jid, msg,
       `🐾 *SPAWN DE PETS — STATUS*\n\n` +
       `${ativo ? '✅ *Ativado*' : '❌ *Desativado*'} neste grupo.\n\n` +
@@ -1757,7 +1757,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
     return reply(sock, jid, msg, '❌ Erro interno ao salvar configuração. Tente novamente!');
   }
 
-  const estadoAnterior = docAnterior?.spawnAtivo !== false; // default true se documento não existia
+  const estadoAnterior = docAnterior?.spawnAtivo === true; // default false se documento não existia
   if (estadoAnterior === novoEstado) {
     return reply(sock, jid, msg,
       `ℹ️ O spawn de pets já está *${novoEstado ? 'ativado' : 'desativado'}* neste grupo!`

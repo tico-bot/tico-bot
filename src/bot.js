@@ -28,6 +28,7 @@ const { Boom }  = require('@hapi/boom');
 const pino      = require('pino');
 const QRCode    = require('qrcode');
 const mongoose  = require('mongoose');
+const PetSpawn  = require('./models/PetSpawn');
 
 // ─── Scripts & Utils ──────────────────────────────────────────────────────────
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
@@ -449,6 +450,22 @@ async function main() {
   }
 
   if (acquired) {
+    // Só o processo que adquiriu o lock pode resetar a preferência global.
+    // Assim, uma instância concorrente não desliga o spawn do bot que já está ativo.
+    try {
+      const resultadoSpawn = await PetSpawn.desativarTodosNoBoot();
+      console.log(
+        `[PetScheduler] Inicialização segura: spawn automático OFF em ${resultadoSpawn.matchedCount ?? 0} grupo(s).`
+      );
+    } catch (err) {
+      console.error(
+        '❌ Não foi possível garantir o spawn automático OFF. O bot do WhatsApp não será iniciado:',
+        err.message
+      );
+      await releaseLock().catch(() => {});
+      return;
+    }
+
     startHeartbeat();
     startBot().catch(console.error);
   } else {

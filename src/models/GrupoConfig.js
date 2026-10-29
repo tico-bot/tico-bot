@@ -33,7 +33,14 @@ const grupoConfigSchema = new mongoose.Schema(
     xpAtivo:            { type: Boolean, default: true  },
     rankingSemanal:     { type: Boolean, default: false },
 
-    // ── Bem-vindo ────────────────────────────────────────────────
+    // ── Boas-vindas por grupo ────────────────────────────────────
+    boasVindasFotoAtivo:    { type: Boolean, default: false },
+    boasVindasTextoAtivo:   { type: Boolean, default: false },
+    boasVindasFotoMensagem: { type: String,  default: null, trim: true },
+    boasVindasTextoMensagem:{ type: String,  default: null, trim: true },
+    // Base64 de JPEG comprimido; só é carregado explicitamente ao processar uma entrada.
+    boasVindasFotoFundo:    { type: String, default: null, select: false },
+    // Campos legados mantidos para compatibilidade com registros antigos.
     bemVindoAtivo:    { type: Boolean, default: false },
     bemVindoMensagem: { type: String,  default: null,  trim: true },
     boasVindas:       { type: Boolean, default: true  },

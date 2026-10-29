@@ -589,8 +589,21 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleSlowMode(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'antiflood') || matchCmdStart(cmd, 'antiflood '))
     { await grupoHandler.handleAntiFlood(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'bemvindo') || matchCmdStart(cmd, 'bemvindo '))
-    { await grupoHandler.handleBemVindo(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'fundoboasvindas') || matchCmdStart(cmd, 'fundoboasvindas ') ||
+      matchCmd(cmdWord, 'fundobv') || matchCmdStart(cmd, 'fundobv '))
+    { await grupoHandler.handleFundoBoasVindas(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'legendaboasvindastexto') || matchCmdStart(cmd, 'legendaboasvindastexto ') ||
+      matchCmd(cmdWord, 'legendabvtexto') || matchCmdStart(cmd, 'legendabvtexto '))
+    { await grupoHandler.handleLegendaBoasVindasTexto(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'legendaboasvindas') || matchCmdStart(cmd, 'legendaboasvindas ') ||
+      matchCmd(cmdWord, 'legendabv') || matchCmdStart(cmd, 'legendabv '))
+    { await grupoHandler.handleLegendaBoasVindasFoto(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'boasvindastexto') || matchCmdStart(cmd, 'boasvindastexto ') ||
+      matchCmd(cmdWord, 'bvtexto') || matchCmdStart(cmd, 'bvtexto '))
+    { await grupoHandler.handleBoasVindasTexto(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'boasvindas') || matchCmdStart(cmd, 'boasvindas ') ||
+      matchCmd(cmdWord, 'bv') || matchCmdStart(cmd, 'bv '))
+    { await grupoHandler.handleBoasVindasFoto(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'fechar'))
     { await grupoHandler.handleFecharAbrir(sock, msg, jid, true); return; }
   if (matchCmd(cmdWord, 'abrir'))

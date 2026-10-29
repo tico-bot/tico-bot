@@ -32,7 +32,7 @@ const petSpawnSchema = new mongoose.Schema({
   // Alterado via !pet on / !pet off (somente admins).
   spawnAtivo: {
     type:    Boolean,
-    default: true,
+    default: false,
   },
 }, {
   timestamps: true,
@@ -44,7 +44,7 @@ petSpawnSchema.statics.obterOuCriar = async function (idGrupo) {
   const grupoLimpo = String(idGrupo).trim().toLowerCase();
   return this.findOneAndUpdate(
     { idGrupo: grupoLimpo },
-    { $setOnInsert: { idGrupo: grupoLimpo, spawnAtivo: true } },
+    { $setOnInsert: { idGrupo: grupoLimpo, spawnAtivo: false } },
     { upsert: true, new: true }
   );
 };
@@ -57,6 +57,12 @@ petSpawnSchema.statics.registrarSpawn = async function (idGrupo) {
     { $set: { ultimoSpawn: new Date() }, $inc: { totalSpawns: 1 } },
     { upsert: true, new: true }
   );
+};
+
+// A cada inicialização real do bot, a opção automática deve voltar para OFF
+// em todos os grupos, inclusive os que foram ativados manualmente antes.
+petSpawnSchema.statics.desativarTodosNoBoot = async function () {
+  return this.updateMany({}, { $set: { spawnAtivo: false } });
 };
 
 module.exports = mongoose.models.PetSpawn || mongoose.model('PetSpawn', petSpawnSchema);
