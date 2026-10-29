@@ -446,6 +446,34 @@ function senderKey(msg, jid) {
   return String(msg?.key?.participant || msg?.key?.remoteJid || jid || 'unknown');
 }
 
+function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return 'Tamanho desconhecido';
+  if (value < 1024) return `${value} bytes`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`;
+  return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function formatDownloadCaption(result, provider, sourceUrl) {
+  const providerName = provider === 'mediafire' ? 'MediaFire' : 'Google Drive';
+  const extension = path.extname(result.fileName || '').replace(/^\\./, '').toUpperCase();
+  const type = extension || result.mimetype || 'desconhecido';
+  const size = Number(result.size);
+  const sizeText = Number.isFinite(size)
+    ? `${formatFileSize(size)} (${(size / 1024 / 1024).toFixed(2)} MB)`
+    : 'Tamanho desconhecido';
+  return [
+    '📥 *Download concluído*',
+    `📄 *Nome:* ${result.fileName}`,
+    `🗂️ *Tipo de arquivo:* ${type}`,
+    `🧾 *MIME:* ${result.mimetype || 'não informado'}`,
+    `💾 *Tamanho:* ${sizeText}`,
+    `☁️ *Origem:* ${providerName}`,
+    `🔗 *Link original:* ${sourceUrl}`,
+  ].join('\\n').slice(0, 1024);
+}
+
 function usageText(provider, commandToken) {
   const command = commandToken || (provider === 'mediafire' ? '!mediafire' : '!googledriver');
   return provider === 'mediafire'
@@ -494,7 +522,7 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
     const result = provider === 'mediafire'
       ? await requestMediafire(link)
       : await requestGoogleDrive(link);
-    const captionText = `📥 *Download concluído*\n📄 ${result.fileName}\n💾 ${(result.size / 1024 / 1024).toFixed(2)} MB`;
+    const captionText = formatDownloadCaption(result, provider, link);
     await sock.sendMessage(jid, {
       document: result.buffer,
       mimetype: result.mimetype,
@@ -536,5 +564,7 @@ module.exports = {
     guessMimeType,
     firstUrlFromCaption,
     MAX_FILE_SIZE,
+    formatFileSize,
+    formatDownloadCaption,
   },
 };
