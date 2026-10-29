@@ -106,9 +106,9 @@ test('main and category menus include key working commands', async () => {
 
   const downloads = await renderMenu('downloads', () =>
     utilidade.handleMenuBaixar(sock, msg, jid, getPrefix));
-  assert.match(downloads, /!mediafire <link>/);
-  assert.match(downloads, /!googledriver <link>/);
-  assert.match(downloads, /DOCX\/XLSX\/PPTX/);
+  assert.doesNotMatch(downloads, /mediafire/i);
+  assert.doesNotMatch(downloads, /googledriver/i);
+  assert.doesNotMatch(downloads, /DOCX\/XLSX\/PPTX/);
   assert.match(downloads, /!letram\u00fasica <m\u00fasica\/artista>/);
   assert.match(downloads, /!letramusica \/ !letramsc/);
 

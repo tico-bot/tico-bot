@@ -75,11 +75,6 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'pinterest <link> — baixar mídia do Pinterest',
     '  ▸ ' + P + 'pinterest2 <link> — alias de pinterest',
     '',
-    '📁 *ARQUIVOS*',
-    '  ▸ ' + P + 'mediafire <link> — baixar arquivo do MediaFire',
-    '  ▸ ' + P + 'googledriver <link> — baixar arquivo do Google Drive',
-    '  ▸ ' + P + 'googledriver <link do Docs/Sheets/Slides> — exportar para DOCX/XLSX/PPTX',
-    '',
     '━━━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
