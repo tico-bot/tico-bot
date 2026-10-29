@@ -397,8 +397,10 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'meupainel') || matchCmd(cmdWord, 'painel') || matchCmd(cmdWord, 'site') || matchCmd(cmdWord, 'link'))
     { await require('./handlers/painel').handleMeuPainel(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'recuperar') || matchCmd(cmdWord, 'recuperarsenha') || matchCmd(cmdWord, 'token') || matchCmd(cmdWord, 'codigo')) {
-    // Em grupos, o WhatsApp pode entregar participant como @lid. Prefira
-    // participantPn para obter o telefone real; use LidMapping como fallback.
+    // OTPs are private recovery credentials. Never print them in the group chat.
+    const Usuario = require('./models/Usuario');
+    const OtpCadastro = require('./models/OtpCadastro');
+    const { hashOtpCode } = require('./utils/otp');
     const LidMapping = require('./models/LidMapping');
     const senderBase = String(senderJid || '').split(':')[0].toLowerCase();
     let pnInformado = String(msg.key.participantPn || '').split(':')[0].toLowerCase();
@@ -409,37 +411,78 @@ async function handleMessage(sock, msg) {
       pnInformado = String(mapaLid?.pn || '').toLowerCase();
     }
     if (senderBase.endsWith('@lid') && !pnInformado) {
-      await sock.sendMessage(jid, { text: '❌ Não consegui identificar seu número do WhatsApp. Envie uma mensagem no grupo novamente e tente !recuperar.' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: '❌ Não consegui confirmar sua identidade do WhatsApp. Tente novamente após enviar uma mensagem ao bot.' }, { quoted: msg });
       return;
     }
+
     const rawNum = (pnInformado || senderBase).split('@')[0].replace(/\D/g, '');
     if (!rawNum || rawNum.length < 8 || rawNum.length > 15) return;
-
-    const codigo = String(require('crypto').randomInt(100000, 1000000));
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
-    const OtpCadastro = require('./models/OtpCadastro');
     const pnJid = `${rawNum}@s.whatsapp.net`;
     const mapaAtual = mapaLid || await LidMapping.findOne({ pn: pnJid }).lean();
-    const idsOtp = [...new Set([senderBase, pnJid, mapaAtual?.lid].filter(Boolean))];
-    for (const idOtp of idsOtp) {
-      await OtpCadastro.findOneAndUpdate(
-        { idWhatsApp: idOtp },
-        { codigo, expiresAt, usado: false },
-        { upsert: true }
-      );
+    // Prefer the same canonical PN account selected by the website auth routes; only
+    // fall back to a legacy LID document when no PN-backed account exists.
+    const usuario = await Usuario.findOne({ idWhatsApp: pnJid }).select('idWhatsApp').lean()
+      || (mapaAtual?.lid
+        ? await Usuario.findOne({ idWhatsApp: String(mapaAtual.lid).toLowerCase() }).select('idWhatsApp').lean()
+        : (senderBase !== pnJid
+          ? await Usuario.findOne({ idWhatsApp: senderBase }).select('idWhatsApp').lean()
+          : null));
+
+    if (!usuario?.idWhatsApp) {
+      await sock.sendMessage(jid, { text: '❌ Não consegui localizar um perfil para esse número. Envie uma mensagem ao bot em um grupo e tente novamente.' }, { quoted: msg });
+      return;
     }
 
-    await sock.sendMessage(jid, {
-      text:
-        `🔐 *CÓDIGO DE RECUPERAÇÃO / VERIFICAÇÃO*\n\n` +
-        `Olá *@${rawNum}*!\n` +
-        `Seu código de 6 dígitos para criar conta ou redefinir a senha no site é:\n\n` +
-        `👉 *${codigo}*\n\n` +
-        `⏰ *Válido por 15 minutos.*\n` +
-        `Acesse o site para criar sua conta ou redefinir sua senha!`,
-      mentions: [senderJid]
-    }, { quoted: msg });
+    const idCanonico = String(usuario.idWhatsApp).trim().toLowerCase();
+    const agora = new Date();
+    const otpRecente = await OtpCadastro.findOne({
+      idWhatsApp: idCanonico,
+      finalidade: 'recuperacao',
+      usado: false,
+      expiresAt: { $gt: agora },
+      updatedAt: { $gt: new Date(Date.now() - 2 * 60 * 1000) },
+    }).select('updatedAt').lean();
+    if (otpRecente) {
+      await sock.sendMessage(jid, { text: '🔐 Se você solicitou um código há pouco, confira sua conversa privada com o bot ou aguarde 2 minutos para pedir outro.' }, { quoted: msg });
+      return;
+    }
+
+    const codigo = String(require('crypto').randomInt(100000, 1000000));
+    const codigoHash = hashOtpCode(codigo);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const idsRelacionados = [...new Set([idCanonico, senderBase, pnJid, mapaAtual?.lid, mapaAtual?.pn].filter(Boolean).map(v => String(v).toLowerCase()))];
+
+    // Invalida códigos antigos guardados por identificadores PN/LID e mantém um único OTP canônico.
+    await OtpCadastro.updateMany(
+      { idWhatsApp: { $in: idsRelacionados }, usado: false },
+      { $set: { usado: true } },
+    );
+    await OtpCadastro.findOneAndUpdate(
+      { idWhatsApp: idCanonico },
+      { $set: { codigo: codigoHash, finalidade: 'recuperacao', expiresAt, usado: false, tentativas: 0 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    try {
+      await sock.sendMessage(pnJid, {
+        text:
+          `🔐 *TICO BOT — CÓDIGO DE RECUPERAÇÃO / VERIFICAÇÃO*\n\n` +
+          `Seu código de 6 dígitos é:\n\n👉 *${codigo}*\n\n` +
+          `⏰ Válido por 15 minutos. Não compartilhe com ninguém.`,
+      });
+      await sock.sendMessage(jid, {
+        text: '🔐 Enviei o código de recuperação na sua conversa privada com o bot. Por segurança, ele não é exibido no grupo. Não compartilhe esse código.',
+      }, { quoted: msg });
+    } catch (sendError) {
+      await OtpCadastro.updateOne(
+        { idWhatsApp: idCanonico, codigo: codigoHash, usado: false },
+        { $set: { usado: true } },
+      );
+      console.warn('[auth] Não foi possível enviar OTP por mensagem privada:', sendError.message);
+      await sock.sendMessage(jid, {
+        text: '❌ Não consegui enviar uma mensagem privada. Abra uma conversa com o bot e envie uma mensagem; depois, solicite outro código.',
+      }, { quoted: msg });
+    }
     return;
   }
 

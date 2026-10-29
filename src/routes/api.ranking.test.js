@@ -18,6 +18,12 @@ const idWhatsApp = '279319674941659@lid';
 const idGrupo = '120363409568918044@g.us';
 const nomeGrupo = 'Resenha obscura';
 const mensagensGlobais = 1528;
+let mostrarTelefonePublico = true;
+const telefoneTeste = '5511888777666';
+const pnJidTeste = `${telefoneTeste}@s.whatsapp.net`;
+let walletJid = idWhatsApp;
+let resolverAliasPn = false;
+const bioTeste = 'Gosto de jogos e filosofia.';
 
 const originals = {
   usuarioAggregate: Usuario.aggregate,
@@ -32,17 +38,27 @@ let server;
 let baseUrl;
 
 Usuario.aggregate = async () => [{ _id: null, totalMensagens: mensagensGlobais }];
-Usuario.find = () => ({
+Usuario.find = query => ({
   select() { return this; },
   async lean() {
-    return [{ idWhatsApp, nome: 'Usuário de teste', telefone: null, username: null, mensagens: mensagensGlobais }];
+    if (Array.isArray(query?.idWhatsApp?.$in) && !query.idWhatsApp.$in.includes(idWhatsApp)) return [];
+    return [{
+      idWhatsApp,
+      nome: 'Usuário de teste',
+      displayName: 'Nome público',
+      telefone: telefoneTeste,
+      bio: bioTeste,
+      mostrarTelefonePublico,
+      username: null,
+      mensagens: mensagensGlobais,
+    }];
   },
 });
 Usuario.findOne = () => ({
   select() { return this; },
   async lean() { return { idWhatsApp, tokenVersion: 0, username: null, passwordHash: null }; },
 });
-LidMapping.find = () => ({ async lean() { return []; } });
+LidMapping.find = () => ({ async lean() { return resolverAliasPn ? [{ lid: idWhatsApp, pn: pnJidTeste }] : []; } });
 CarteiraGrupo.aggregate = async pipeline => {
   const match = pipeline[0]?.$match || {};
   if (Array.isArray(match.idGrupo?.$in)) {
@@ -51,9 +67,9 @@ CarteiraGrupo.aggregate = async pipeline => {
   if (match.idGrupo?.$regex) {
     const group = pipeline.find(stage => stage.$group)?.$group || {};
     if (group._id === '$idWhatsApp') {
-      return [{ _id: idWhatsApp, xp: 9150, gold: 59516006427, mensagens: 0 }];
+      return [{ _id: walletJid, xp: 9150, gold: 59516006427, mensagens: 0 }];
     }
-    return [{ _id: null, totalMensagens: 0, totalUsuarios: [idWhatsApp] }];
+    return [{ _id: null, totalMensagens: 0, totalUsuarios: [walletJid] }];
   }
   return [];
 };
@@ -63,6 +79,14 @@ CarteiraGrupo.find = query => {
       sort() { return this; },
       async lean() {
         return [{ idWhatsApp, idGrupo, xp: 9150, level: 30, gold: 59516006427, mensagens: 0 }];
+      },
+    };
+  }
+  if (query?.idGrupo === idGrupo) {
+    return {
+      sort() { return this; },
+      async lean() {
+        return [{ idWhatsApp: walletJid, idGrupo, xp: 9150, level: 30, gold: 59516006427, mensagens: 0 }];
       },
     };
   }
@@ -96,6 +120,55 @@ test('ranking global usa mensagens do Usuario quando as carteiras antigas têm z
   const data = await response.json();
   assert.equal(data.ranking[0].mensagens, mensagensGlobais);
   assert.equal(data.totalMensagens, mensagensGlobais);
+});
+
+test('ranking público inclui telefone e bio quando a pessoa permite exibição', async () => {
+  mostrarTelefonePublico = true;
+  const response = await fetch(baseUrl + '/user/ranking?limit=10');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ranking[0].nome, 'Nome público');
+  assert.equal(data.ranking[0].telefone, telefoneTeste);
+  assert.equal(data.ranking[0].telefoneOculto, false);
+  assert.equal(data.ranking[0].bio, bioTeste);
+  assert.equal(Object.hasOwn(data.ranking[0], 'idWhatsApp'), false, 'não deve expor o identificador interno');
+});
+
+test('ranking público respeita a preferência de ocultar telefone sem apagar a bio', async () => {
+  mostrarTelefonePublico = false;
+  const response = await fetch(baseUrl + '/user/ranking?limit=10');
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ranking[0].telefone, null);
+  assert.equal(data.ranking[0].telefoneOculto, true);
+  assert.equal(data.ranking[0].bio, bioTeste);
+  mostrarTelefonePublico = true;
+});
+
+test('rankings resolvem PN-backed wallets até o perfil LID e respeitam telefone oculto e bio', async () => {
+  walletJid = pnJidTeste;
+  resolverAliasPn = true;
+  mostrarTelefonePublico = false;
+  try {
+    const globalResponse = await fetch(baseUrl + '/user/ranking?limit=10');
+    assert.equal(globalResponse.status, 200);
+    const globalData = await globalResponse.json();
+    assert.equal(globalData.ranking[0].nome, 'Nome público');
+    assert.equal(globalData.ranking[0].telefone, null);
+    assert.equal(globalData.ranking[0].telefoneOculto, true);
+    assert.equal(globalData.ranking[0].bio, bioTeste);
+
+    const groupResponse = await fetch(baseUrl + '/user/ranking/grupo?jid=' + encodeURIComponent(idGrupo));
+    assert.equal(groupResponse.status, 200);
+    const groupData = await groupResponse.json();
+    assert.equal(groupData.ranking[0].telefone, null);
+    assert.equal(groupData.ranking[0].telefoneOculto, true);
+    assert.equal(groupData.ranking[0].bio, bioTeste);
+  } finally {
+    walletJid = idWhatsApp;
+    resolverAliasPn = false;
+    mostrarTelefonePublico = true;
+  }
 });
 
 test('ranking de grupos mostra nomeGrupo salvo, não o JID numérico', async () => {

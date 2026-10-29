@@ -4,6 +4,7 @@ const path = require('path');
 const fs   = require('fs');
 const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
 const Usuario = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
@@ -313,8 +314,10 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 }
 
 async function handleBio(sock, msg, jid, caption) {
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const bio       = String(caption || '').replace(/^[!.,\/]bio\s*/i, '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+  const senderOriginal = String(msg.key.participant || msg.key.remoteJid || '').split(':')[0].trim().toLowerCase();
+  const senderPn = String(msg.key.participantPn || '').split(':')[0].trim().toLowerCase();
+  let senderJid = senderPn.endsWith('@s.whatsapp.net') ? senderPn : senderOriginal;
+  const bio = String(caption || '').replace(/^[!.,\/]bio\s*/i, '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
 
   if (!senderJid) {
     await sock.sendMessage(jid, { text: '⚠️ Não consegui identificar sua conta do WhatsApp.' }, { quoted: msg });
@@ -336,11 +339,30 @@ async function handleBio(sock, msg, jid, caption) {
   }
 
   try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: senderJid },
-      { $set: { bio } },
-      { upsert: true }
-    );
+    // Keep the bio in sync across the phone JID and its LID alias, where present.
+    // Update existing identity documents without creating a duplicate PN account when
+    // the user's account is LID-backed. Only create a profile when neither alias exists.
+    let mapping = null;
+    if (senderOriginal.endsWith('@lid')) {
+      mapping = await LidMapping.findOne({ lid: senderOriginal }).select('lid pn').lean();
+    } else if (senderPn.endsWith('@s.whatsapp.net')) {
+      mapping = await LidMapping.findOne({ pn: senderPn }).select('lid pn').lean();
+    }
+    const idsBio = [...new Set([senderOriginal, senderPn, senderJid, mapping?.lid, mapping?.pn]
+      .filter(value => typeof value === 'string' && value.length)
+      .map(value => value.split(':')[0].trim().toLowerCase()))];
+
+    const atualizacao = idsBio.length
+      ? await Usuario.updateMany({ idWhatsApp: { $in: idsBio } }, { $set: { bio } })
+      : { matchedCount: 0 };
+    if (!Number(atualizacao?.matchedCount ?? atualizacao?.n ?? 0)) {
+      const idExistenteOriginal = senderOriginal || senderJid;
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: idExistenteOriginal },
+        { $set: { bio } },
+        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      );
+    }
 
     await sock.sendMessage(jid, {
       text: `✅ *Bio atualizada!*\n\n📝 "${bio}"`,

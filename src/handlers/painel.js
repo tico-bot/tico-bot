@@ -5,7 +5,7 @@ const Usuario       = require('../models/Usuario');
 const AuthToken     = require('../models/AuthToken');
 const { normalizarJid } = require('../utils/jid');
 
-const BASE_SITE_URL = 'https://piroquinhasbot.github.io/painel-piroquinhas-bot';
+const BASE_SITE_URL = 'https://tico-bot.github.io/tico-bot-site';
 
 async function handleMeuPainel(sock, msg, jid) {
   try {
