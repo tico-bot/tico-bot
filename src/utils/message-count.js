@@ -25,6 +25,43 @@ function calcularMensagensPerfil({ usuarios = [], fallback = 0, contadorLocal = 
   return Math.max(calcularTotalMensagens({ usuarios, fallback }), contar(contadorLocal));
 }
 
+function somarCampo(registros, campo) {
+  return (Array.isArray(registros) ? registros : []).reduce(
+    (total, registro) => total + contar(registro?.[campo]),
+    0,
+  );
+}
+
+function somarCampoCarteirasPorGrupo(carteiras, campo) {
+  const maiorPorGrupo = new Map();
+  let semGrupo = 0;
+  for (const carteira of Array.isArray(carteiras) ? carteiras : []) {
+    const valor = contar(carteira?.[campo]);
+    const grupo = typeof carteira?.idGrupo === 'string' && carteira.idGrupo ? carteira.idGrupo : null;
+    if (!grupo) {
+      semGrupo += valor;
+      continue;
+    }
+    maiorPorGrupo.set(grupo, Math.max(maiorPorGrupo.get(grupo) || 0, valor));
+  }
+  return semGrupo + [...maiorPorGrupo.values()].reduce((total, valor) => total + valor, 0);
+}
+
+/**
+ * Reconstructs an accumulated statistic from alias-linked user docs and group wallets.
+ * User documents and wallets overlap, so their totals are alternatives rather than additive.
+ * Wallets are summed across groups, taking the largest value for duplicate PN/LID wallets
+ * within one group (same policy as the wallet merge utility).
+ */
+function calcularTotalAcumulado({ usuarios = [], carteiras = [], campo, fallback = 0 } = {}) {
+  if (typeof campo !== 'string' || !campo) return contar(fallback);
+  return Math.max(
+    somarCampo(usuarios, campo),
+    somarCampoCarteirasPorGrupo(carteiras, campo),
+    contar(fallback),
+  );
+}
+
 /** Sum persisted in-memory counters for any PN/LID/device JID belonging to a user. */
 function somarContagensIdentidades(mapa, identidades, normalizarJid, campo = null) {
   if (!mapa || typeof mapa.entries !== 'function') return 0;
@@ -38,4 +75,4 @@ function somarContagensIdentidades(mapa, identidades, normalizarJid, campo = nul
   return total;
 }
 
-module.exports = { calcularTotalMensagens, calcularMensagensPerfil, somarContagensIdentidades };
+module.exports = { calcularTotalMensagens, calcularMensagensPerfil, calcularTotalAcumulado, somarContagensIdentidades };

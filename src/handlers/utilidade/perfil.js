@@ -182,11 +182,17 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
   let petText = '❌ Sem pet';
   try {
-    if (userData?.pet?.name) {
-      const emoji = PET_EMOJIS[userData.pet.type] ?? '🐾';
-      const hap   = userData.pet.happiness ?? 60;
+    // Pets são persistidos por grupo em CarteiraGrupo. getCarteira() já resolve
+    // aliases PN/LID para a carteira atual, enquanto Usuario.pet pode estar vazio.
+    const petPerfil = walletInfo?.pet && (walletInfo.pet.name || walletInfo.pet.nome)
+      ? walletInfo.pet
+      : userData?.pet;
+    const nomePet = petPerfil?.name ?? petPerfil?.nome;
+    if (nomePet) {
+      const emoji = PET_EMOJIS[petPerfil.type] ?? '🐾';
+      const hap   = petPerfil.happiness ?? 60;
       const mood  = hap >= 80 ? '😄' : hap >= 50 ? '😊' : '😔';
-      petText = `${emoji} *${userData.pet.name}*  Lvl ${userData.pet.level || 1}  ${mood} ${hap}%`;
+      petText = `${emoji} *${nomePet}*  Lvl ${petPerfil.level || 1}  ${mood} ${hap}%`;
     }
   } catch {}
 

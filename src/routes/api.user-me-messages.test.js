@@ -16,6 +16,8 @@ const apiRouter = require('./api');
 const pn = '5511999999999@s.whatsapp.net';
 const lid = '123456789@lid';
 const idGrupo = '120363000000000000@g.us';
+const idGrupo2 = '120363000000000001@g.us';
+const petTeste = { type: 'bolsonaro', name: 'Miau', rarity: 'RARO', level: 3, xp: 12, happiness: 87, energy: 72, fullness: 65 };
 let server;
 let baseUrl;
 
@@ -46,8 +48,8 @@ Usuario.findOne = () => queryResult(usuarioPrincipal);
 Usuario.find = query => queryResult(
   Array.isArray(query?.idWhatsApp?.$in) && query.idWhatsApp.$in.includes(lid)
     ? [
-        { idWhatsApp: pn, mensagens: 12 },
-        { idWhatsApp: lid, mensagens: 18 },
+        { idWhatsApp: pn, mensagens: 12, quizPoints: 0 },
+        { idWhatsApp: lid, mensagens: 18, quizPoints: 30 },
       ]
     : [],
 );
@@ -57,8 +59,9 @@ CarteiraGrupo.find = query => {
     const regex = query.idGrupo?.$regex;
     if (!regex || !regex.test(idGrupo)) return queryResult([]);
     return queryResult([
-      { idWhatsApp: pn, idGrupo, mensagens: 20 },
-      { idWhatsApp: lid, idGrupo, mensagens: 25 },
+      { idWhatsApp: pn, idGrupo, mensagens: 20, quizPoints: 20, xp: 40, pet: null },
+      { idWhatsApp: lid, idGrupo, mensagens: 25, quizPoints: 25, xp: 80, pet: null },
+      { idWhatsApp: pn, idGrupo: idGrupo2, mensagens: 0, quizPoints: 15, xp: 300, pet: petTeste },
     ]);
   }
   return queryResult([]);
@@ -96,12 +99,16 @@ test.after(async () => {
   if (server) await new Promise(resolve => server.close(resolve));
 });
 
-test('GET /user/me consolida mensagens divididas entre os aliases PN e LID', async () => {
+test('GET /user/me consolida mensagens e Quiz e recupera pet salvo somente na carteira do grupo', async () => {
   const token = jwt.sign({ idWhatsApp: pn, tokenType: 'profile', tokenVersion: 0 }, process.env.JWT_SECRET, { expiresIn: '1m' });
   const response = await fetch(`${baseUrl}/user/me`, { headers: { Authorization: `Bearer ${token}` } });
   assert.equal(response.status, 200);
   const data = await response.json();
-  // Usuários: 12 + 18 = 30; carteiras: 20 + 25 = 45. Usa a fonte mais completa,
-  // sem somar as duas fontes e duplicar as mesmas mensagens.
+  // Mensagens: 20 + 25; o contador por grupo é uma fonte alternativa à global.
   assert.equal(data.mensagens, 45);
+  // Quiz: grupo A usa max(20,25), grupo B soma 15; isso supera o total global de 30.
+  assert.equal(data.quizPoints, 40);
+  assert.equal(data.pet.name, 'Miau');
+  assert.equal(data.pet.type, 'bolsonaro');
+  assert.equal(data.pet.level, 3);
 });

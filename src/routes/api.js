@@ -12,7 +12,7 @@ const JogoRequest   = require('../models/JogoRequest');
 const { normalizarJid } = require('../utils/jid');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const { mapParaObjeto, somarMap } = require('../utils/mapas');
-const { calcularTotalMensagens } = require('../utils/message-count');
+const { calcularTotalMensagens, calcularTotalAcumulado } = require('../utils/message-count');
 const rateLimit      = require('express-rate-limit');
 
 const { ipKeyGenerator } = require('express-rate-limit');
@@ -560,11 +560,11 @@ if (!carteiras.length) {
       identidadesUsuario = await resolverJidsEquivalentes(idWhatsApp);
       [usuariosContadores, carteirasContadoras] = await Promise.all([
         Usuario.find({ idWhatsApp: { $in: identidadesUsuario } })
-          .select('idWhatsApp mensagens').lean(),
+          .select('idWhatsApp mensagens quizPoints').lean(),
         CarteiraGrupo.find({
           idWhatsApp: { $in: identidadesUsuario },
           idGrupo: { $regex: /@g\.us$/ },
-        }).select('idWhatsApp idGrupo mensagens').lean(),
+        }).select('idWhatsApp idGrupo mensagens quizPoints pet xp').lean(),
       ]);
     } catch (err) {
       console.warn('[API] Não foi possível consolidar contadores PN/LID:', err.message);
@@ -713,12 +713,22 @@ if (!carteiras.length) {
       };
     }
 
-    // Resolve Pet: prioriza Usuario.pet, se nulo busca em CarteiraGrupo
-    let petResolvido = usuario.pet ?? null;
-    if (!petResolvido || (!petResolvido.name && !petResolvido.nome)) {
-      const cComPet = carteiras.find(c => c.pet && (c.pet.name || c.pet.nome));
-      if (cComPet) petResolvido = cComPet.pet;
-    }
+    // Pet é salvo nas CarteiraGrupo por grupo; Usuario.pet pode ser apenas um
+    // subdocumento vazio do schema. Procura também os aliases PN/LID associados.
+    const petGlobal = usuario.pet && (usuario.pet.name || usuario.pet.nome) ? usuario.pet : null;
+    const carteirasParaPet = (carteirasContadoras.length ? carteirasContadoras : carteirasGruposValidos)
+      .filter(c => c.pet && (c.pet.name || c.pet.nome))
+      .sort((a, b) => (Number(b.xp) || 0) - (Number(a.xp) || 0));
+    const petResolvido = petGlobal || carteirasParaPet[0]?.pet || null;
+
+    // Pontos globais podem ter sido gravados sob o outro identificador PN/LID.
+    // A contagem dos documentos User e das carteiras é comparada, não somada entre fontes.
+    const quizPointsTotal = calcularTotalAcumulado({
+      usuarios: usuariosContadores.length ? usuariosContadores : [usuario],
+      carteiras: carteirasContadoras.length ? carteirasContadoras : carteirasGruposValidos,
+      campo: 'quizPoints',
+      fallback: usuario.quizPoints,
+    });
 
     // O gráfico de progressão usa o histórico global do usuário. Só recorre
     // aos históricos das carteiras em documentos antigos sem histórico global.
@@ -756,7 +766,7 @@ if (!carteiras.length) {
       level:      levelGlobal,
       gold:       goldTotal,
       mensagens:  mensagensTotal,
-      quizPoints: usuario.quizPoints ?? 0,
+      quizPoints: quizPointsTotal,
       xpParaProximo,
       xpInicioNivel,
       xpProgresso,

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { calcularTotalMensagens, calcularMensagensPerfil, somarContagensIdentidades } = require('./message-count');
+const { calcularTotalMensagens, calcularMensagensPerfil, calcularTotalAcumulado, somarContagensIdentidades } = require('./message-count');
 const { normalizarJid } = require('./jid');
 
 test('consolida contagens divididas entre perfis PN e LID sem somar duas fontes duplicadas', () => {
@@ -47,4 +47,30 @@ test('perfil usa o contador local quando o registro salvo no Mongo é zero', () 
     fallback: 0,
     contadorLocal: 73,
   }), 73);
+});
+
+test('quiz points recover from PN/LID user docs and group wallets when primary user is zero', () => {
+  assert.equal(calcularTotalAcumulado({
+    campo: 'quizPoints',
+    usuarios: [
+      { idWhatsApp: '5511999999999@s.whatsapp.net', quizPoints: 0 },
+      { idWhatsApp: '123456789@lid', quizPoints: 30 },
+    ],
+    carteiras: [
+      { idWhatsApp: '5511999999999@s.whatsapp.net', idGrupo: 'grupo-a@g.us', quizPoints: 20 },
+      { idWhatsApp: '123456789@lid', idGrupo: 'grupo-a@g.us', quizPoints: 25 },
+      { idWhatsApp: '5511999999999@s.whatsapp.net', idGrupo: 'grupo-b@g.us', quizPoints: 15 },
+    ],
+  }), 40);
+});
+
+test('quiz fallback does not double-count user total and group wallets', () => {
+  assert.equal(calcularTotalAcumulado({
+    campo: 'quizPoints',
+    usuarios: [{ quizPoints: 75 }],
+    carteiras: [
+      { idGrupo: 'grupo-a@g.us', quizPoints: 50 },
+      { idGrupo: 'grupo-b@g.us', quizPoints: 15 },
+    ],
+  }), 75);
 });
