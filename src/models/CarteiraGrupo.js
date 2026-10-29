@@ -81,6 +81,8 @@ const carteiraGrupoSchema = new mongoose.Schema(
     gold:       { type: Number, default: 0, min: 0 },
     quizPoints: { type: Number, default: 0, min: 0 },
     mensagens:  { type: Number, default: 0, min: 0 },
+    // Bio exclusiva deste usuário neste grupo (não compartilhada entre grupos).
+    bio:        { type: String, default: null, trim: true, maxlength: 150 },
     xp:         { type: Number, default: 0, min: 0 },
 
     // ✅ "level" é DERIVADO de "xp" — via hook pre-save (.save()) OU via

@@ -8,6 +8,9 @@ const {
   msgCount,
   stickerCount,
   cmdCount,
+  groupMsgCount,
+  groupStickerCount,
+  groupCmdCount,
   pinnedMessages,
   autoStickerGroups,
   getPrefix,
@@ -162,6 +165,7 @@ async function handleMessage(sock, msg) {
   if (isGroup && matchPrefixCmd(caption, 'bot', jid)) {
     const args = extractPrefixArgs(caption, 'bot', jid);
     if (args.trim()) {
+      if (senderJid) contarCmd(senderJid, jid);
       const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
       await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
       return;
@@ -207,7 +211,7 @@ async function handleMessage(sock, msg) {
   }
 
   if (senderJid) {
-    contarMensagem(senderJid, author);
+    contarMensagem(senderJid, author, isGroup ? jid : null);
 
     // XP/níveis dos grupos ficam inativos por padrão e só avançam se um admin ativar a opção.
     // O XP global de mensagens privadas permanece independente dessa configuração.
@@ -261,7 +265,7 @@ async function handleMessage(sock, msg) {
   // ── Substituição estilo vim (s/antigo/novo/) ─────────────────
   const subMatch = caption.match(/^[!.]s\/([^\/]+)\/([^\/]+)\/?/i);
   if (subMatch && (isPrivate || content.extendedTextMessage?.contextInfo?.quotedMessage)) {
-    if (senderJid) contarCmd(senderJid);
+    if (senderJid) contarCmd(senderJid, isGroup ? jid : null);
     const pattern     = subMatch[1];
     const replacement = subMatch[2];
     const targetText  =
@@ -364,7 +368,7 @@ async function handleMessage(sock, msg) {
   }
 
   if (!isAnyCmd(raw)) return;
-  if (senderJid) contarCmd(senderJid);
+  if (senderJid) contarCmd(senderJid, isGroup ? jid : null);
 
   // ── INFORMAÇÕES GERAIS DO BOT ─────────────────────────────────
   if (matchPrefixCmd(caption, 'bot', jid) && !extractPrefixArgs(caption, 'bot', jid)) {
@@ -420,7 +424,7 @@ async function handleMessage(sock, msg) {
 
   // ── PERFIL ────────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'perfil'))
-    { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos); return; }
+    { await utilidadeHandler.handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos, groupMsgCount, groupCmdCount, groupStickerCount); return; }
   if (matchCmdStart(cmd, 'bio ') || matchCmd(cmdWord, 'bio'))
     { await utilidadeHandler.handleBio(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'meupainel') || matchCmd(cmdWord, 'painel') || matchCmd(cmdWord, 'site') || matchCmd(cmdWord, 'link'))

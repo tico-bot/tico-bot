@@ -7,6 +7,10 @@ Bot de WhatsApp desenvolvido em **Node.js**, com foco em administração de grup
 > **Runtime:** Node.js 20 ou superior
 > **Idioma dos comandos e mensagens:** português
 
+## Perfil e atividade por grupo
+
+No comando `!perfil`, mensagens, comandos, figurinhas, total e posição no ranking são calculados por grupo. A bio definida com `!bio` dentro de um grupo é exclusiva daquela comunidade; em conversa privada, a bio permanece global. Como os contadores antigos eram armazenados de forma global, não é possível repartir seu histórico entre grupos com precisão: os novos totais separados começam a ser contabilizados após esta atualização.
+
 ## Visão geral
 
 O Tico reúne ferramentas para comunidades e grupos, desde moderação e utilidades até jogos com progresso persistente.

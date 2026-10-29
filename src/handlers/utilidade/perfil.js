@@ -10,6 +10,7 @@ const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
 const { resolveUsuarioInfo } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { calcularMensagensPerfil, somarContagensIdentidades } = require(path.join(__dirname, '..', '..', 'utils', 'message-count'));
+const { countGroupCounter, listGroupCounters } = require(path.join(__dirname, '..', '..', 'utils', 'group-activity'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
@@ -60,7 +61,7 @@ function formatarDataAniversario(dataString, agora = new Date()) {
   return `🎂 ${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}  ·  ${idade} anos  ·  ${dias === 0 ? '🥳 Hoje!' : `em ${dias} dia(s)`}`;
 }
 
-async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos) {
+async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmdCount, stickerCount, relacionamentos, groupMsgCount, groupCmdCount, groupStickerCount) {
   const contextInfo = content?.extendedTextMessage?.contextInfo
                     || msg?.message?.extendedTextMessage?.contextInfo;
   const mentions  = Array.isArray(contextInfo?.mentionedJid) ? contextInfo.mentionedJid : [];
@@ -111,15 +112,22 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
   } catch (err) {
     console.warn('⚠️ Não foi possível consolidar mensagens PN/LID no perfil:', err.message);
   }
-  // O contador local é uma segunda fonte para compatibilidade histórica. Nunca
-  // deixe um `mensagens: 0` do Mongo esconder um total válido dessa fonte.
-  const msgsRec = calcularMensagensPerfil({
-    usuarios: usuariosEquivalentes,
-    fallback: userData?.mensagens,
-    contadorLocal: findCount(msgCount, 'count'),
-  });
-  const cmdsRec = findCount(cmdCount);
-  const sticks  = findCount(stickerCount);
+  const perfilPorGrupo = jid.endsWith('@g.us');
+  // Os contadores legados são globais e não guardam o grupo de origem. Em grupos,
+  // usamos apenas contadores com chave (grupo, usuário) para não misturar chats.
+  const msgsRec = perfilPorGrupo
+    ? countGroupCounter(groupMsgCount, jid, identities, normalizarJid)
+    : calcularMensagensPerfil({
+        usuarios: usuariosEquivalentes,
+        fallback: userData?.mensagens,
+        contadorLocal: findCount(msgCount, 'count'),
+      });
+  const cmdsRec = perfilPorGrupo
+    ? countGroupCounter(groupCmdCount, jid, identities, normalizarJid)
+    : findCount(cmdCount);
+  const sticks = perfilPorGrupo
+    ? countGroupCounter(groupStickerCount, jid, identities, normalizarJid)
+    : findCount(stickerCount);
   const total   = msgsRec + cmdsRec + sticks;
   const activity =
     total > 1000 ? '🔥 Hiperativo' :
@@ -127,11 +135,15 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     total > 100  ? '😊 Participativo' : '📉 Calmo';
 
   let rankText = '';
-  try {
-    const ranks = [...(msgCount?.entries?.() ?? [])].sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0));
-    const idx   = ranks.findIndex(([k]) => identities.has(k) || identities.has(normalizarJid(k)));
-    if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
-  } catch {}
+  if (perfilPorGrupo) {
+    try {
+      const ranks = listGroupCounters(groupMsgCount, jid, normalizarJid)
+        .sort((a, b) => b[1] - a[1]);
+      const alvoNormalizado = new Set([...identities].map(id => normalizarJid(id) || id));
+      const idx = ranks.findIndex(([key]) => alvoNormalizado.has(key));
+      if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
+    } catch {}
+  }
 
   let xp       = 0;
   let level    = 1;
@@ -252,7 +264,19 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch {}
 
-  const bio = typeof userData?.bio === 'string' ? userData.bio.trim().slice(0, 150) : '';
+  let bio = typeof userData?.bio === 'string' ? userData.bio.trim().slice(0, 150) : '';
+  if (perfilPorGrupo) {
+    // Em grupo, a bio é totalmente independente da bio global e das demais comunidades.
+    bio = '';
+    try {
+      const bioGrupo = await CarteiraGrupo.findOne({
+        idGrupo: jid,
+        idWhatsApp: { $in: [...identities] },
+      }).select('bio').lean();
+      bio = typeof bioGrupo?.bio === 'string' ? bioGrupo.bio.trim().slice(0, 150) : '';
+    } catch {}
+  }
+
 
   let picBuffer = null;
   try {
@@ -358,9 +382,8 @@ async function handleBio(sock, msg, jid, caption) {
   }
 
   try {
-    // Keep the bio in sync across the phone JID and its LID alias, where present.
-    // Update existing identity documents without creating a duplicate PN account when
-    // the user's account is LID-backed. Only create a profile when neither alias exists.
+    // Resolve PN/LID aliases once. In a group the bio is stored only in that group's
+    // CarteiraGrupo records; in private chat it remains the global Usuario bio.
     let mapping = null;
     if (senderOriginal.endsWith('@lid')) {
       mapping = await LidMapping.findOne({ lid: senderOriginal }).select('lid pn').lean();
@@ -371,20 +394,35 @@ async function handleBio(sock, msg, jid, caption) {
       .filter(value => typeof value === 'string' && value.length)
       .map(value => value.split(':')[0].trim().toLowerCase()))];
 
-    const atualizacao = idsBio.length
-      ? await Usuario.updateMany({ idWhatsApp: { $in: idsBio } }, { $set: { bio } })
-      : { matchedCount: 0 };
-    if (!Number(atualizacao?.matchedCount ?? atualizacao?.n ?? 0)) {
-      const idExistenteOriginal = senderOriginal || senderJid;
-      await Usuario.findOneAndUpdate(
-        { idWhatsApp: idExistenteOriginal },
+    if (jid?.endsWith('@g.us')) {
+      const atualizacao = await CarteiraGrupo.updateMany(
+        { idGrupo: jid, idWhatsApp: { $in: idsBio } },
         { $set: { bio } },
-        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
       );
+      const encontrados = Number(atualizacao?.matchedCount ?? atualizacao?.n ?? 0);
+      if (!encontrados) {
+        await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp: senderOriginal || senderJid, idGrupo: jid },
+          { $set: { bio } },
+          { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+        );
+      }
+    } else {
+      const atualizacao = idsBio.length
+        ? await Usuario.updateMany({ idWhatsApp: { $in: idsBio } }, { $set: { bio } })
+        : { matchedCount: 0 };
+      if (!Number(atualizacao?.matchedCount ?? atualizacao?.n ?? 0)) {
+        const idExistenteOriginal = senderOriginal || senderJid;
+        await Usuario.findOneAndUpdate(
+          { idWhatsApp: idExistenteOriginal },
+          { $set: { bio } },
+          { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+        );
+      }
     }
 
     await sock.sendMessage(jid, {
-      text: `✅ *Bio atualizada!*\n\n📝 "${bio}"`,
+      text: `✅ *Bio atualizada${jid?.endsWith('@g.us') ? ' neste grupo' : ''}!*\n\n📝 "${bio}"`,
     }, { quoted: msg });
   } catch (err) {
     console.error('⚠️ Erro ao salvar bio:', err.message);

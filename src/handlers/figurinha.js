@@ -28,6 +28,7 @@ const {
 } = require(path.join(__dirname, '..', 'sticker'));
 
 const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
+const { contarSticker: registrarSticker } = require(path.join(__dirname, '..', 'utils', 'persistence'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -380,7 +381,7 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
     return;
   }
 
-  if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+  if (senderJid) registrarSticker(senderJid, jid, stickerCount);
 
   try {
     await sock.sendMessage(jid, { sticker });
@@ -729,7 +730,7 @@ async function handleBrat(sock, msg, jid, caption, getPrefix, stickerCount) {
   try {
     const sticker   = await convertBratSticker(text);
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
     return true;
@@ -758,7 +759,7 @@ async function handleFigtexto(sock, msg, jid, caption, getPrefix, stickerCount) 
   try {
     const sticker   = await convertTextoSticker(text);
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
     return true;
@@ -797,7 +798,7 @@ async function handleAttp(sock, msg, jid, caption, getPrefix, stickerCount, vers
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const registerSticker = () => {
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
   };
 
   // O terceiro estilo é produzido localmente e não depende de API externa.
@@ -920,7 +921,7 @@ async function handleQc(sock, msg, jid, caption, getPrefix, stickerCount, versao
     const imgBuf    = await sharp(Buffer.from(svg)).resize(512, h).webp().toBuffer();
     const sticker   = await convertImageToSticker(imgBuf);
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (err) {
@@ -992,7 +993,7 @@ async function handleEmojiMix(sock, msg, jid, caption, getPrefix, stickerCount) 
   try {
     const sticker   = await convertImageToSticker(buf);
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (err) {
@@ -1054,7 +1055,7 @@ async function handleEmoji(sock, msg, jid, caption, getPrefix, stickerCount) {
 
     const sticker   = await convertImageToSticker(buf);
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+    if (senderJid) registrarSticker(senderJid, jid, stickerCount);
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (err) {
@@ -1138,7 +1139,7 @@ async function buscarFigurinha(sock, msg, jid, query, qtd, stickerCount) {
 
       try {
         await sock.sendMessage(jid, { sticker });
-        if (senderJid) stickerCount.set(senderJid, (stickerCount.get(senderJid) || 0) + 1);
+        if (senderJid) registrarSticker(senderJid, jid, stickerCount);
         sent++;
         if (limit > 1) await new Promise(r => setTimeout(r, 600));
       } catch (err) {

@@ -3,6 +3,7 @@
 const path = require('path');
 const fs   = require('fs');
 const { getGroupPrefix } = require('./prefixos');
+const { incrementGroupCounter } = require('./group-activity');
 
 // handlers/relacionamento expõe os Maps de estado (xpCasais, bloqueados,
 // diariosUsados, xpBonus) que este módulo restaura/persiste no data.json.
@@ -41,6 +42,9 @@ const _savedData   = loadData();
 const msgCount     = new Map(Object.entries(_savedData.msgCount     || {}));
 const stickerCount = new Map(Object.entries(_savedData.stickerCount || {}));
 const cmdCount     = new Map(Object.entries(_savedData.cmdCount     || {}));
+const groupMsgCount     = new Map(Object.entries(_savedData.groupMsgCount     || {}));
+const groupStickerCount = new Map(Object.entries(_savedData.groupStickerCount || {}));
+const groupCmdCount     = new Map(Object.entries(_savedData.groupCmdCount     || {}));
 
 // Warnings: Map<groupJid, Map<userJid, count>>
 const warnings = new Map();
@@ -82,6 +86,9 @@ function saveData() {
       msgCount:       Object.fromEntries([...msgCount.entries()]),
       stickerCount:   Object.fromEntries([...stickerCount.entries()]),
       cmdCount:       Object.fromEntries([...cmdCount.entries()]),
+      groupMsgCount:     Object.fromEntries([...groupMsgCount.entries()]),
+      groupStickerCount: Object.fromEntries([...groupStickerCount.entries()]),
+      groupCmdCount:     Object.fromEntries([...groupCmdCount.entries()]),
       warnings:       warningsObj,
       groupConfig: {
         autoSticker: [...autoStickerGroups],
@@ -120,19 +127,23 @@ function getPrefix(jid) {
 const pinnedMessages = new Map(Object.entries(_savedData.pinnedMessages || {}));
 
 // ─── Contadores (chamam saveData() com throttling — igual ao original) ──────
-function contarSticker(jid) {
-  stickerCount.set(jid, (stickerCount.get(jid) || 0) + 1);
-  saveData();
+function contarSticker(jid, groupJid = null, map = stickerCount) {
+  if (!jid || !map || typeof map.set !== 'function') return;
+  map.set(jid, (map.get(jid) || 0) + 1);
+  if (map === stickerCount && groupJid) incrementGroupCounter(groupStickerCount, groupJid, jid);
+  if (map === stickerCount) saveData();
 }
-function contarCmd(jid) {
+function contarCmd(jid, groupJid = null) {
   cmdCount.set(jid, (cmdCount.get(jid) || 0) + 1);
+  if (groupJid) incrementGroupCounter(groupCmdCount, groupJid, jid);
   if (cmdCount.get(jid) % 5 === 0) saveData();
 }
-function contarMensagem(jid, nome) {
+function contarMensagem(jid, nome, groupJid = null) {
   const cur = msgCount.get(jid) || { nome, count: 0 };
   cur.nome  = nome || cur.nome;
   cur.count++;
   msgCount.set(jid, cur);
+  if (groupJid) incrementGroupCounter(groupMsgCount, groupJid, jid);
   if (cur.count % 10 === 0) saveData();
 }
 
@@ -144,6 +155,9 @@ module.exports = {
   msgCount,
   stickerCount,
   cmdCount,
+  groupMsgCount,
+  groupStickerCount,
+  groupCmdCount,
   warnings,
   relacionamentos,
   pinnedMessages,
