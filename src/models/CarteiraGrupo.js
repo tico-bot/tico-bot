@@ -176,7 +176,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
     config: {
       type: new mongoose.Schema({
         botAtivo:   { type: Boolean, default: true  },
-        xpAtivo:    { type: Boolean, default: true  },
+        xpAtivo:    { type: Boolean, default: false },
         antiLink:   { type: Boolean, default: false },
         boasVindas: { type: Boolean, default: false },
         prefixo:    { type: String,  default: '!', enum: ['!', '.', '/', ','] },
@@ -189,6 +189,11 @@ const carteiraGrupoSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Reseta também a cópia de config mantida nas carteiras, usada pelo painel admin.
+carteiraGrupoSchema.statics.desativarXpTodosNoBoot = function () {
+  return this.updateMany({}, { $set: { 'config.xpAtivo': false } });
+};
 
 // ─── Índices ──────────────────────────────────────────────────────────────────
 

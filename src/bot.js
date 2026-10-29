@@ -29,6 +29,8 @@ const pino      = require('pino');
 const QRCode    = require('qrcode');
 const mongoose  = require('mongoose');
 const PetSpawn  = require('./models/PetSpawn');
+const GrupoConfig = require('./models/GrupoConfig');
+const CarteiraGrupo = require('./models/CarteiraGrupo');
 
 // ─── Scripts & Utils ──────────────────────────────────────────────────────────
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
@@ -444,16 +446,22 @@ async function main() {
   // o Render pode encerrar a versão antiga só 60s depois da troca.
   const acquired = await acquireLockWithRetry({ acquireLock });
 
-  // Só o processo que adquiriu o lock pode resetar a preferência global.
-  // Assim, uma instância concorrente não desliga o spawn do bot que já está ativo.
+  // Só o processo que adquiriu o lock pode resetar as preferências automáticas.
+  // Assim, uma instância concorrente não altera os sistemas da instância ativa.
   try {
     const resultadoSpawn = await PetSpawn.desativarTodosNoBoot();
     console.log(
       `[PetScheduler] Inicialização segura: spawn automático OFF em ${resultadoSpawn.matchedCount ?? 0} grupo(s).`
     );
+
+    const resultadoLevel = await GrupoConfig.desativarTodosNoBoot();
+    const resultadoCarteirasXp = await CarteiraGrupo.desativarXpTodosNoBoot();
+    console.log(
+      `[LevelSystem] Inicialização segura: XP/níveis OFF em ${resultadoLevel.matchedCount ?? 0} configuração(ões) de grupo e ${resultadoCarteirasXp.matchedCount ?? 0} carteira(s).`
+    );
   } catch (err) {
     console.error(
-      '❌ Não foi possível garantir o spawn automático OFF. O bot do WhatsApp não será iniciado:',
+      '❌ Não foi possível garantir os sistemas automáticos OFF (pets/níveis). O bot do WhatsApp não será iniciado:',
       err.message
     );
     await releaseLock().catch(() => {});

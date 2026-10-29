@@ -310,7 +310,7 @@ router.get('/grupos', async (req, res) => {
           botAtivo:    cfg.botAtivo    ?? true,
           antiLink:    cfg.antiLink    ?? false,
           boasVindas:  cfg.boasVindas  ?? true,
-          xpAtivo:     cfg.xpAtivo     ?? true,
+          xpAtivo:     cfg.xpAtivo     ?? false,
         },
       };
     });
@@ -1311,6 +1311,7 @@ router.patch('/admin/grupo/:jid/config', adminAuth, async (req, res) => {
         { $set: syncCampos },
         { upsert: true }
       );
+      try { require('../router').invalidateGrupoConfigCache(jid); } catch {}
     }
 
     return res.json({ ok: true });

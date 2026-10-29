@@ -60,6 +60,12 @@ function levelFromXpGlobal(xp) {
   return CarteiraGrupo.levelFromXp(xp);
 }
 
+// XP de grupo/nível só deve ser concedido quando a configuração do grupo estiver explicitamente ativa.
+// Mensagens privadas continuam usando o XP global do perfil, que não depende de um grupo.
+function isXpEnabledForMessage(isGroup, groupConfig) {
+  return !isGroup || groupConfig?.xpAtivo === true;
+}
+
 /**
  * Adiciona XP global ao Usuário, aplicando o bônus do horário do dia.
  *
@@ -159,6 +165,7 @@ async function addUserXp(userId, xpOverride = null, pushName = null) {
 
 module.exports = {
   addUserXp,
+  isXpEnabledForMessage,
   getBonusHorario,
   getHorarioBrasilia,
   levelFromXpGlobal,

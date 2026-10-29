@@ -32,7 +32,7 @@ const grupoConfigSchema = new mongoose.Schema(
     sistemaGold:        { type: Boolean, default: false },
     medievalAtivo:      { type: Boolean, default: false },
     botAtivo:           { type: Boolean, default: true  },
-    xpAtivo:            { type: Boolean, default: true  },
+    xpAtivo:            { type: Boolean, default: false },
     rankingSemanal:     { type: Boolean, default: false },
 
     // ── Boas-vindas por grupo ────────────────────────────────────
@@ -55,6 +55,11 @@ const grupoConfigSchema = new mongoose.Schema(
     collection: 'grupoconfigs',
   }
 );
+
+// O sistema de XP/níveis começa desligado e deve permanecer OFF após cada boot.
+grupoConfigSchema.statics.desativarTodosNoBoot = function () {
+  return this.updateMany({}, { $set: { xpAtivo: false } });
+};
 
 module.exports =
   mongoose.models.GrupoConfig ||

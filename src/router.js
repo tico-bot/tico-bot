@@ -78,7 +78,7 @@ const { handleEmprestimo, handlePayEmprestimo, handleDivida }        = require('
 const { registerActiveGroup }                                       = require('./handlers/diversao');
 
 const { prepareDailyMissionState, incrementMission } = require('./handlers/diversao/missoes');
-const { addUserXp, getBonusHorario }                 = require('./utils/xp');
+const { addUserXp, getBonusHorario, isXpEnabledForMessage } = require('./utils/xp');
 const { extrairDominiosDeLinks, todosLinksPermitidos } = require('./utils/links');
 
 // Fix #1: unmuteUser agora é corretamente re-exportado por handlers/grupo/index.js!
@@ -169,8 +169,9 @@ async function handleMessage(sock, msg) {
   }
 
   // ── Guard bot ativo no grupo ──────────────────────────────────
+  let cfgGrupo = null;
   if (isGroup) {
-    const cfgGrupo = await getCachedGrupoConfig(jid);
+    cfgGrupo = await getCachedGrupoConfig(jid);
     if (cfgGrupo?.botAtivo === false) return;
   }
 
@@ -207,25 +208,30 @@ async function handleMessage(sock, msg) {
 
   if (senderJid) {
     contarMensagem(senderJid, author);
-    const bonusInfo = getBonusHorario();
-    const xpGanho   = bonusInfo.xp;
 
-    // ── Fire-and-forget: XP + LID tracking (não bloqueia o comando) ──
-    const xpPromise = addUserXp(senderJid, xpGanho, msg.pushName || author).catch(() => {});
+    // XP/níveis dos grupos ficam inativos por padrão e só avançam se um admin ativar a opção.
+    // O XP global de mensagens privadas permanece independente dessa configuração.
+    if (isXpEnabledForMessage(isGroup, cfgGrupo)) {
+      const bonusInfo = getBonusHorario();
+      const xpGanho   = bonusInfo.xp;
 
-    if (isGroup) {
-      const senderNorm = normalizarJid(senderJid);
-      CarteiraGrupo.incrementXp(senderNorm, jid, xpGanho)
-        .then(resGroup => {
-          if (resGroup?.levelUp) {
-            sock.sendMessage(jid, {
-              text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
-                    `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
-              mentions: [senderJid],
-            }).catch(() => {});
-          }
-        })
-        .catch(() => {});
+      // ── Fire-and-forget: XP + LID tracking (não bloqueia o comando) ──
+      addUserXp(senderJid, xpGanho, msg.pushName || author).catch(() => {});
+
+      if (isGroup) {
+        const senderNorm = normalizarJid(senderJid);
+        CarteiraGrupo.incrementXp(senderNorm, jid, xpGanho)
+          .then(resGroup => {
+            if (resGroup?.levelUp) {
+              sock.sendMessage(jid, {
+                text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
+                      `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
+                mentions: [senderJid],
+              }).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     registrarLidEMapping(msg, msg.pushName || author).catch(() => {});

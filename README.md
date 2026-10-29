@@ -18,6 +18,8 @@ O Tico reúne ferramentas para comunidades e grupos, desde moderação e utilida
 - **Jogos e brincadeiras:** quizzes temáticos, anagramas, charadas, desafios, jogos de sorte e outros comandos interativos.
 - **Economia virtual:** saldo por grupo, transações e extratos, missões, garimpo, loja, inventário, marketplace e atividades com recompensas.
 - **Progressão:** XP, níveis e rankings.
+
+O ganho automático de XP/níveis por mensagens em grupos começa desativado e volta a ficar desligado em todos os grupos sempre que o bot é inicializado. Para ativá-lo durante a execução, use a opção de XP no painel administrativo. Os XP e níveis já acumulados são preservados.
 - **Pets e família:** pets, cuidados, relacionamentos, casamento virtual, filhos e atividades relacionadas.
 - **Modo medieval:** personagens, combate, magia, equipamentos, loja e saque.
 - **Relacionamentos e eventos:** comandos para casais, aniversários e interações sociais.

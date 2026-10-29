@@ -60,3 +60,28 @@ test('incrementXp counts messages and records the daily group XP atomically', as
   assert.deepEqual(chamada.opcoes, { upsert: true, new: true });
   assert.equal(resultado.mensagens, 1);
 });
+
+test('XP/níveis da carteira começam desativados por padrão', () => {
+  const carteira = new CarteiraGrupo({
+    idWhatsApp: 'usuario@s.whatsapp.net',
+    idGrupo: 'grupo@g.us',
+  });
+  assert.equal(carteira.config.xpAtivo, false);
+});
+
+test('boot desativa XP/níveis nas configurações de todas as carteiras', async () => {
+  const original = CarteiraGrupo.updateMany;
+  let args;
+  CarteiraGrupo.updateMany = (...values) => {
+    args = values;
+    return Promise.resolve({ matchedCount: 8, modifiedCount: 4 });
+  };
+  try {
+    const result = await CarteiraGrupo.desativarXpTodosNoBoot();
+    assert.deepEqual(args, [{}, { $set: { 'config.xpAtivo': false } }]);
+    assert.equal(result.matchedCount, 8);
+    assert.equal(result.modifiedCount, 4);
+  } finally {
+    CarteiraGrupo.updateMany = original;
+  }
+});
