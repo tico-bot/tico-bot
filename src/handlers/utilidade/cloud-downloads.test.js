@@ -18,7 +18,8 @@ const {
   firstUrlFromCaption,
   MAX_FILE_SIZE,
   MAX_COMPRESSED_FILE_SIZE,
-  MAX_MEDIAFIRE_SOURCE_SIZE,
+  MAX_SOURCE_FILE_SIZE,
+  requiresCompression,
   writeZipArchiveToTemporaryFile,
   formatFileSize,
   formatDownloadCaption,
@@ -194,9 +195,17 @@ test('limita o arquivo compactado ao tamanho configurado', async () => {
   );
 });
 
-test('limites de compactação do MediaFire são 150 MiB compactados e 300 MiB de origem', () => {
+test('limites de compactação para MediaFire e Google Drive são 150 MiB compactados e 300 MiB de origem', () => {
   assert.equal(MAX_COMPRESSED_FILE_SIZE, 150 * 1024 * 1024);
-  assert.equal(MAX_MEDIAFIRE_SOURCE_SIZE, 300 * 1024 * 1024);
+  assert.equal(MAX_SOURCE_FILE_SIZE, 300 * 1024 * 1024);
+});
+
+test('só compacta arquivos do MediaFire/Google Drive acima do limite original de 64 MiB', () => {
+  assert.equal(requiresCompression('mediafire', MAX_FILE_SIZE), false);
+  assert.equal(requiresCompression('google', MAX_FILE_SIZE), false);
+  assert.equal(requiresCompression('mediafire', MAX_FILE_SIZE + 1), true);
+  assert.equal(requiresCompression('google', MAX_FILE_SIZE + 1), true);
+  assert.equal(requiresCompression('other', MAX_FILE_SIZE + 1), false);
 });
 
 test('formata tamanhos de arquivo em unidades legíveis', () => {

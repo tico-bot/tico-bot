@@ -12,14 +12,14 @@ const { _validateExternalUrl } = require('./downloads');
 
 const MAX_FILE_SIZE = 64 * 1024 * 1024;
 const MAX_COMPRESSED_FILE_SIZE = 150 * 1024 * 1024;
-const MAX_MEDIAFIRE_SOURCE_SIZE = 300 * 1024 * 1024;
+const MAX_SOURCE_FILE_SIZE = 300 * 1024 * 1024;
 const MAX_PAGE_SIZE = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 6;
 const MAX_CONCURRENT_DOWNLOADS = 2;
 const DOWNLOAD_COOLDOWN_MS = 10_000;
 const activeSenders = new Set();
 const lastDownloadAt = new Map();
-const activeMediafireDownloads = new Set();
+const activeCloudDownloads = new Set();
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 const GOOGLE_HOSTS = new Set([
@@ -492,13 +492,13 @@ async function writeZipArchiveToTemporaryFile(buffer, fileName, maxBytes = MAX_C
 
 async function requestMediafire(link) {
   const initial = assertProviderUrl(link, 'mediafire');
-  const opened = await openFollowingRedirects(initial.href, 'mediafire', { maxContentLength: MAX_MEDIAFIRE_SOURCE_SIZE });
+  const opened = await openFollowingRedirects(initial.href, 'mediafire', { maxContentLength: MAX_SOURCE_FILE_SIZE });
   const contentType = String(opened.response.headers['content-type'] || '').toLowerCase();
   const contentLength = Number(opened.response.headers['content-length']);
   const dispositionName = filenameFromDisposition(opened.response.headers['content-disposition']);
   const likelyHtmlFile = /\.(?:html?|xhtml)$/i.test(dispositionName);
   if ((!/text\/html|application\/xhtml\+xml/.test(contentType) || likelyHtmlFile) && (contentType || contentLength > 0 || dispositionName)) {
-    return downloadResponse(opened, 'arquivo-mediafire.bin', undefined, MAX_MEDIAFIRE_SOURCE_SIZE);
+    return downloadResponse(opened, 'arquivo-mediafire.bin', undefined, MAX_SOURCE_FILE_SIZE);
   }
 
   const htmlBuffer = await readStreamLimited(opened.response.data, MAX_PAGE_SIZE,
@@ -518,8 +518,8 @@ async function requestMediafire(link) {
     throw new DownloadError('Não consegui localizar o arquivo na página do MediaFire. Confira se o link é de um arquivo público e não de uma pasta.');
   }
   const fallbackName = filenameFromMediafirePage(html);
-  const fileOpened = await openFollowingRedirects(downloadUrl, 'mediafire', { maxContentLength: MAX_MEDIAFIRE_SOURCE_SIZE });
-  return downloadResponse(fileOpened, fallbackName, undefined, MAX_MEDIAFIRE_SOURCE_SIZE);
+  const fileOpened = await openFollowingRedirects(downloadUrl, 'mediafire', { maxContentLength: MAX_SOURCE_FILE_SIZE });
+  return downloadResponse(fileOpened, fallbackName, undefined, MAX_SOURCE_FILE_SIZE);
 }
 
 function parseGoogleConfirmationForm(html, finalUrl, expectedFileId) {
@@ -549,8 +549,8 @@ function parseGoogleConfirmationForm(html, finalUrl, expectedFileId) {
 
 async function requestGoogleDrive(link) {
   const spec = extractGoogleDownloadSpec(link);
-  let opened = await openFollowingRedirects(spec.url, 'google');
-  let result = await downloadResponse(opened, spec.fallbackName, spec.expectedMimeType, MAX_FILE_SIZE, { allowHtml: true });
+  let opened = await openFollowingRedirects(spec.url, 'google', { maxContentLength: MAX_SOURCE_FILE_SIZE });
+  let result = await downloadResponse(opened, spec.fallbackName, spec.expectedMimeType, MAX_SOURCE_FILE_SIZE, { allowHtml: true });
 
   // Google Drive may return a virus-scan confirmation form instead of the file.
   // Parse only the expected Drive form, verify its file ID, and retry once.
@@ -562,8 +562,8 @@ async function requestGoogleDrive(link) {
     for (const [name, value] of Object.entries(form.params)) {
       form.actionUrl.searchParams.set(name, value);
     }
-    opened = await openFollowingRedirects(form.actionUrl.href, 'google', { cookies: opened.cookies });
-    result = await downloadResponse(opened, spec.fallbackName, spec.expectedMimeType);
+    opened = await openFollowingRedirects(form.actionUrl.href, 'google', { cookies: opened.cookies, maxContentLength: MAX_SOURCE_FILE_SIZE });
+    result = await downloadResponse(opened, spec.fallbackName, spec.expectedMimeType, MAX_SOURCE_FILE_SIZE);
   }
 
   if (spec.workspaceKind) {
@@ -608,6 +608,10 @@ function formatFileSize(bytes) {
   return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+function requiresCompression(provider, size) {
+  return (provider === 'mediafire' || provider === 'google') && Number(size) > MAX_FILE_SIZE;
+}
+
 function formatDownloadCaption(result, provider, sourceUrl) {
   const providerName = provider === 'mediafire' ? 'MediaFire' : 'Google Drive';
   const extension = path.extname(result.fileName || '').slice(1).toUpperCase();
@@ -648,8 +652,8 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
   }
 
   const sender = senderKey(msg, jid);
-  if (provider === 'mediafire' && activeMediafireDownloads.size > 0) {
-    await sock.sendMessage(jid, { text: '⏳ Já existe um download do MediaFire em andamento. Tente novamente quando ele terminar.' }, { quoted: msg });
+  if (activeCloudDownloads.size > 0) {
+    await sock.sendMessage(jid, { text: '⏳ Já existe um download de arquivo em andamento. Tente novamente quando ele terminar.' }, { quoted: msg });
     return;
   }
   if (activeSenders.has(sender)) {
@@ -675,17 +679,18 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
     }
   }
   activeSenders.add(sender);
-  if (provider === 'mediafire') activeMediafireDownloads.add(sender);
+  activeCloudDownloads.add(sender);
   try {
     await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } }).catch(() => {});
     const result = provider === 'mediafire'
       ? await requestMediafire(link)
       : await requestGoogleDrive(link);
 
-    // Keep the normal download untouched. Only package MediaFire files that exceed the existing 64 MiB limit.
-    if (provider === 'mediafire' && result.size > MAX_FILE_SIZE) {
+    // Preserve normal downloads. Only compress files from MediaFire/Drive above the existing 64 MiB limit.
+    if (requiresCompression(provider, result.size)) {
+      const providerName = provider === 'mediafire' ? 'MediaFire' : 'Google Drive';
       await sock.sendMessage(jid, {
-        text: `🗜️ O arquivo tem ${formatFileSize(result.size)} e excede o limite atual de 64 MB. Vou compactá-lo em ZIP; o arquivo final precisa ter até 150 MB.`,
+        text: `🗜️ O arquivo do ${providerName} tem ${formatFileSize(result.size)} e excede o limite atual de 64 MB. Vou compactá-lo em ZIP; o arquivo final precisa ter até 150 MB.`,
       }, { quoted: msg }).catch(() => {});
 
       const originalName = result.fileName;
@@ -721,7 +726,7 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
     await sock.sendMessage(jid, { text: `❌ ${message}` }, { quoted: msg }).catch(() => {});
   } finally {
     activeSenders.delete(sender);
-    activeMediafireDownloads.delete(sender);
+    activeCloudDownloads.delete(sender);
   }
 }
 
@@ -748,7 +753,8 @@ module.exports = {
     firstUrlFromCaption,
     MAX_FILE_SIZE,
     MAX_COMPRESSED_FILE_SIZE,
-    MAX_MEDIAFIRE_SOURCE_SIZE,
+    MAX_SOURCE_FILE_SIZE,
+    requiresCompression,
     writeZipArchiveToTemporaryFile,
     formatFileSize,
     formatDownloadCaption,
