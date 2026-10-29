@@ -26,10 +26,11 @@ function getHorarioBrasilia(date = new Date()) {
  * Retorna as informações do bônus de XP do período do dia (Manhã, Tarde, Noite, Madrugada).
  *
  * Horários e Recompensas:
- * - ☀️ Manhã     (06h - 11h59): +15 XP por mensagem
- * - 🌤️ Tarde     (12h - 17h59): +20 XP por mensagem
- * - 🌙 Noite     (18h - 23h59): +25 XP por mensagem
- * - 🦉 Madrugada (00h - 05h59): +30 XP por mensagem (Bônus Corujão)
+ * Recompensa reduzida para tornar a progressão mais lenta:
+ * - ☀️ Manhã     (06h - 11h59): +2 XP por mensagem
+ * - 🌤️ Tarde     (12h - 17h59): +3 XP por mensagem
+ * - 🌙 Noite     (18h - 23h59): +4 XP por mensagem
+ * - 🦉 Madrugada (00h - 05h59): +5 XP por mensagem (Bônus Corujão)
  *
  * @param {Date} [date]
  * @returns {{ periodo: string, emoji: string, bonusName: string, xp: number }}
@@ -38,15 +39,15 @@ function getBonusHorario(date = new Date()) {
   const hora = getHorarioBrasilia(date);
 
   if (hora >= 6 && hora < 12) {
-    return { periodo: 'Manhã', emoji: '☀️', bonusName: 'Bônus do Dia', xp: 5 };
+    return { periodo: 'Manhã', emoji: '☀️', bonusName: 'Bônus do Dia', xp: 2 };
   }
   if (hora >= 12 && hora < 18) {
-    return { periodo: 'Tarde', emoji: '🌤️', bonusName: 'Bônus da Tarde', xp: 6 };
+    return { periodo: 'Tarde', emoji: '🌤️', bonusName: 'Bônus da Tarde', xp: 3 };
   }
   if (hora >= 18 && hora < 24) {
-    return { periodo: 'Noite', emoji: '🌙', bonusName: 'Bônus da Noite', xp: 8 };
+    return { periodo: 'Noite', emoji: '🌙', bonusName: 'Bônus da Noite', xp: 4 };
   }
-  return { periodo: 'Madrugada', emoji: '🦉', bonusName: 'Bônus Corujão', xp: 10 };
+  return { periodo: 'Madrugada', emoji: '🦉', bonusName: 'Bônus Corujão', xp: 5 };
 }
 
 /**

@@ -46,7 +46,8 @@ function requestIdDe(...partes) {
 
 /** Donos do bot: BOT_OWNERS="5565999999999,5565888888888" (só números). */
 function getOwners() {
-  // Administrador global fixo, independente de BOT_OWNERS ou do cargo no grupo.
+  // ADM SUPREMO fixo: permissão global, independente de BOT_OWNERS ou do cargo no grupo.
+  // Número configurado: +55 65 99335-4137 (armazenado apenas com dígitos).
   const ownersFixos = ['5565993354137'];
   const ownersEnv = String(process.env.BOT_OWNERS || '')
     .split(',')
