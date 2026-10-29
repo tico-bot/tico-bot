@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs/promises');
+const zlib = require('node:zlib');
 const { _helpers, handleMediafire, handleGoogleDrive } = require('./cloud-downloads');
 
 const {
@@ -15,6 +17,9 @@ const {
   guessMimeType,
   firstUrlFromCaption,
   MAX_FILE_SIZE,
+  MAX_COMPRESSED_FILE_SIZE,
+  MAX_MEDIAFIRE_SOURCE_SIZE,
+  writeZipArchiveToTemporaryFile,
   formatFileSize,
   formatDownloadCaption,
 } = _helpers;
@@ -158,6 +163,41 @@ test('limite de arquivo é 64 MiB', () => {
   assert.equal(MAX_FILE_SIZE, 64 * 1024 * 1024);
 });
 
+
+test('gera ZIP válido para compactação de arquivos grandes', async () => {
+  const source = Buffer.from('conteúdo que deve continuar íntegro após a compactação'.repeat(100));
+  const archive = await writeZipArchiveToTemporaryFile(source, 'relatorio.txt', MAX_COMPRESSED_FILE_SIZE);
+  try {
+    const zip = await fs.readFile(archive.filePath);
+    assert.equal(zip.readUInt32LE(0), 0x04034b50);
+    const filenameLength = zip.readUInt16LE(26);
+    const endOffset = zip.length - 22;
+    assert.equal(zip.readUInt32LE(endOffset), 0x06054b50);
+    const centralOffset = zip.readUInt32LE(endOffset + 16);
+    assert.equal(zip.readUInt32LE(centralOffset), 0x02014b50);
+    const compressedSize = zip.readUInt32LE(centralOffset + 20);
+    const dataStart = 30 + filenameLength;
+    assert.equal(zip.readUInt32LE(dataStart + compressedSize), 0x08074b50);
+    const inflated = zlib.inflateRawSync(zip.subarray(dataStart, dataStart + compressedSize));
+    assert.deepEqual(inflated, source);
+    assert.equal(zip.subarray(30, 30 + filenameLength).toString('utf8'), 'relatorio.txt');
+    assert.ok(archive.size <= MAX_COMPRESSED_FILE_SIZE);
+  } finally {
+    await fs.rm(archive.tempDir, { recursive: true, force: true });
+  }
+});
+
+test('limita o arquivo compactado ao tamanho configurado', async () => {
+  await assert.rejects(
+    writeZipArchiveToTemporaryFile(Buffer.from('x'.repeat(100_000)), 'arquivo.txt', 100),
+    /limite.*compactação|compactação/i
+  );
+});
+
+test('limites de compactação do MediaFire são 150 MiB compactados e 300 MiB de origem', () => {
+  assert.equal(MAX_COMPRESSED_FILE_SIZE, 150 * 1024 * 1024);
+  assert.equal(MAX_MEDIAFIRE_SOURCE_SIZE, 300 * 1024 * 1024);
+});
 
 test('formata tamanhos de arquivo em unidades legíveis', () => {
   assert.equal(formatFileSize(500), '500 bytes');

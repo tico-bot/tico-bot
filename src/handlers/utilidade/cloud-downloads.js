@@ -2,15 +2,24 @@
 
 const axios = require('axios');
 const path = require('node:path');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
+const { createDeflateRaw } = require('node:zlib');
 const { _validateExternalUrl } = require('./downloads');
 
 const MAX_FILE_SIZE = 64 * 1024 * 1024;
+const MAX_COMPRESSED_FILE_SIZE = 150 * 1024 * 1024;
+const MAX_MEDIAFIRE_SOURCE_SIZE = 300 * 1024 * 1024;
 const MAX_PAGE_SIZE = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 6;
 const MAX_CONCURRENT_DOWNLOADS = 2;
 const DOWNLOAD_COOLDOWN_MS = 10_000;
 const activeSenders = new Set();
 const lastDownloadAt = new Map();
+const activeMediafireDownloads = new Set();
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 const GOOGLE_HOSTS = new Set([
@@ -241,7 +250,7 @@ async function openFollowingRedirects(inputUrl, provider, options = {}) {
       responseType: 'stream',
       maxRedirects: 0,
       timeout: 25_000,
-      maxContentLength: MAX_FILE_SIZE,
+      maxContentLength: options.maxContentLength || MAX_FILE_SIZE,
       maxBodyLength: 1024 * 1024,
       proxy: false,
       lookup: validated.lookup,
@@ -337,15 +346,159 @@ async function downloadResponse(opened, fallbackName, expectedMimeType, maxBytes
   };
 }
 
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let value = n;
+    for (let bit = 0; bit < 8; bit++) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    table[n] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buffer.length; i++) crc = CRC32_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function createZipLocalHeader(filenameLength) {
+  const header = Buffer.alloc(30);
+  header.writeUInt32LE(0x04034b50, 0);
+  header.writeUInt16LE(20, 4);
+  header.writeUInt16LE(0x0808, 6); // UTF-8 name + data descriptor follows file data.
+  header.writeUInt16LE(8, 8); // DEFLATE
+  header.writeUInt16LE(0, 10); // DOS time
+  header.writeUInt16LE(0x21, 12); // 1 January 1980
+  header.writeUInt32LE(0, 14); // CRC is written in the data descriptor.
+  header.writeUInt32LE(0, 18); // Compressed size is written in the data descriptor.
+  header.writeUInt32LE(0, 22); // Uncompressed size is written in the data descriptor.
+  header.writeUInt16LE(filenameLength, 26);
+  header.writeUInt16LE(0, 28);
+  return header;
+}
+
+function createZipCentralHeader(filenameLength, crc, compressedSize, uncompressedSize) {
+  const header = Buffer.alloc(46);
+  header.writeUInt32LE(0x02014b50, 0);
+  header.writeUInt16LE(20, 4);
+  header.writeUInt16LE(20, 6);
+  header.writeUInt16LE(0x0808, 8);
+  header.writeUInt16LE(8, 10); // DEFLATE
+  header.writeUInt16LE(0, 12);
+  header.writeUInt16LE(0x21, 14);
+  header.writeUInt32LE(crc, 16);
+  header.writeUInt32LE(compressedSize, 20);
+  header.writeUInt32LE(uncompressedSize, 24);
+  header.writeUInt16LE(filenameLength, 28);
+  header.writeUInt16LE(0, 30); // Extra length
+  header.writeUInt16LE(0, 32); // Comment length
+  header.writeUInt16LE(0, 34); // Disk number
+  header.writeUInt16LE(0, 36); // Internal attributes
+  header.writeUInt32LE(0, 38); // External attributes
+  header.writeUInt32LE(0, 42); // Local header offset
+  return header;
+}
+
+async function* zipArchiveChunks(buffer, entryName, maxArchiveBytes) {
+  const safeEntryName = sanitizeFilename(path.basename(entryName || 'arquivo.bin'), 'arquivo.bin');
+  const filename = Buffer.from(safeEntryName, 'utf8');
+  if (filename.length > 0xffff) throw new DownloadError('O nome do arquivo é grande demais para compactar.');
+  const overhead = 30 + filename.length + 16 + 46 + filename.length + 22;
+  const maxDeflatedBytes = maxArchiveBytes - overhead;
+  if (maxDeflatedBytes <= 0) {
+    throw new DownloadError(`O arquivo ultrapassa o limite de ${Math.floor(maxArchiveBytes / 1024 / 1024)} MB mesmo após compactação.`, 'TOO_LARGE');
+  }
+
+  const checksum = crc32(buffer);
+  yield createZipLocalHeader(filename.length);
+  yield filename;
+
+  // Compress in chunks so a poorly-compressible file cannot create an unbounded ZIP in memory.
+  const source = Readable.from((function* () {
+    const chunkSize = 64 * 1024;
+    for (let offset = 0; offset < buffer.length; offset += chunkSize) {
+      yield buffer.subarray(offset, Math.min(offset + chunkSize, buffer.length));
+    }
+  })(), { objectMode: false });
+  const deflater = createDeflateRaw({ level: 6 });
+  source.pipe(deflater);
+  let compressedSize = 0;
+  try {
+    for await (const chunk of deflater) {
+      if (compressedSize + chunk.length > maxDeflatedBytes) {
+        const err = new DownloadError(
+          `O arquivo continua acima do limite de ${Math.floor(maxArchiveBytes / 1024 / 1024)} MB mesmo após compactação.`,
+          'TOO_LARGE'
+        );
+        source.destroy();
+        deflater.destroy();
+        throw err;
+      }
+      compressedSize += chunk.length;
+      yield chunk;
+    }
+  } catch (error) {
+    source.destroy();
+    deflater.destroy();
+    throw error;
+  }
+
+  const descriptor = Buffer.alloc(16);
+  descriptor.writeUInt32LE(0x08074b50, 0);
+  descriptor.writeUInt32LE(checksum, 4);
+  descriptor.writeUInt32LE(compressedSize, 8);
+  descriptor.writeUInt32LE(buffer.length, 12);
+  yield descriptor;
+
+  const centralOffset = 30 + filename.length + compressedSize + descriptor.length;
+  const centralHeader = createZipCentralHeader(filename.length, checksum, compressedSize, buffer.length);
+  yield centralHeader;
+  yield filename;
+
+  const centralSize = centralHeader.length + filename.length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  end.writeUInt16LE(0, 20);
+  yield end;
+}
+
+async function writeZipArchiveToTemporaryFile(buffer, fileName, maxBytes = MAX_COMPRESSED_FILE_SIZE) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new DownloadError('O arquivo está vazio e não pode ser compactado.');
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'tico-mediafire-'));
+  const filePath = path.join(tempDir, 'arquivo-compactado.zip');
+  try {
+    await pipeline(
+      Readable.from(zipArchiveChunks(buffer, fileName, maxBytes), { objectMode: false }),
+      fs.createWriteStream(filePath, { flags: 'wx' })
+    );
+    const stat = await fsp.stat(filePath);
+    if (stat.size > maxBytes) {
+      throw new DownloadError(`O arquivo continua acima do limite de ${Math.floor(maxBytes / 1024 / 1024)} MB mesmo após compactação.`, 'TOO_LARGE');
+    }
+    return { tempDir, filePath, size: stat.size };
+  } catch (error) {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (error instanceof DownloadError) throw error;
+    throw new DownloadError('Não consegui compactar esse arquivo. Tente novamente.');
+  }
+}
+
 async function requestMediafire(link) {
   const initial = assertProviderUrl(link, 'mediafire');
-  const opened = await openFollowingRedirects(initial.href, 'mediafire');
+  const opened = await openFollowingRedirects(initial.href, 'mediafire', { maxContentLength: MAX_MEDIAFIRE_SOURCE_SIZE });
   const contentType = String(opened.response.headers['content-type'] || '').toLowerCase();
   const contentLength = Number(opened.response.headers['content-length']);
   const dispositionName = filenameFromDisposition(opened.response.headers['content-disposition']);
   const likelyHtmlFile = /\.(?:html?|xhtml)$/i.test(dispositionName);
   if ((!/text\/html|application\/xhtml\+xml/.test(contentType) || likelyHtmlFile) && (contentType || contentLength > 0 || dispositionName)) {
-    return downloadResponse(opened, 'arquivo-mediafire.bin');
+    return downloadResponse(opened, 'arquivo-mediafire.bin', undefined, MAX_MEDIAFIRE_SOURCE_SIZE);
   }
 
   const htmlBuffer = await readStreamLimited(opened.response.data, MAX_PAGE_SIZE,
@@ -365,8 +518,8 @@ async function requestMediafire(link) {
     throw new DownloadError('Não consegui localizar o arquivo na página do MediaFire. Confira se o link é de um arquivo público e não de uma pasta.');
   }
   const fallbackName = filenameFromMediafirePage(html);
-  const fileOpened = await openFollowingRedirects(downloadUrl, 'mediafire');
-  return downloadResponse(fileOpened, fallbackName);
+  const fileOpened = await openFollowingRedirects(downloadUrl, 'mediafire', { maxContentLength: MAX_MEDIAFIRE_SOURCE_SIZE });
+  return downloadResponse(fileOpened, fallbackName, undefined, MAX_MEDIAFIRE_SOURCE_SIZE);
 }
 
 function parseGoogleConfirmationForm(html, finalUrl, expectedFileId) {
@@ -469,6 +622,7 @@ function formatDownloadCaption(result, provider, sourceUrl) {
     `🗂️ *Tipo de arquivo:* ${type}`,
     `🧾 *MIME:* ${result.mimetype || 'não informado'}`,
     `💾 *Tamanho:* ${sizeText}`,
+    ...(result.compressed ? [`🗜️ *Compactação:* ${formatFileSize(result.originalSize)} → ${formatFileSize(size)}`] : []),
     `☁️ *Origem:* ${providerName}`,
     `🔗 *Link original:* ${sourceUrl}`,
   ].join('\\n').slice(0, 1024);
@@ -494,6 +648,10 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
   }
 
   const sender = senderKey(msg, jid);
+  if (provider === 'mediafire' && activeMediafireDownloads.size > 0) {
+    await sock.sendMessage(jid, { text: '⏳ Já existe um download do MediaFire em andamento. Tente novamente quando ele terminar.' }, { quoted: msg });
+    return;
+  }
   if (activeSenders.has(sender)) {
     await sock.sendMessage(jid, { text: '⏳ Você já tem um download em andamento. Aguarde ele terminar.' }, { quoted: msg });
     return;
@@ -517,11 +675,35 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
     }
   }
   activeSenders.add(sender);
+  if (provider === 'mediafire') activeMediafireDownloads.add(sender);
   try {
     await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } }).catch(() => {});
     const result = provider === 'mediafire'
       ? await requestMediafire(link)
       : await requestGoogleDrive(link);
+
+    // Keep the normal download untouched. Only package MediaFire files that exceed the existing 64 MiB limit.
+    if (provider === 'mediafire' && result.size > MAX_FILE_SIZE) {
+      await sock.sendMessage(jid, {
+        text: `🗜️ O arquivo tem ${formatFileSize(result.size)} e excede o limite atual de 64 MB. Vou compactá-lo em ZIP; o arquivo final precisa ter até 150 MB.`,
+      }, { quoted: msg }).catch(() => {});
+
+      const originalName = result.fileName;
+      const originalSize = result.size;
+      const archive = await writeZipArchiveToTemporaryFile(result.buffer, originalName, MAX_COMPRESSED_FILE_SIZE);
+      result.buffer = null; // Drop the original buffer before loading the ZIP into memory.
+      try {
+        result.buffer = await fsp.readFile(archive.filePath);
+      } finally {
+        await fsp.rm(archive.tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+      result.fileName = sanitizeFilename(`${path.basename(originalName)}.zip`, 'arquivo-compactado.zip');
+      result.mimetype = 'application/zip';
+      result.size = result.buffer.length;
+      result.compressed = true;
+      result.originalSize = originalSize;
+    }
+
     const captionText = formatDownloadCaption(result, provider, link);
     await sock.sendMessage(jid, {
       document: result.buffer,
@@ -539,6 +721,7 @@ async function handleCloudDownload(sock, msg, jid, caption, provider, commandNam
     await sock.sendMessage(jid, { text: `❌ ${message}` }, { quoted: msg }).catch(() => {});
   } finally {
     activeSenders.delete(sender);
+    activeMediafireDownloads.delete(sender);
   }
 }
 
@@ -564,6 +747,9 @@ module.exports = {
     guessMimeType,
     firstUrlFromCaption,
     MAX_FILE_SIZE,
+    MAX_COMPRESSED_FILE_SIZE,
+    MAX_MEDIAFIRE_SOURCE_SIZE,
+    writeZipArchiveToTemporaryFile,
     formatFileSize,
     formatDownloadCaption,
   },

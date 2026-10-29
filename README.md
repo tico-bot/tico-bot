@@ -163,7 +163,7 @@ A estrutura acima destaca os principais diretórios; outros módulos e arquivos 
 
 O bot disponibiliza comandos para receber arquivos públicos diretamente pelo WhatsApp:
 
-- `!mediafire <link>` — baixa um arquivo público do MediaFire.
+- `!mediafire <link>` — baixa um arquivo público do MediaFire; arquivos acima de 64 MiB são compactados em ZIP (até 150 MiB compactados; limite de 300 MiB para o arquivo original).
 - `!googledriver <link>` — baixa um arquivo público do Google Drive.
 - Links de Documentos, Planilhas e Apresentações Google são exportados para DOCX, XLSX e PPTX, respectivamente.
 
