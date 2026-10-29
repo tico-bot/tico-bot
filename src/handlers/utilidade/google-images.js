@@ -117,10 +117,27 @@ async function downloadImage(imageUrl) {
     .toBuffer();
 }
 
-function formatImageCaption(item, index, total, query) {
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return null;
+  if (value < 1024) return `${value} bytes`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatImageCaption(item, index, total, query, details = {}) {
   const title = item.title || `Imagem ${index + 1}`;
-  const source = item.sourceUrl ? `\n🔗 Fonte: ${item.sourceUrl}` : '';
-  return `🖼️ *${title}*\n🔎 Pesquisa: ${query}\n📷 Resultado ${index + 1}/${total}${source}`.slice(0, 1024);
+  let sourceHost = '';
+  try {
+    if (item.sourceUrl) sourceHost = new URL(item.sourceUrl).hostname.replace(/^www\\./i, '');
+  } catch {}
+  const source = item.sourceUrl ? `\\n🌐 *Site:* ${sourceHost || 'fonte externa'}\\n🔗 *Fonte:* ${item.sourceUrl}` : '';
+  const dimensions = details.width && details.height
+    ? `\\n📐 *Dimensões:* ${details.width} × ${details.height} px`
+    : '';
+  const format = details.format ? `\\n🧾 *Formato:* ${String(details.format).toUpperCase()}` : '';
+  const size = Number.isFinite(details.size) ? `\\n💾 *Tamanho enviado:* ${formatBytes(details.size)}` : '';
+  return `🖼️ *${title}*\\n🔎 *Pesquisa:* ${query}\\n📷 *Resultado:* ${index + 1}/${total}${dimensions}${format}${size}${source}`.slice(0, 1024);
 }
 
 async function reagirAoComando(sock, jid, msg, emoji) {
@@ -172,10 +189,22 @@ async function handleGoogleImageSearch(sock, msg, jid, query, dependencies = {})
     if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) {
       throw new Error('Imagem vazia ou acima do limite permitido');
     }
+    let imageDetails = { size: buffer.length, format: 'jpeg' };
+    try {
+      const metadata = await sharp(buffer).metadata();
+      imageDetails = {
+        size: buffer.length,
+        format: metadata.format || 'jpeg',
+        width: metadata.width,
+        height: metadata.height,
+      };
+    } catch {
+      // Detalhes adicionais não devem impedir o envio de uma imagem válida.
+    }
     await sock.sendMessage(jid, {
       image: buffer,
       mimetype: 'image/jpeg',
-      caption: formatImageCaption(item, 1, 1, termo),
+      caption: formatImageCaption(item, 1, 1, termo, imageDetails),
     }, { quoted: msg });
     await reagirAoComando(sock, jid, msg, '✅');
   } catch {
@@ -192,5 +221,6 @@ module.exports = {
   isSafeImageUrl,
   searchGoogleImages,
   downloadImage,
+  formatImageCaption,
   handleGoogleImageSearch,
 };
