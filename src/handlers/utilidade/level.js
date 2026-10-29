@@ -3,6 +3,7 @@
 const path                  = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo         = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const GrupoConfig           = require(path.join(__dirname, '..', '..', 'models', 'GrupoConfig'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -126,6 +127,58 @@ async function handleLevel(sock, msg, jid) {
   }
 }
 
+/** Liga/desliga o XP automático deste grupo. Somente administradores podem alterar. */
+async function handleLevelToggle(sock, msg, jid, args, isAdminUser) {
+  if (!await exigirGrupo(sock, msg, jid)) return;
+
+  if (!isAdminUser) {
+    return sock.sendMessage(jid, {
+      text: '❌ Apenas administradores do grupo podem ligar ou desligar o sistema de level.',
+    }, { quoted: msg });
+  }
+
+  const acao = String(args || '').trim().toLowerCase();
+  if (!['on', 'off'].includes(acao)) {
+    return sock.sendMessage(jid, {
+      text:
+        '⭐ *SISTEMA DE LEVEL — ON/OFF*\n\n' +
+        '▸ */level on* — ativar XP e níveis neste grupo\n' +
+        '▸ */level off* — desativar XP e níveis neste grupo\n\n' +
+        '_Apenas administradores do grupo podem usar estes comandos. O sistema volta a ficar OFF quando o bot reinicia._',
+    }, { quoted: msg });
+  }
+
+  const ativo = acao === 'on';
+  try {
+    // GrupoConfig controla a concessão de XP em tempo real; também sincronizamos
+    // a cópia que o painel administrativo lê das carteiras deste grupo.
+    await GrupoConfig.findOneAndUpdate(
+      { idGrupo: jid },
+      { $set: { idGrupo: jid, xpAtivo: ativo } },
+      { upsert: true, new: true },
+    );
+
+    try { require('../../router').invalidateGrupoConfigCache(jid); } catch {}
+
+    await CarteiraGrupo.updateMany(
+      { idGrupo: jid },
+      { $set: { 'config.xpAtivo': ativo } },
+    );
+
+    return sock.sendMessage(jid, {
+      text: ativo
+        ? '✅ *Sistema de level ativado neste grupo!*\n💬 As mensagens voltarão a conceder XP e poderão gerar níveis.\n_Nota: será desligado novamente quando o bot reiniciar._'
+        : '🔕 *Sistema de level desativado neste grupo.*\n💾 O XP e os níveis já conquistados foram preservados.',
+    }, { quoted: msg });
+  } catch (err) {
+    console.error('[handleLevelToggle] Erro ao alterar XP do grupo:', err.message);
+    try { require('../../router').invalidateGrupoConfigCache(jid); } catch {}
+    return sock.sendMessage(jid, {
+      text: '⚠️ Não consegui salvar a configuração de level. Tente novamente.',
+    }, { quoted: msg });
+  }
+}
+
 function normalizarJidBase(id) {
   if (!id || typeof id !== 'string') return '';
   const clean = id.toLowerCase();
@@ -229,4 +282,4 @@ async function handleRankLevel(sock, msg, jid) {
   }
 }
 
-module.exports = { handleLevel, handleRankLevel, normalizarRemetente };
+module.exports = { handleLevel, handleLevelToggle, handleRankLevel, normalizarRemetente };

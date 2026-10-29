@@ -35,6 +35,8 @@ async function handleMenuUtil(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'perfil — ver seu perfil',
     '  ▸ ' + P + 'bio <texto> — definir sua bio',
     '  ▸ ' + P + 'level — consultar nível e XP',
+    '  ▸ ' + P + 'level on — ativar XP e níveis (admins)',
+    '  ▸ ' + P + 'level off — desativar XP e níveis (admins)',
     '  ▸ ' + P + 'ranklevel — ranking de níveis',
     '  ▸ ' + P + 'meupainel / ' + P + 'site — acessar o painel',
     '  ▸ ' + P + 'recuperar — gerar código de verificação (use em conversa privada)',

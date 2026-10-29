@@ -12,7 +12,7 @@ const {
   handleMenuFilho,
 } = require('./menu');
 
-const { handleLevel, handleRankLevel } = require('./level');
+const { handleLevel, handleLevelToggle, handleRankLevel } = require('./level');
 const {
   handleSave, handleSaveRec, handleTiktok, handleAudioDownload,
   handleSom, handlePlayMp4, handlePlayDoc, getYtDlpPath, getYtDlpArgs,
@@ -42,6 +42,7 @@ module.exports = {
 
   // Level & XP
   handleLevel,
+  handleLevelToggle,
   handleRankLevel,
 
   // Downloads & Mídia

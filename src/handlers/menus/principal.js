@@ -51,6 +51,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
     '  ▸ ' + P + 'menuutil — consultas, texto e perfil',
     '  ▸ ' + P + 'menubaixar — downloads de mídia',
     '  ▸ ' + P + 'perfil / ' + P + 'bio — seu perfil',
+    '  ▸ ' + P + 'level on / ' + P + 'level off — ativar/desativar níveis (admins)',
     '  ▸ ' + P + 'meupainel — painel e site do bot',
     '  ▸ ' + P + 'bot — informações do bot',
     '',

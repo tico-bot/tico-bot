@@ -873,8 +873,16 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'policia'))      { await diversaoHandler.handlePolicia(sock, msg, jid);               return; }
 
   // ── UTILITÁRIOS ────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'level') || matchCmd(cmdWord, 'nivel') || matchCmd(cmdWord, 'mylevel') || matchCmd(cmdWord, 'meunivel'))
-    { await utilidadeHandler.handleLevel(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'level') || matchCmd(cmdWord, 'nivel') || matchCmd(cmdWord, 'mylevel') || matchCmd(cmdWord, 'meunivel')) {
+    const levelArgs = caption.trim().split(/\s+/).slice(1).join(' ').trim();
+    if (levelArgs) {
+      const isAdminLevel = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+      await utilidadeHandler.handleLevelToggle(sock, msg, jid, levelArgs, isAdminLevel);
+    } else {
+      await utilidadeHandler.handleLevel(sock, msg, jid);
+    }
+    return;
+  }
   if (matchCmd(cmdWord, 'ranklevel') || matchCmd(cmdWord, 'ranknivel') || matchCmd(cmdWord, 'rankxp') || matchCmd(cmdWord, 'toplevel') || matchCmd(cmdWord, 'topnivel'))
     { await utilidadeHandler.handleRankLevel(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'alteradores'))  { await utilidadeHandler.handleAlteradores(sock, msg, jid, getPrefix); return; }

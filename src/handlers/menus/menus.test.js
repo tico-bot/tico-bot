@@ -84,6 +84,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(main, /╔══════════════════════╗/);
   assert.match(main, /━━━━━━━━━━━━━━━━━━━━━━━━/);
   assert.match(main, /  ▸ !menufutebol/);
+  assert.match(main, /  ▸ !level on \/ !level off — ativar\/desativar níveis \(admins\)/);
   assert.match(main, /  ▸ !meupainel/);
   assert.match(main, /  ▸ !bot — informações do bot/);
 
@@ -96,6 +97,8 @@ test('main and category menus include key working commands', async () => {
     utilidade.handleMenuUtil(sock, msg, jid, getPrefix));
   assert.match(utility, /recuperar/);
   assert.match(utility, /resetsenha/);
+  assert.match(utility, /!level on — ativar XP e níveis \(admins\)/);
+  assert.match(utility, /!level off — desativar XP e níveis \(admins\)/);
   assert.match(utility, /!bot — tempo ativo, comandos executados e versão/);
 
   const games = await renderMenu('jogos', () =>
@@ -163,6 +166,7 @@ test('international football help lists the same aliases supported by the router
 
   const routerPath = path.resolve(__dirname, '../../router.js');
   const routerSource = fs.readFileSync(routerPath, 'utf8');
+  assert.match(routerSource, /handleLevelToggle\(sock, msg, jid, levelArgs, isAdminLevel\)/);
   assert.match(routerSource, /matchCmdStart\(cmd, 'campeonatozoeira'\)/);
   assert.match(routerSource, /matchCmd\(cmdWord, 'campeonato'\).*handleCompetition/);
   assert.match(routerSource, /filter\(name => name !== 'cinema'\)/);
