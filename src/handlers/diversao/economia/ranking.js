@@ -42,7 +42,7 @@ function numeroExibicao(jid) {
   return digits || user || 'membro';
 }
 
-// !rankplata — ranking de saldos dos membros que ainda estão no grupo.
+// !rankprata — ranking de saldos dos membros que ainda estão no grupo.
 async function handleRankGold(sock, msg, jid) {
   if (typeof jid !== 'string' || !jid.endsWith('@g.us')) {
     if (jid) {
@@ -115,13 +115,13 @@ async function handleRankGold(sock, msg, jid) {
       mentions: [...new Set(mentions)],
     }, { quoted: msg });
   } catch (err) {
-    console.error('[RankingPlata] Falha ao carregar ranking:', err);
+    console.error('[RankingPrata] Falha ao carregar ranking:', err);
     try {
       await sock.sendMessage(jid, {
         text: '⚠️ Não foi possível carregar o ranking de Prata agora. Tente novamente em alguns instantes.',
       }, { quoted: msg });
     } catch (sendError) {
-      console.error('[RankingPlata] Também falhou ao enviar a mensagem de erro:', sendError.message);
+      console.error('[RankingPrata] Também falhou ao enviar a mensagem de erro:', sendError.message);
     }
   }
 }

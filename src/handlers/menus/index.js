@@ -5,7 +5,7 @@
 const { handleMenu }                         = require('./principal');
 const { handleMenuUtil, handleMenuBaixar }   = require('./utilidades');
 const { handleMenuJogos, handleBrincadeiras } = require('./jogos');
-const { handleMenuGold, handleSistemaGold }  = require('./plata');
+const { handleMenuPrata, handleSistemaPrata } = require('./prata');
 const { handleMenuPet, handleSistemaPet }    = require('./pet');
 const { handleSistemaMedieval }             = require('./medieval');
 const { handleMenuMarket }                  = require('./market');
@@ -19,8 +19,11 @@ module.exports = {
   handleMenuBaixar,
   handleMenuJogos,
   handleBrincadeiras,
-  handleMenuGold,
-  handleSistemaGold,
+  handleMenuPrata,
+  handleSistemaPrata,
+  // Aliases internos mantidos para compatibilidade.
+  handleMenuGold: handleMenuPrata,
+  handleSistemaGold: handleSistemaPrata,
   handleMenuPet,
   handleSistemaPet,
   handleSistemaMedieval,

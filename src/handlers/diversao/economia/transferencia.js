@@ -159,7 +159,7 @@ async function handlePix(sock, msg, jid, caption) {
     }
     console.error(`[handlePix] ERRO code=${e.code || '-'} name=${e.name}: ${e.message}`);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!plata*.',
+      text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!prata*.',
     }, { quoted: msg });
     return;
   }
@@ -249,7 +249,7 @@ async function handlePixMulti(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-// !pixdoar quantia
+// !doarprata quantia (alias legado: !pixdoar)
 async function handlePixDoar(sock, msg, jid, caption) {
   const userId = jidNormalizedUser(resolveUserFromMsg(msg));
   const parts  = caption.trim().split(/\s+/);
@@ -257,13 +257,13 @@ async function handlePixDoar(sock, msg, jid, caption) {
 
   if (isNaN(quantia) || quantia <= 0) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Informe a quantia que deseja doar!\nExemplo: *!pixdoar 100*',
+      text: '⚠️ Informe a quantia que deseja doar!\nExemplo: *!doarprata 100*',
     }, { quoted: msg });
     return;
   }
 
   if (!jid.endsWith('@g.us')) {
-    await sock.sendMessage(jid, { text: '⚠️ O comando !pixdoar só funciona em grupos.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ O comando !doarprata só funciona em grupos.' }, { quoted: msg });
     return;
   }
 

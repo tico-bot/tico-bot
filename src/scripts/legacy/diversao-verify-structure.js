@@ -58,14 +58,14 @@ try {
   const funcoesCriticas = [
     'handleGay', 'handleSexo',
     'handleGold', 'handleComprar', 'handleVender',
-    'handleBrincadeiras', 'handleMenuPlata', 'handleMenuPet',
+    'handleBrincadeiras', 'handleMenuPrata', 'handleMenuPet',
     'handleOfertar', 'handleBuy', 'getSaldoAtual', 'changeGold',
     'handleQuiz', 'handlePontos', 'handleBanco'
   ];
   
   let todasPresentes = true;
   for (const funcao of funcoesCriticas) {
-    if (typeof diversao[funcao] === 'function' || typeof diversao[funcao] === 'object' || (funcao === 'handleMenuPlata' && typeof menus[funcao] === 'function')) {
+    if (typeof diversao[funcao] === 'function' || typeof diversao[funcao] === 'object' || (funcao === 'handleMenuPrata' && typeof menus[funcao] === 'function')) {
       console.log(`  ✓ ${funcao}`);
     } else {
       console.log(`  ✗ ${funcao} - NÃO ENCONTRADA`);

@@ -48,8 +48,8 @@ const {
 
 // Menus
 const {
-  handleBrincadeiras, handleMenuGold, handleMenuPet,
-  handleSistemaGold, handleSistemaPet,
+  handleBrincadeiras, handleMenuGold, handleMenuPrata, handleMenuPet,
+  handleSistemaGold, handleSistemaPrata, handleSistemaPet,
   handleSistemaMedieval, handleMenuMarket,
 } = require('./menus');
 
@@ -193,8 +193,10 @@ module.exports = {
   // ── Menus (6 funções) ──────────────────────────────────────────────────────
   handleBrincadeiras,
   handleMenuGold,
+  handleMenuPrata,
   handleMenuPet,
   handleSistemaGold,
+  handleSistemaPrata,
   handleSistemaPet,
   handleSistemaMedieval,
   handleMenuMarket,

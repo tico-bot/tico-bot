@@ -1,7 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const { alterarGold } = require('./plata');
+const { alterarGold } = require('./prata');
 
 function getJidBase(jid) {
   if (!jid) return '';

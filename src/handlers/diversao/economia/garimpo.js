@@ -259,7 +259,7 @@ async function handleGarimpar(sock, msg, jid) {
       console.error('⚠️ Erro handleGarimpar:', e.message);
       await sock.sendMessage(jid, {
         text: resultadoIncerto
-          ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!plata* antes de tentar de novo.'
+          ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!prata* antes de tentar de novo.'
           : '⚠️ Erro ao garimpar! Tente novamente.',
       }, { quoted: msg });
     }

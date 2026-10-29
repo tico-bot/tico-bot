@@ -32,7 +32,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
     '  ▸ ' + P + 'menujogos — jogos, quizzes e brincadeiras',
     '  ▸ ' + P + 'brincadeiras — comandos sociais',
     '  ▸ ' + P + 'alteradores — áudio, voz e vídeo',
-    '  ▸ ' + P + 'menuplata — economia em Prata',
+    '  ▸ ' + P + 'menuprata — economia em Prata',
     '  ▸ ' + P + 'menumarket',
     '  ▸ ' + P + 'menumediev',
     '  ▸ ' + P + 'menuroubar',

@@ -130,7 +130,7 @@ O prefixo padrão mais comum é `!`, mas o projeto possui suporte a prefixos con
 - `!menupet` — sistema de pets.
 - `!menucasal` — relacionamentos.
 - `!menumediev` — modo medieval, se disponível na configuração atual.
-- `!menuplata` — economia virtual em Prata.
+- `!menuprata` — economia virtual em Prata.
 
 Os nomes dos menus e comandos podem mudar com atualizações. Use o menu enviado pelo próprio bot como referência para a instalação em execução. Comandos administrativos exigem as permissões apropriadas; ações de moderação também dependem das permissões concedidas ao bot no grupo.
 

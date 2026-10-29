@@ -12,19 +12,19 @@ O arquivo `diversao.js` foi dividido em 5 módulos menores e organizados dentro 
 - Stubs para compatibilidade
 
 ### 2. **economia.js** (Sistema de Prata e Loja)
-- Gerenciamento: `!plata`, `!loja`, `!comprar`, `!vender`
+- Gerenciamento: `!prata`, `!loja`, `!comprar`, `!vender`
 - Lojas especializadas: `!lojafood`, `!lojapet`, `!lojatec`
 - Inventário: `!inventario`, `!usar`
 - Transações: `!pix`, `!apostar`, `!extrato`
 - Garimpo: `!garimpar`
-- **Corrigido**: Função `getSaldoAtual()` e `changePlata()` agora exportadas
+- **Corrigido**: Função `getSaldoAtual()` e `changeGold()` agora exportadas
 - **Corrigido**: Iteração sobre inventário usando `Object.entries()` em vez de Map
 
 ### 3. **menus.js** (Menus de Ajuda)
 - `!brincadeiras` - Menu de brincadeiras
-- `!menuplata` - Menu de economy
+- `!menuprata` - Menu de economy
 - `!menupet` - Menu de pets
-- `!sistemplata` - Informações sobre o sistema de Prata
+- `!sistemprata` - Informações sobre o sistema de Prata
 - `!sistempet` - Informações sobre o sistema de Pets
 
 ### 4. **marketplace.js** (Sistema de Compra/Venda)
@@ -71,12 +71,12 @@ async function handleCompatibilidade(sock, msg, content, jid, author, contactNam
   // Agora com valor padrão vazio
 ```
 
-### 3. ✅ Acesso ao changePlata
-**Problema**: A função `changePlata` estava apenas em economia.js
+### 3. ✅ Acesso ao changeGold
+**Problema**: A função `changeGold` estava apenas em economia.js
 **Solução**: Exportada corretamente em economia.js e re-exportada pelo index.js
 
 ### 4. ✅ Transações de Marketplace
-**Problema**: marketplace.js precisava acessar `getSaldoAtual` e `changePlata`
+**Problema**: marketplace.js precisava acessar `getSaldoAtual` e `changeGold`
 **Solução**: Importa diretamente de economia.js
 
 ## Benefícios da Divisão

@@ -2,7 +2,7 @@
 
 const { obterPrefixo, enviarMenu } = require('./helpers');
 
-async function handleMenuGold(sock, msg, jid, getPrefix) {
+async function handleMenuPrata(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
   const menu = [
     '╔══════════════════════╗',
@@ -10,7 +10,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
     '╚══════════════════════╝',
     '',
     '💰 *SALDO & LOJAS*',
-    '  ▸ ' + P + 'plata — ver saldo (aliases: gold, real, reais)',
+    '  ▸ ' + P + 'prata — ver saldo (aliases: gold, real, reais)',
     '  ▸ ' + P + 'loja — loja geral',
     '  ▸ ' + P + 'lojafood / ' + P + 'lojapet / ' + P + 'lojatec / ' + P + 'lojacasal',
     '  ▸ ' + P + 'buy <item> — comprar item da loja',
@@ -22,7 +22,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'pix @pessoa <valor> — transferir Prata',
     '  ▸ ' + P + 'pixmulti @1 @2 <valor> — transferência múltipla',
     '  ▸ ' + P + 'pixtodos — alias de pixmulti',
-    '  ▸ ' + P + 'pixdoar <valor> — doação de Prata',
+    '  ▸ ' + P + 'doarprata <valor> — doação de Prata',
     '',
     '📈 *GANHOS, APOSTAS & BANCO*',
     '  ▸ ' + P + 'missao — missão de economia',
@@ -31,7 +31,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'banco <valor> / ' + P + 'resgatar / ' + P + 'historicobanco',
     '  ▸ ' + P + 'apostar <valor> / ' + P + 'slots [valor] / ' + P + 'corrida [valor]',
     '  ▸ ' + P + 'extrato — histórico de transações',
-    '  ▸ ' + P + 'rankplata — ranking de saldo (alias: rankgold)',
+    '  ▸ ' + P + 'rankprata — ranking de saldo (alias: rankgold)',
     '',
     '🐟 *PESCA*',
     '  ▸ ' + P + 'pescar — pescar',
@@ -47,7 +47,7 @@ async function handleMenuGold(sock, msg, jid, getPrefix) {
   await enviarMenu(sock, msg, jid, menu);
 }
 
-async function handleSistemaGold(sock, msg, jid, getPrefix) {
+async function handleSistemaPrata(sock, msg, jid, getPrefix) {
   const P = obterPrefixo(jid, getPrefix);
   const menu = [
     '📖 *COMO FUNCIONA A ECONOMIA*',
@@ -67,10 +67,10 @@ async function handleSistemaGold(sock, msg, jid, getPrefix) {
     '  • ' + P + 'banco / ' + P + 'resgatar — administrar saldo no banco',
     '  • ' + P + 'apostar / ' + P + 'slots / ' + P + 'corrida — jogos de aposta',
     '',
-    'Consulte ' + P + 'menuplata para ver todos os comandos e seus argumentos.',
+    'Consulte ' + P + 'menuprata para ver todos os comandos e seus argumentos.',
     '━━━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n');
   await enviarMenu(sock, msg, jid, menu);
 }
 
-module.exports = { handleMenuGold, handleSistemaGold };
+module.exports = { handleMenuPrata, handleSistemaPrata };

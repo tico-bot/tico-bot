@@ -551,12 +551,12 @@ async function handleMessage(sock, msg) {
     { await aniversarioHandler.handleMenuAniversario(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'brincadeiras'))
     { await diversaoHandler.handleBrincadeiras(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'sistemplata') || matchCmd(cmdWord, 'sistemgold'))
-    { await diversaoHandler.handleSistemaGold(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'sistemprata') || matchCmd(cmdWord, 'sistemgold'))
+    { await diversaoHandler.handleSistemaPrata(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'sistempet'))
   { await diversaoHandler.handleSistemaPet(sock, msg, jid, getPrefix); return; }
-  if (matchCmd(cmdWord, 'menuplata') || matchCmd(cmdWord, 'menugold'))
-    { await diversaoHandler.handleMenuGold(sock, msg, jid, getPrefix); return; }
+  if (matchCmd(cmdWord, 'menuprata') || matchCmd(cmdWord, 'menugold'))
+    { await diversaoHandler.handleMenuPrata(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'menupet'))
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
@@ -652,7 +652,7 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleStatsGrupo(sock, msg, jid); return; }
 
   // ── ECONOMIA ──────────────────────────────────────────────────
-  if (matchCmd(cmdWord, 'plata') || matchCmd(cmdWord, 'reais') || matchCmd(cmdWord, 'real') || matchCmd(cmdWord, 'gold'))
+  if (matchCmd(cmdWord, 'prata') || matchCmd(cmdWord, 'reais') || matchCmd(cmdWord, 'real') || matchCmd(cmdWord, 'gold'))
     { await diversaoHandler.handleGold(sock, msg, jid, getPrefix, contactNames); return; }
   if (matchCmd(cmdWord, 'loja'))
     { await diversaoHandler.handleLoja(sock, msg, jid, getPrefix); return; }
@@ -674,7 +674,7 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleInventario(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'pixmulti') || matchCmd(cmdWord, 'pixtodos') || matchCmdStart(cmd, 'pixmulti ') || matchCmdStart(cmd, 'pixtodos '))
     { await diversaoHandler.handlePixMulti(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doarplata') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doarplata ') || matchCmdStart(cmd, 'doargold '))
+  if (matchCmd(cmdWord, 'doarprata') || matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'doarprata ') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doargold '))
     { await diversaoHandler.handlePixDoar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }
@@ -686,7 +686,7 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleCorrida(sock, msg, jid, senderJid, caption); return; }
   if (matchCmd(cmdWord, 'extrato'))
     { await diversaoHandler.handleExtrato(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'rankplata') || matchCmd(cmdWord, 'rankgold'))
+  if (matchCmd(cmdWord, 'rankprata') || matchCmd(cmdWord, 'rankgold'))
     { await handleRankGold(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }

@@ -8,7 +8,7 @@ const GOLD_HISTORY_LIMITE = 50;
 
 function assertJid(jid, nome) {
   if (!jid || typeof jid !== 'string' || !jid.trim()) {
-    throw new TypeError(`carteira/plata: "${nome}" é obrigatório e deve ser uma string não vazia.`);
+    throw new TypeError(`carteira/prata: "${nome}" é obrigatório e deve ser uma string não vazia.`);
   }
 }
 
@@ -130,7 +130,7 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
   const jidsBusca = await resolverJidsEquivalentes(idWhatsApp);
 
   if (typeof valor !== 'number' || isNaN(valor)) {
-    throw new TypeError('carteira/plata.alterarGold: "valor" deve ser um número.');
+    throw new TypeError('carteira/prata.alterarGold: "valor" deve ser um número.');
   }
 
 
@@ -175,7 +175,7 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
   if (!atualizado) {
     const carteira = await getCarteira(idWhatsApp, idGrupo);
     throw new RangeError(
-      `carteira/plata.alterarGold: saldo insuficiente. Atual: ${carteira.gold} | Tentativa de débito: ${absValor}`
+      `carteira/prata.alterarGold: saldo insuficiente. Atual: ${carteira.gold} | Tentativa de débito: ${absValor}`
     );
   }
 
@@ -184,7 +184,7 @@ async function alterarGold(idWhatsApp, idGrupo, valor, descricao = 'sistema', op
 
 async function alterarGoldLocal(idWhatsApp, idGrupo, valor, descricao = 'sistema') {
   if (typeof valor !== 'number' || !Number.isSafeInteger(valor)) {
-    throw new TypeError('carteira/plata.alterarGoldLocal: valor deve ser um inteiro seguro.');
+    throw new TypeError('carteira/prata.alterarGoldLocal: valor deve ser um inteiro seguro.');
   }
   return alterarGold(idWhatsApp, idGrupo, valor, descricao);
 }

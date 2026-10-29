@@ -63,7 +63,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'enquete <pergunta|opção1|opção2>',
     '  ▸ ' + P + 'sorteio — sortear membro',
     '',
-    '💰 ' + P + 'rankplata — ranking de saldo do grupo',
+    '💰 ' + P + 'rankprata — ranking de saldo do grupo',
     '',
     '⚠️ Ações de moderação exigem permissões adequadas no grupo.',
     '━━━━━━━━━━━━━━━━━━━━━━━━'

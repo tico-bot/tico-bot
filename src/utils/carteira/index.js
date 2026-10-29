@@ -1,6 +1,6 @@
 'use strict';
 
-const { getCarteira, alterarGold, alterarGoldSeguro } = require('./plata');
+const { getCarteira, alterarGold, alterarGoldSeguro } = require('./prata');
 const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
 const { comprarComGold, venderComGold }                = require('./compras');

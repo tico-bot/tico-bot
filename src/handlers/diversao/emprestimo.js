@@ -185,12 +185,12 @@ async function enviarErro(sock, msg, jid, texto) {
 /**
  * Extrai e resolve o ID do usuário para o MESMO jid que getCarteira/
  * alterarGold usam (via LidMapping) — sem isso, o empréstimo podia ficar
- * numa carteira diferente da usada por !plata, !banco etc.
+ * numa carteira diferente da usada por !prata, !banco etc.
  */
 /**
  * Extrai e resolve o ID do usuário para o MESMO jid que getCarteira/
  * alterarGold usam (via LidMapping) — sem isso, o empréstimo podia ficar
- * numa carteira diferente da usada por !plata, !banco etc.
+ * numa carteira diferente da usada por !prata, !banco etc.
  */
 async function getUserId(msg, idGrupo) {
   const raw = msg?.key?.participant || msg?.key?.remoteJid;
