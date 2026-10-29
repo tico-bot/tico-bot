@@ -7,6 +7,7 @@ const {
   extractImageResults,
   isSafeImageUrl,
   handleGoogleImageSearch,
+  formatImageCaption,
 } = require('./google-images');
 
 test('buildGoogleImagesUrl cria uma busca de imagens no Google com o termo codificado', () => {
@@ -79,4 +80,22 @@ test('handleGoogleImageSearch envia somente uma imagem e troca ampulheta por che
   assert.match(messages[1][1].caption, /Gato 1/);
   assert.equal(messages[2][1].react.text, '✅');
   assert.equal(messages.filter(item => item[1].image).length, 1);
+});
+
+
+test('formatImageCaption inclui metadados e site de origem quando disponíveis', () => {
+  const caption = formatImageCaption({
+    title: 'Paisagem bonita',
+    sourceUrl: 'https://www.example.com/galeria/foto',
+  }, 1, 1, 'paisagem', {
+    width: 960,
+    height: 640,
+    format: 'jpeg',
+    size: 24576,
+  });
+  assert.ok(caption.includes('📐 *Dimensões:* 960 × 640 px'));
+  assert.ok(caption.includes('🧾 *Formato:* JPEG'));
+  assert.ok(caption.includes('💾 *Tamanho enviado:* 24.0 KB'));
+  assert.ok(caption.includes('🌐 *Site:* example.com'));
+  assert.ok(caption.includes('https://www.example.com/galeria/foto'));
 });
