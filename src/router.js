@@ -49,6 +49,7 @@ const utilidadeHandler      = require('./handlers/utilidade');
 const aniversarioHandler    = require('./handlers/aniversario');
 const alteradoresHandler    = require('./handlers/alteradores');
 const downloadsHandler      = require('./handlers/utilidade/downloads');
+const botInfoHandler         = require('./handlers/extras/info');
 const pinnedHandler         = require('./handlers/diversao/pinned');
 const pescaHandler          = require('./handlers/diversao/pesca');
 
@@ -159,10 +160,12 @@ async function handleMessage(sock, msg) {
 
   // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──
   if (isGroup && matchPrefixCmd(caption, 'bot', jid)) {
-    const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
-    const args  = extractPrefixArgs(caption, 'bot', jid);
-    await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
-    return;
+    const args = extractPrefixArgs(caption, 'bot', jid);
+    if (args.trim()) {
+      const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+      await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
+      return;
+    }
   }
 
   // ── Guard bot ativo no grupo ──────────────────────────────────
@@ -356,6 +359,12 @@ async function handleMessage(sock, msg) {
 
   if (!isAnyCmd(raw)) return;
   if (senderJid) contarCmd(senderJid);
+
+  // ── INFORMAÇÕES GERAIS DO BOT ─────────────────────────────────
+  if (matchPrefixCmd(caption, 'bot', jid) && !extractPrefixArgs(caption, 'bot', jid)) {
+    await botInfoHandler.handleBotInfo(sock, msg, jid, cmdCount);
+    return;
+  }
 
   // ── ALTERADORES DE MÍDIA (voz/vídeo) ───────────────────────────
   // Precisa vir ANTES do intercept de acessórios de casal logo abaixo —

@@ -52,6 +52,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
     '  ▸ ' + P + 'menubaixar — downloads de mídia',
     '  ▸ ' + P + 'perfil / ' + P + 'bio — seu perfil',
     '  ▸ ' + P + 'meupainel — painel e site do bot',
+    '  ▸ ' + P + 'bot — informações do bot',
     '',
     '⚽ *FUTEBOL*',
     '  ▸ ' + P + 'menufutebol — tabelas, jogos e artilheiros',

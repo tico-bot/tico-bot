@@ -85,6 +85,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(main, /━━━━━━━━━━━━━━━━━━━━━━━━/);
   assert.match(main, /  ▸ !menufutebol/);
   assert.match(main, /  ▸ !meupainel/);
+  assert.match(main, /  ▸ !bot — informações do bot/);
 
   const hashPrefixMenu = await renderMenu('principal with alternate prefix', () =>
     utilidade.handleMenu(sock, msg, jid, '#menu', () => '#', 'Tester'));
@@ -95,6 +96,7 @@ test('main and category menus include key working commands', async () => {
     utilidade.handleMenuUtil(sock, msg, jid, getPrefix));
   assert.match(utility, /recuperar/);
   assert.match(utility, /resetsenha/);
+  assert.match(utility, /!bot — tempo ativo, comandos executados e versão/);
 
   const games = await renderMenu('jogos', () =>
     utilidade.handleMenuJogos(sock, msg, jid, getPrefix));
