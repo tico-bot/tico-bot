@@ -15,6 +15,8 @@ const {
   guessMimeType,
   firstUrlFromCaption,
   MAX_FILE_SIZE,
+  formatFileSize,
+  formatDownloadCaption,
 } = _helpers;
 
 const DRIVE_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz123456';
@@ -154,4 +156,26 @@ test('handlers recusam URLs inválidas antes de iniciar qualquer requisição', 
 
 test('limite de arquivo é 64 MiB', () => {
   assert.equal(MAX_FILE_SIZE, 64 * 1024 * 1024);
+});
+
+
+test('formata tamanhos de arquivo em unidades legíveis', () => {
+  assert.equal(formatFileSize(500), '500 bytes');
+  assert.equal(formatFileSize(2048), '2.0 KB');
+  assert.equal(formatFileSize(5 * 1024 * 1024), '5.00 MB');
+  assert.equal(formatFileSize(2 * 1024 * 1024 * 1024), '2.00 GB');
+});
+
+test('caption do download mostra nome, tipo, MIME, tamanho, provedor e link original', () => {
+  const caption = formatDownloadCaption({
+    fileName: 'relatorio.pdf',
+    mimetype: 'application/pdf',
+    size: 2 * 1024 * 1024,
+  }, 'google', 'https://drive.google.com/file/d/abcdefghij1234567890/view');
+  assert.ok(caption.includes('📄 *Nome:* relatorio.pdf'));
+  assert.ok(caption.includes('🗂️ *Tipo de arquivo:* PDF'));
+  assert.ok(caption.includes('🧾 *MIME:* application/pdf'));
+  assert.ok(caption.includes('💾 *Tamanho:* 2.00 MB'));
+  assert.ok(caption.includes('☁️ *Origem:* Google Drive'));
+  assert.ok(caption.includes('https://drive.google.com/file/d/'));
 });
