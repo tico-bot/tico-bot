@@ -241,9 +241,9 @@ async function handlePixMulti(sock, msg, jid, caption) {
   await sock.sendMessage(jid, {
     text:
       `${transferenciasRestritas ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '✅ *PIX MÚLTIPLO CONCLUÍDO!*'}\n\n` +
-      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} Plata* cada!\n` +
-      `💸 Total distribuído: *${enviados * quantiaPorPessoa} Plata*\n` +
-      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* Plata` +
+      `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} Prata* cada!\n` +
+      `💸 Total distribuído: *${enviados * quantiaPorPessoa} Prata*\n` +
+      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* Prata` +
       (transferenciasRestritas ? '\n\n❌ Algumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
     mentions: mentionsList,
   }, { quoted: msg });
@@ -294,10 +294,10 @@ async function handlePixDoar(sock, msg, jid, caption) {
   const numSorteado = getNumeroPuro(sorteado);
 
   try {
-    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Plata');
+    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Prata');
     await sock.sendMessage(jid, {
       text:
-        `🎉 *DOAÇÃO ANÔNIMA DE PLATA!* 🎉\n\n` +
+        `🎉 *DOAÇÃO ANÔNIMA DE PRATA!* 🎉\n\n` +
         `🎁 *@${userBase}* doou *${formatarSaldo(quantia, res?.de)}* para *@${numSorteado}*!\n\n` +
         `💰 Novo saldo do doador: *${formatarSaldo(res?.de?.gold ?? 0, res?.de)}*`,
       mentions: [userId, sorteado],

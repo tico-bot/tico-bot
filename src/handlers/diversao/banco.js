@@ -229,7 +229,7 @@ async function handleBanco(sock, msg, jid, caption) {
     return;
   }
 
-  // ── Debitar Plata do grupo ────────────────────────────────────────────────────
+  // ── Debitar Prata do grupo ────────────────────────────────────────────────────
   let saldoAposDebito;
   try {
     const carteiraAtualizada = await carteiraService.alterarGold(

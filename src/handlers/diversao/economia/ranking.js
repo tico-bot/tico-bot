@@ -88,7 +88,7 @@ async function handleRankGold(sock, msg, jid) {
 
     if (!top.length) {
       await sock.sendMessage(jid, {
-        text: '💰 *RANKING DE PLATA*\n\nNenhum membro ativo com saldo positivo registrado neste grupo ainda.\n\n⛏️ Use *!garimpar* para começar a ganhar Plata!',
+        text: '💰 *RANKING DE PRATA*\n\nNenhum membro ativo com saldo positivo registrado neste grupo ainda.\n\n⛏️ Use *!garimpar* para começar a ganhar Prata!',
       }, { quoted: msg });
       return;
     }
@@ -107,18 +107,18 @@ async function handleRankGold(sock, msg, jid) {
     });
 
     await sock.sendMessage(jid, {
-      text: `💰 *RANKING DE PLATA — TOP ${top.length}* 💰\n` +
+      text: `💰 *RANKING DE PRATA — TOP ${top.length}* 💰\n` +
         `━━━━━━━━━━━━━━━━━━━━\n\n` +
         `${linhas.join('\n\n')}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `⛏️ Use *!garimpar* para ganhar Plata e subir no ranking!`,
+        `⛏️ Use *!garimpar* para ganhar Prata e subir no ranking!`,
       mentions: [...new Set(mentions)],
     }, { quoted: msg });
   } catch (err) {
     console.error('[RankingPlata] Falha ao carregar ranking:', err);
     try {
       await sock.sendMessage(jid, {
-        text: '⚠️ Não foi possível carregar o ranking de Plata agora. Tente novamente em alguns instantes.',
+        text: '⚠️ Não foi possível carregar o ranking de Prata agora. Tente novamente em alguns instantes.',
       }, { quoted: msg });
     } catch (sendError) {
       console.error('[RankingPlata] Também falhou ao enviar a mensagem de erro:', sendError.message);

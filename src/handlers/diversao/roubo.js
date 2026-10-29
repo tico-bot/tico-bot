@@ -7,7 +7,7 @@
  *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
  *
  * Toda a lógica é isolada por grupo via CarteiraGrupo.
- * Plata gerenciada exclusivamente pelo carteiraService.
+ * Prata gerenciada exclusivamente pelo carteiraService.
  */
 
 const path = require('path');
@@ -280,7 +280,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
       `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${itemInfo.preco} Plata\n` +
+      `💵 *Preço:* ${itemInfo.preco} Prata\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
       `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
       `💡 Use *!equiparroubo ${itemSlug}* para equipar!`,

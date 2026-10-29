@@ -45,19 +45,25 @@ test('extractImageResults limita, filtra e deduplica imagens', () => {
     'https://cdn.example.com/c.jpg',
   ]);
   assert.equal(results[0].sourceUrl, 'https://example.com/a');
+  assert.equal(extractImageResults({ images_results: [
+    { original: 'https://cdn.example.com/one.jpg' },
+    { original: 'https://cdn.example.com/two.jpg' },
+  ] }).length, 1, 'a busca padrão retorna só uma imagem');
 });
 
-test('handleGoogleImageSearch avisa quando falta a chave sem tentar chamadas externas', async () => {
+test('handleGoogleImageSearch mostra ampulheta e erro quando falta a chave', async () => {
   const messages = [];
   await handleGoogleImageSearch({
     sendMessage: async (...args) => messages.push(args),
   }, { key: {} }, 'jid@g.us', 'gatos', {
     search: async () => { const error = new Error('missing'); error.code = 'MISSING_SERPAPI_KEY'; throw error; },
   });
-  assert.match(messages[0][1].text, /SERPAPI_KEY/);
+  assert.equal(messages[0][1].react.text, '⏳');
+  assert.match(messages.find(item => item[1].text)?.[1].text, /SERPAPI_KEY/);
+  assert.equal(messages.at(-1)[1].react.text, '❌');
 });
 
-test('handleGoogleImageSearch envia as imagens encontradas', async () => {
+test('handleGoogleImageSearch envia somente uma imagem e troca ampulheta por check verde', async () => {
   const messages = [];
   const sock = { sendMessage: async (...args) => messages.push(args) };
   await handleGoogleImageSearch(sock, { key: {} }, 'jid@g.us', 'gatos', {
@@ -67,8 +73,10 @@ test('handleGoogleImageSearch envia as imagens encontradas', async () => {
     ],
     downloadImage: async url => Buffer.from(url.endsWith('1.jpg') ? 'image-one' : 'image-two'),
   });
-  assert.equal(messages.length, 2);
-  assert.equal(messages[0][1].image.toString(), 'image-one');
-  assert.equal(messages[1][1].image.toString(), 'image-two');
-  assert.match(messages[0][1].caption, /Gato 1/);
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0][1].react.text, '⏳');
+  assert.equal(messages[1][1].image.toString(), 'image-one');
+  assert.match(messages[1][1].caption, /Gato 1/);
+  assert.equal(messages[2][1].react.text, '✅');
+  assert.equal(messages.filter(item => item[1].image).length, 1);
 });

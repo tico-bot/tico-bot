@@ -47,8 +47,8 @@ test('all active Tico menus render with a configured prefix and no missing value
     ['figurinhas', () => figurinha.handleMenuFig(sock, msg, jid, getPrefix)],
     ['efeitos', () => imagem.handleMenuEfeitos(sock, msg, jid, '!')],
     ['aniversários', () => aniversario.handleMenuAniversario(sock, msg, jid, getPrefix)],
-    ['Plata', () => diversao.handleMenuGold(sock, msg, jid, getPrefix)],
-    ['ajuda Plata', () => diversao.handleSistemaGold(sock, msg, jid, getPrefix)],
+    ['Prata', () => diversao.handleMenuGold(sock, msg, jid, getPrefix)],
+    ['ajuda Prata', () => diversao.handleSistemaGold(sock, msg, jid, getPrefix)],
     ['personagens', () => diversao.handleMenuPet(sock, msg, jid, getPrefix)],
     ['ajuda personagens', () => diversao.handleSistemaPet(sock, msg, jid, getPrefix)],
     ['menu medieval', () => medieval.handleMenuMedieval(sock, msg, jid, getPrefix)],
@@ -119,7 +119,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(admin, /fixarinfo/);
   assert.match(admin, /limparwarns/);
 
-  const plata = await renderMenu('Plata', () =>
+  const plata = await renderMenu('Prata', () =>
     diversao.handleMenuGold(sock, msg, jid, getPrefix));
   assert.match(plata, /pixdoar/);
   assert.match(plata, /rankingpesca/);

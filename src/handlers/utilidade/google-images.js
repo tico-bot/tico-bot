@@ -5,7 +5,7 @@ const sharp = require('sharp');
 const net = require('node:net');
 
 const SERPAPI_URL = 'https://serpapi.com/search.json';
-const MAX_RESULTS = 3;
+const MAX_RESULTS = 1;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_QUERY_LENGTH = 180;
 
@@ -123,14 +123,26 @@ function formatImageCaption(item, index, total, query) {
   return `🖼️ *${title}*\n🔎 Pesquisa: ${query}\n📷 Resultado ${index + 1}/${total}${source}`.slice(0, 1024);
 }
 
+async function reagirAoComando(sock, jid, msg, emoji) {
+  if (!msg?.key) return;
+  try {
+    await sock.sendMessage(jid, { react: { text: emoji, key: msg.key } });
+  } catch {
+    // A reação é um feedback visual; uma falha de reação não bloqueia o comando.
+  }
+}
+
 async function handleGoogleImageSearch(sock, msg, jid, query, dependencies = {}) {
+  await reagirAoComando(sock, jid, msg, '⏳');
   const termo = String(query || '').trim().slice(0, MAX_QUERY_LENGTH);
   if (!termo) {
     await sock.sendMessage(jid, {
       text: '🖼️ Digite o que deseja pesquisar no Google Imagens.\n\nExemplo: *!gimage gatinhos fofos*',
     }, { quoted: msg });
+    await reagirAoComando(sock, jid, msg, '❌');
     return;
   }
+
   const search = dependencies.search || searchGoogleImages;
   const fetchImage = dependencies.downloadImage || downloadImage;
   let resultados;
@@ -141,33 +153,36 @@ async function handleGoogleImageSearch(sock, msg, jid, query, dependencies = {})
       ? '⚙️ O comando *!gimage* ainda não está configurado. Adicione a variável *SERPAPI_KEY* nas variáveis de ambiente do serviço no Render.'
       : '❌ Não consegui pesquisar imagens agora. Verifique a chave/quota da SerpApi e tente novamente.';
     await sock.sendMessage(jid, { text }, { quoted: msg });
+    await reagirAoComando(sock, jid, msg, '❌');
     return;
   }
-  if (!Array.isArray(resultados) || resultados.length === 0) {
+
+  // O comando deve devolver apenas uma imagem, mesmo que o provedor retorne mais.
+  const item = Array.isArray(resultados) ? resultados.slice(0, 1)[0] : null;
+  if (!item) {
     await sock.sendMessage(jid, {
       text: `🔎 Não encontrei imagens utilizáveis para *${termo}*. Tente outro termo.\n\nPesquisa no navegador: ${buildGoogleImagesUrl(termo)}`,
     }, { quoted: msg, linkPreview: true });
+    await reagirAoComando(sock, jid, msg, '❌');
     return;
   }
-  let enviadas = 0;
-  for (const item of resultados.slice(0, MAX_RESULTS)) {
-    try {
-      const buffer = await fetchImage(item.imageUrl);
-      if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) continue;
-      enviadas += 1;
-      await sock.sendMessage(jid, {
-        image: buffer,
-        mimetype: 'image/jpeg',
-        caption: formatImageCaption(item, enviadas, Math.min(resultados.length, MAX_RESULTS), termo),
-      }, { quoted: msg });
-    } catch {
-      // Um resultado indisponível não deve impedir o envio das outras imagens.
+
+  try {
+    const buffer = await fetchImage(item.imageUrl);
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > MAX_IMAGE_BYTES) {
+      throw new Error('Imagem vazia ou acima do limite permitido');
     }
-  }
-  if (enviadas === 0) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Encontrei resultados, mas não consegui baixar as imagens. Abra a pesquisa no navegador: ${buildGoogleImagesUrl(termo)}`,
+      image: buffer,
+      mimetype: 'image/jpeg',
+      caption: formatImageCaption(item, 1, 1, termo),
+    }, { quoted: msg });
+    await reagirAoComando(sock, jid, msg, '✅');
+  } catch {
+    await sock.sendMessage(jid, {
+      text: `⚠️ Encontrei um resultado, mas não consegui enviar a imagem. Abra a pesquisa no navegador: ${buildGoogleImagesUrl(termo)}`,
     }, { quoted: msg, linkPreview: true });
+    await reagirAoComando(sock, jid, msg, '❌');
   }
 }
 

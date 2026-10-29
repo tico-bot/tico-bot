@@ -95,8 +95,8 @@ async function executarPremiacao(sock, gruposAtivos) {
         );
 
         texto += pagaGold
-          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} Plata!*\n`
-          : `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → _sem Plata (conta vinculada ao app)_\n`;
+          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} Prata!*\n`
+          : `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → _sem Prata (conta vinculada ao app)_\n`;
         mentions.push(jidNorm);
       }
 

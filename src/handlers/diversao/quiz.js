@@ -145,11 +145,11 @@ async function changeGold(userId, amount, groupJid) {
       return carteira;
     }
 
-    console.log(`✅ Plata alterada: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
+    console.log(`✅ Prata alterada: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
     return 0;
 
   } catch (e) {
-    console.error('⚠️ Erro ao alterar Plata:', e.message);
+    console.error('⚠️ Erro ao alterar Prata:', e.message);
     throw e;
   }
 }
@@ -653,7 +653,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
         ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
       ]);
 
-      const linhaGold = `💵 *+${goldReward} Plata!* Saldo: *${novoSaldoGold} Plata*`;
+      const linhaGold = `💵 *+${goldReward} Prata!* Saldo: *${novoSaldoGold} Prata*`;
 
       await sock.sendMessage(jid, {
         text:

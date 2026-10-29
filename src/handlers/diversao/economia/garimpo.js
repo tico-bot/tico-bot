@@ -164,7 +164,7 @@ async function handleGarimpar(sock, msg, jid) {
 
       let carteira;
       if (contaVinculada) {
-        // Conta vinculada: o ouro vai para o saldo do app (1 unidade de Plata equivale à unidade interna da carteira vinculada,
+        // Conta vinculada: o ouro vai para o saldo do app (1 unidade de Prata equivale à unidade interna da carteira vinculada,
         // mesma regra do !pix). Missões ainda não suportam conta vinculada, então ficam de fora.
         const saldo = await adjustWalletLocal(
           userId,

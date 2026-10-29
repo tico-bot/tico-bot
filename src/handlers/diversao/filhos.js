@@ -380,7 +380,7 @@ async function handleRemedioFilho(sock, msg, jid) {
       return sock.sendMessage(jid, { text: '✅ Nenhum filho doente no momento!' }, { quoted: msg });
     }
 
-    // Conta vinculada ao app: a Plata do grupo não vale mais (o saldo vive no app).
+    // Conta vinculada ao app: a Prata do grupo não vale mais (o saldo vive no app).
     const userIdCarteira = await resolverJidCarteira(userId, jid);
     // Débito atômico — evita corrida com outros comandos de gold
     const carteiraAtualizada = await CarteiraGrupo.findOneAndUpdate(

@@ -32,7 +32,7 @@ async function resolvePhoneJid(jid) {
 }
 
 function formatWalletAmount(amount) {
-  return `${Number(amount)} Plata`;
+  return `${Number(amount)} Prata`;
 }
 
 function getWalletBalance() { return Promise.resolve({ linked: false }); }
