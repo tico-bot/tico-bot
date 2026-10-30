@@ -110,12 +110,20 @@ function getSenderJid(msg) {
  */
 function getAlternateSenderJids(msg) {
   const key = msg?.key || {};
+  // Baileys v2 expõe pares adicionais senderPn/senderLid e participantLid.
+  // Em grupos, algumas mensagens trazem o PN somente em senderPn, não em participantPn.
   const candidates = [
     key.participantPn,
+    key.senderPn,
+    key.senderLid,
+    key.participantLid,
     key.remoteJidPn,
     key.participantAlt,
     key.remoteJidAlt,
     msg?.participantPn,
+    msg?.senderPn,
+    msg?.senderLid,
+    msg?.participantLid,
     msg?.participantAlt,
   ];
 
@@ -336,11 +344,16 @@ async function registrarLidEMapping(msg, pushName) {
   const senderNorm = normalizarJid(senderJid);
   const keyObj = msg.key || {};
 
-  const altJid = keyObj.participantPn || keyObj.remoteJidPn || keyObj.participantAlt || keyObj.remoteJidAlt || msg.participantPn || msg.participantAlt;
-  const altNorm = altJid ? normalizarJid(altJid) : null;
+  const alternateNorms = getAlternateSenderJids(msg)
+    .map(value => normalizarJid(value))
+    .filter(Boolean);
 
-  let lid = senderNorm.endsWith('@lid') ? senderNorm : (altNorm?.endsWith('@lid') ? altNorm : null);
-  let pn  = senderNorm.endsWith('@s.whatsapp.net') ? senderNorm : (altNorm?.endsWith('@s.whatsapp.net') ? altNorm : null);
+  let lid = senderNorm.endsWith('@lid')
+    ? senderNorm
+    : (alternateNorms.find(value => value.endsWith('@lid')) || null);
+  let pn = senderNorm.endsWith('@s.whatsapp.net')
+    ? senderNorm
+    : (alternateNorms.find(value => value.endsWith('@s.whatsapp.net')) || null);
 
   if (lid && pn) {
     try {
