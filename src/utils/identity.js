@@ -121,7 +121,7 @@ function getAlternateSenderJids(msg) {
 
   return [...new Set(candidates
     .filter(value => typeof value === 'string' && value.trim())
-    .map(value => normalizarJid(value))
+    .map(value => normalizarJid(value) || (value.replace(/\D/g, '').length >= 7 ? value.replace(/\D/g, '') : null))
     .filter(Boolean))];
 }
 

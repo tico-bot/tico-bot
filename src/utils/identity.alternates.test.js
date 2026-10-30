@@ -19,3 +19,13 @@ test('ignora aliases ausentes ou inválidos', () => {
   assert.deepEqual(getAlternateSenderJids({ key: { participant: '123@lid', participantPn: '' } }), []);
   assert.deepEqual(getAlternateSenderJids(null), []);
 });
+
+test('preserva aliases de telefone em dígitos quando o provedor não inclui domínio', () => {
+  const result = getAlternateSenderJids({
+    key: {
+      participant: '123456789012345@lid',
+      participantPn: '5565993354137',
+    },
+  });
+  assert.deepEqual(result, ['5565993354137']);
+});

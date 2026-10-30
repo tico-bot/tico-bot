@@ -179,7 +179,12 @@ async function handleDesfixar(sock, msg, jid) {
       await sock.sendMessage(chatJid, {
         pin: { key: unpinKey, type: 2 /* UNPIN */ },
       });
-    } catch {}
+    } catch (err) {
+      console.error('[handleDesfixar] Erro ao desfixar mensagem respondida:', err.message);
+      return sock.sendMessage(chatJid, {
+        text: '❌ Não consegui desfixar a mensagem. O *Tico Bot precisa ser administrador do grupo* para gerenciar mensagens fixadas.',
+      }, { quoted: msg });
+    }
 
     if (pm?.messageId === quotedSign) {
       await PinnedMessage.deleteOne({ chatJid });
@@ -216,6 +221,9 @@ async function handleDesfixar(sock, msg, jid) {
     }
   } catch (err) {
     console.error('[handleDesfixar] Erro ao desfixar no WA:', err);
+    return sock.sendMessage(chatJid, {
+      text: '❌ Não consegui desfixar a mensagem. O *Tico Bot precisa ser administrador do grupo* para gerenciar mensagens fixadas.',
+    }, { quoted: msg });
   }
 
   await PinnedMessage.deleteOne({ chatJid });

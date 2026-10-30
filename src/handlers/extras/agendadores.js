@@ -6,6 +6,7 @@ const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const ExtraState    = require('../../models/ExtraState');
 const { agoraLocal } = require('../../utils/tempo');
 const { getGroupMetadataCached, isAdmin, normalizeJidBase } = require('../grupo/helpers');
+const { getAlternateSenderJids } = require('../../utils/identity');
 const { getSock } = require('./_shared');
 const { entregarLembretesVencidos } = require('./lembretes');
 
@@ -116,7 +117,7 @@ async function handleRankingSemanal(sock, msg, jid, senderJid, args, P) {
     await sock.sendMessage(jid, { text: '❌ Este comando funciona apenas em grupos.' }, { quoted: msg });
     return;
   }
-  if (!await isAdmin(sock, jid, senderJid)) {
+  if (!await isAdmin(sock, jid, senderJid, getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, { text: '❌ Apenas admins podem usar este comando.' }, { quoted: msg });
     return;
   }

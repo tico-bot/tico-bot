@@ -161,6 +161,12 @@ async function handleMessage(sock, msg) {
     activeGroups.add(jid);
   }
 
+  // Registra PN ↔ LID antes dos comandos que retornam cedo (ex.: /bot off).
+  // A escrita é aguardada só quando há identidade LID envolvida.
+  const temIdentidadeLid = senderJid?.endsWith('@lid') || senderAlternateJids.some(id => id.endsWith('@lid'));
+  if (senderJid && temIdentidadeLid) {
+    await registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
+  }
 
   // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──
   if (isGroup && matchPrefixCmd(caption, 'bot', jid)) {
@@ -199,6 +205,10 @@ async function handleMessage(sock, msg) {
             await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
           } catch (e) {
             console.error('❌ Erro ao remover mutado após cooldown:', e.message);
+            await sock.sendMessage(jid, {
+              text: `⚠️ Não consegui remover @${senderNorm.split('@')[0]}. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
+              mentions: [senderJid],
+            }).catch(() => {});
           }
           unmuteUser(jid, senderNorm);
           global._muteTimers.delete(chaveTimer);
@@ -239,7 +249,7 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
+    if (!temIdentidadeLid) registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
   }
 
   // ── Slow Mode ────────────────────────────────────────────────
@@ -251,16 +261,27 @@ async function handleMessage(sock, msg) {
   // ── Anti-Flood ───────────────────────────────────────────────
   if (isGroup) {
     try {
-      const flood = await grupoHandler.verificarAntiFlood(sock, jid, senderJid, botJid);
+      const flood = await grupoHandler.verificarAntiFlood(sock, jid, senderJid, botJid, senderAlternateJids);
       if (flood) {
-        await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+        try {
+          await sock.groupParticipantsUpdate(jid, [senderJid], 'remove');
+        } catch (err) {
+          console.error('[AntiFlood] Não consegui remover participante:', err.message);
+          await sock.sendMessage(jid, {
+            text: `⚠️ Detectei flood de @${senderJid.split('@')[0]}, mas não consegui removê-lo. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
+            mentions: [senderJid],
+          }).catch(() => {});
+          return;
+        }
         await sock.sendMessage(jid, {
           text: `🚫 *@${senderJid.split('@')[0]}* foi removido por flood!`,
           mentions: [senderJid],
         });
         return;
       }
-    } catch {}
+    } catch (err) {
+      console.error('[AntiFlood] Erro ao verificar:', err.message);
+    }
   }
 
   // ── Substituição estilo vim (s/antigo/novo/) ─────────────────

@@ -277,9 +277,9 @@ async function handleAntiFlood(sock, msg, jid, caption) {
   }, { quoted: msg });
 }
 
-async function verificarAntiFlood(sock, jid, userJid, botJid) {
+async function verificarAntiFlood(sock, jid, userJid, botJid, alternateJids = []) {
   if (isBotJid(userJid, botJid)) return false;
-  if (await isAdmin(sock, jid, userJid).catch(() => false)) return false;
+  if (await isAdmin(sock, jid, userJid, alternateJids).catch(() => false)) return false;
 
   const agora = Date.now();
   let cfgCache = global._antiFloodCache.get(jid);
@@ -653,7 +653,7 @@ async function handleFecharAbrir(sock, msg, jid, fechar) {
     }, { quoted: msg });
   } catch (err) {
     console.error('[handleFecharAbrir] Erro:', err.message);
-    await sock.sendMessage(jid, { text: '❌ Não consegui alterar. O bot é admin?' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '❌ Não consegui alterar as configurações. O *Tico Bot precisa ser administrador do grupo* para fechar ou abrir o grupo.' }, { quoted: msg });
   }
 }
 
@@ -705,6 +705,10 @@ async function handleBotToggle(sock, msg, jid, args, isAdminUser) {
       { $set: { idGrupo: jid, botAtivo: ativo } },
       { upsert: true }
     );
+    // O roteador guarda botAtivo em cache por 60s. Sem invalidar aqui,
+    // /bot on/off salva no Mongo, mas o grupo continua no estado antigo.
+    try { require('../../router').invalidateGrupoConfigCache(jid); } catch {}
+
     await CarteiraGrupoModel.updateMany(
       { idGrupo: jid },
       { $set: { 'config.botAtivo': ativo, botAtivo: ativo } }

@@ -60,7 +60,12 @@ function isOwnerJid(jid, ...aliases) {
   const owners = getOwners();
   return candidates.some(candidate => {
     const base = String(candidate || '').split(':')[0].split('@')[0].replace(/\D/g, '');
-    return !!base && owners.includes(base);
+    if (!base) return false;
+    return owners.some(owner =>
+      base === owner ||
+      // Alguns payloads/contas brasileiras apresentam o telefone sem o DDI 55.
+      (owner.startsWith('55') && owner.length === 13 && base === owner.slice(2))
+    );
   });
 }
 

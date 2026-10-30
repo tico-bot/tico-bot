@@ -421,7 +421,7 @@ async function handleLinkGrupo(sock, msg, jid) {
   } catch (err) {
     console.error('[handleLinkGrupo] Erro ao obter link:', err.message);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui obter o link do grupo. Verifique se o bot é administrador.',
+      text: '❌ Não consegui obter o link. O *Tico Bot precisa ser administrador do grupo* para gerar o convite.',
     }, { quoted: msg });
   }
 }

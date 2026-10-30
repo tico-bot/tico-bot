@@ -75,17 +75,20 @@ function normalizeJidBase(jid) {
 }
 
 async function isAdmin(sock, groupJid, userJid, alternateJids = []) {
-  if (!groupJid || !userJid) return false;
-  const aliases = Array.isArray(alternateJids) ? alternateJids : [alternateJids];
-  // Donos globais têm permissão mesmo se o WhatsApp apresentar um LID no lugar do telefone.
+  if (!groupJid) return false;
+  const aliases = Array.isArray(alternateJids) ? alternateJids.filter(Boolean) : [alternateJids].filter(Boolean);
+  const candidates = [userJid, ...aliases].filter(Boolean);
+
+  // ADM+ recebe acesso global antes de consultar metadados ou cargo do grupo.
+  // Isso também evita falhas por rate-limit do WhatsApp quando o número já foi identificado.
   if (await isOwnerIdentity(userJid, aliases)) return true;
+  if (!candidates.length) return false;
+
   try {
     const meta = await getGroupMetadataCached(sock, groupJid);
     if (!meta?.participants) return false;
 
-    const userBases = new Set([userJid, ...aliases]
-      .map(normalizeJidBase)
-      .filter(Boolean));
+    const userBases = new Set(candidates.map(normalizeJidBase).filter(Boolean));
 
     let part = meta.participants.find(p => {
       if (!p) return false;
@@ -94,30 +97,30 @@ async function isAdmin(sock, groupJid, userJid, alternateJids = []) {
       return userBases.has(pIdBase) || userBases.has(pLidBase);
     });
 
-    // Fallback: a metadata do grupo às vezes só traz UMA forma do JID
-    // do participante (id OU lid, não os dois), mas msg.key.participant
-    // pode chegar na outra forma. Sem isso, um admin real pode ser
-    // rejeitado só por mismatch de formato — não por falta de permissão.
+    // A metadata pode conter o par PN/LID mesmo quando LidMapping ainda não foi salvo.
+    if (part && await isOwnerIdentity(part.id, part.lid)) return true;
+
+    // Fallback para mensagens/metadata que tragam apenas uma das formas do JID.
     if (!part) {
-      const mapping = await LidMapping.findOne({
-        $or: [{ pn: userJid }, { lid: userJid }],
-      }).lean().catch(() => null);
+      for (const candidate of candidates) {
+        const normalized = normalizarJid(candidate) || candidate;
+        const mapping = await LidMapping.findOne({
+          $or: [{ pn: normalized }, { lid: normalized }],
+        }).lean().catch(() => null);
+        if (!mapping) continue;
 
-      if (mapping) {
-        const outraForma = normalizarJid(mapping.pn) === normalizarJid(userJid)
-          ? mapping.lid
-          : mapping.pn;
-        const altBase = outraForma ? normalizeJidBase(outraForma) : '';
-
+        const alternate = normalizarJid(mapping.pn) === normalized ? mapping.lid : mapping.pn;
+        const altBase = alternate ? normalizeJidBase(alternate) : '';
         if (altBase) {
-          part = meta.participants.find(p => {
-            if (!p) return false;
-            return normalizeJidBase(p.id) === altBase || (p.lid && normalizeJidBase(p.lid) === altBase);
-          });
+          part = meta.participants.find(p => p && (
+            normalizeJidBase(p.id) === altBase || normalizeJidBase(p.lid) === altBase
+          ));
         }
+        if (part) break;
       }
     }
 
+    if (part && await isOwnerIdentity(part.id, part.lid)) return true;
     return part?.admin === 'admin' || part?.admin === 'superadmin';
   } catch (err) {
     console.error('[isAdmin] Erro ao verificar permissão de admin:', err.message);

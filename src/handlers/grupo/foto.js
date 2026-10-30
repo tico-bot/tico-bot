@@ -8,6 +8,8 @@ const {
   getGroupMetadataCached,
   normalizeJidBase,
 } = require('./helpers');
+const { getAlternateSenderJids } = require('../../utils/identity');
+const { isOwnerIdentity } = require('../extras/_shared');
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
@@ -74,11 +76,13 @@ async function handleFotoGrupo(sock, msg, content, jid) {
   }
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const senderBase = normalizeJidBase(senderJid);
+  const senderAlternateJids = getAlternateSenderJids(msg);
+  const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizeJidBase).filter(Boolean));
+  const globalOwner = await isOwnerIdentity(senderJid, senderAlternateJids);
   const senderParticipant = metadata?.participants?.find(p => p && (
-    normalizeJidBase(p.id) === senderBase || normalizeJidBase(p.lid) === senderBase
+    senderBases.has(normalizeJidBase(p.id)) || senderBases.has(normalizeJidBase(p.lid))
   ));
-  if (!senderParticipant?.admin) {
+  if (!senderParticipant?.admin && !globalOwner) {
     await sock.sendMessage(jid, {
       text: '❌ Apenas administradores do próprio grupo podem alterar a foto.',
     }, { quoted: msg });

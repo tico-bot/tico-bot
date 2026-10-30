@@ -22,6 +22,8 @@ const {
   getGroupMetadataCached,
   isAdmin,
 } = require('./helpers');
+const { getAlternateSenderJids } = require('../../utils/identity');
+const { isOwnerIdentity } = require('../extras/_shared');
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imageban.jpg');
 const BAN_VIDEO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'ban.mp4');
@@ -39,7 +41,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (!await checkAdmin(sock, msg, jid, 'ban')) return;
 
   const senderJid  = msg.key.participant || msg.key.remoteJid;
-  const senderBase = normalizeJidBase(senderJid);
+  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizeJidBase).filter(Boolean));
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
@@ -66,7 +68,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
         if (p.admin) return false; // Proteção: ignora outros admins!
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
-        return base !== senderBase && baseLid !== senderBase;
+        return !senderBases.has(base) && !senderBases.has(baseLid);
       })
       .map(p => p.id);
 
@@ -107,7 +109,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
       text:
         `✅ *Ban em massa concluído!*\n\n` +
         `🔨 Removidos: *${ok}*` +
-        `${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}\n` +
+        `${fail > 0 ? `\n❌ Falhas: *${fail}*\n⚠️ Confira se o *Tico Bot é administrador* do grupo e pode remover participantes.` : ''}\n` +
         `_(Admins e o bot foram preservados)_`,
     }, { quoted: msg });
     return;
@@ -122,7 +124,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  if (normalizeJidBase(targetJid) === senderBase) {
+  if (senderBases.has(normalizeJidBase(targetJid))) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode banir a si mesmo.' }, { quoted: msg });
     return;
   }
@@ -167,7 +169,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   } catch (err) {
     console.error('[handleBan] Erro ao remover:', err.message);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui remover. O bot é admin?',
+      text: '❌ Não consegui remover o participante. O *Tico Bot precisa ser administrador do grupo* para banir membros.',
     }, { quoted: msg });
   }
 }
@@ -184,7 +186,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   if (!await checkAdmin(sock, msg, jid, 'mute')) return;
 
   const senderJid  = msg.key.participant || msg.key.remoteJid;
-  const senderBase = normalizeJidBase(senderJid);
+  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizeJidBase).filter(Boolean));
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
@@ -211,7 +213,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
         if (p.admin) return false; // Proteção: ignora admins!
         const base    = normalizeJidBase(p.id);
         const baseLid = normalizeJidBase(p.lid || '');
-        return base !== senderBase && baseLid !== senderBase;
+        return !senderBases.has(base) && !senderBases.has(baseLid);
       })
       .map(p => p.id);
 
@@ -225,7 +227,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     for (const t of targets) muteUser(jid, t);
 
     await sock.sendMessage(jid, {
-      text: `🔇 *${targets.length} membro(s) mutados (admins preservados)!*\n_Se falarem serão removidos em 20s._`,
+      text: `🔇 *${targets.length} membro(s) mutados (admins preservados)!*\n_Se falarem, o Tico tentará removê-los em 20s. Para isso, precisa ser administrador do grupo._`,
     }, { quoted: msg });
     return;
   }
@@ -257,7 +259,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   muteUser(jid, targetJid);
 
   await sock.sendMessage(jid, {
-    text: `🔇 *${tag}* foi mutado(a)!\n_Se falar será removido(a) em 20s._`,
+    text: `🔇 *${tag}* foi mutado(a)!\n_Se falar, o Tico tentará removê-lo(a) em 20s. Para isso, precisa ser administrador do grupo._`,
     mentions: [targetJid],
   }, { quoted: msg });
 }
@@ -336,7 +338,9 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
   }
   const comando = acao === 'promote' ? 'promover' : 'rebaixar';
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (!await isAdmin(sock, jid, senderJid)) {
+  const senderAlternateJids = getAlternateSenderJids(msg);
+  const isGlobalOwner = await isOwnerIdentity(senderJid, senderAlternateJids);
+  if (!await isAdmin(sock, jid, senderJid, senderAlternateJids)) {
     await checkAdmin(sock, msg, jid, comando);
     return;
   }
@@ -359,9 +363,9 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     return;
   }
 
+  const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizeJidBase).filter(Boolean));
   let senderPart = metaPermissao.participants.find(p => p && (
-    normalizeJidBase(p.id) === normalizeJidBase(senderJid) ||
-    normalizeJidBase(p.lid) === normalizeJidBase(senderJid)
+    senderBases.has(normalizeJidBase(p.id)) || senderBases.has(normalizeJidBase(p.lid))
   ));
   if (!senderPart) {
     const mapping = await LidMapping.findOne({ $or: [{ pn: senderJid }, { lid: senderJid }] }).lean().catch(() => null);
@@ -375,14 +379,14 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
       ));
     }
   }
-  if (!senderPart?.admin) {
+  if (!senderPart?.admin && !isGlobalOwner) {
     await sock.sendMessage(jid, {
       text: '❌ Não consegui confirmar que você é administrador deste grupo. A ação foi cancelada.',
     }, { quoted: msg });
     return;
   }
 
-  if (senderPart.admin === 'admin') {
+  if (senderPart?.admin === 'admin' && !isGlobalOwner) {
     const cfgPermissao = await GrupoConfig.findOne({ idGrupo: jid }).lean();
     const basesSender = new Set([senderJid, senderPart.id, senderPart.lid]
       .filter(Boolean).map(normalizeJidBase));
@@ -400,7 +404,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
       await sock.sendMessage(jid, {
         text: rebaixado
           ? `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* tentou usar !${comando} sem permissão especial e foi rebaixado automaticamente.`
-          : `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* não tem permissão especial para !${comando}. Não consegui rebaixá-lo; confirme se o bot é administrador do grupo.`,
+          : `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* não tem permissão especial para !${comando}. Não consegui rebaixá-lo. O *Tico Bot precisa ser administrador do grupo* para rebaixar participantes.`,
         mentions: [senderPart.id || senderJid],
       }, { quoted: msg });
       return;
@@ -409,8 +413,6 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
 
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const isAll     = /@all\b/i.test(textMsg);
-  const senderBase = normalizeJidBase(senderJid);
-
   if (isAll) {
     let meta;
     try {
@@ -433,7 +435,8 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
             p &&
             p.admin &&
             !isBotJid(p.id, botJid) &&
-            normalizeJidBase(p.id) !== senderBase
+            !senderBases.has(normalizeJidBase(p.id)) &&
+            !senderBases.has(normalizeJidBase(p.lid))
           )
           .map(p => p.id);
 
@@ -459,7 +462,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     await sock.sendMessage(jid, {
       text:
         `${emoji} *@all ${acao === 'promote' ? 'promovidos' : 'rebaixados'}!*\n` +
-        `✔️ *${ok}*${fail > 0 ? `\n❌ Falhas: *${fail}*` : ''}`,
+        `✔️ *${ok}*${fail > 0 ? `\n❌ Falhas: *${fail}*\n⚠️ Confira se o *Tico Bot é administrador* do grupo e pode promover/rebaixar participantes.` : ''}`,
     }, { quoted: msg });
     return;
   }
@@ -478,7 +481,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     }, { quoted: msg }); return;
   }
 
-  if (acao === 'demote' && normalizeJidBase(targetJid) === senderBase) {
+  if (acao === 'demote' && senderBases.has(normalizeJidBase(targetJid))) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
   }
 
@@ -493,7 +496,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     }, { quoted: msg });
   } catch (err) {
     console.error('[handlePromoverRebaixar] Erro:', err.message);
-    await sock.sendMessage(jid, { text: '❌ Não consegui alterar. O bot é admin?' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '❌ Não consegui concluir a ação. O *Tico Bot precisa ser administrador do grupo* para promover ou rebaixar participantes.' }, { quoted: msg });
   }
 }
 
@@ -556,7 +559,7 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
     } catch (err) {
       console.error('[handleReportar] Erro ao remover:', err.message);
       await sock.sendMessage(jid, {
-        text: `⚠️ *${nome}* chegou a 3 advertências mas não consegui remover.\n_O bot é admin?_`,
+        text: `⚠️ *${nome}* chegou a 3 advertências, mas não consegui removê-lo(a).\n_O Tico Bot precisa ser administrador do grupo para remover participantes._`,
         mentions: [reportedJid],
       }, { quoted: msg });
     }
@@ -694,7 +697,7 @@ async function handleApagarMsg(sock, msg, content, jid) {
   } catch (err) {
     console.error('[handleApagarMsg] Erro ao apagar mensagem:', err.message);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui apagar a mensagem. Verifique se o bot é administrador.',
+      text: '❌ Não consegui apagar a mensagem. O *Tico Bot precisa ser administrador do grupo* para apagar mensagens de outros participantes.',
     }, { quoted: msg });
   }
 }

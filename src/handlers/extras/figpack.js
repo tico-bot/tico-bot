@@ -4,6 +4,7 @@ const pino = require('pino');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const StickerPack = require('../../models/StickerPack');
 const { isAdmin } = require('../grupo/helpers');
+const { getAlternateSenderJids } = require('../../utils/identity');
 
 const MAX_POR_GRUPO = 30;
 const MAX_BYTES     = 1024 * 1024; // 1 MB por figurinha
@@ -37,7 +38,7 @@ async function soGrupo(sock, msg, jid) {
 async function handleFigSalvar(sock, msg, content, jid, senderJid, args, P) {
   if (!await soGrupo(sock, msg, jid)) return;
 
-  if (!await isAdmin(sock, jid, senderJid)) {
+  if (!await isAdmin(sock, jid, senderJid, getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, { text: '❌ Apenas admins podem salvar figurinhas no pacote do grupo.' }, { quoted: msg });
     return;
   }
@@ -121,7 +122,7 @@ async function handleFigEnviar(sock, msg, jid, args, P) {
 // !figremover <nome> — só admins
 async function handleFigRemover(sock, msg, jid, senderJid, args, P) {
   if (!await soGrupo(sock, msg, jid)) return;
-  if (!await isAdmin(sock, jid, senderJid)) {
+  if (!await isAdmin(sock, jid, senderJid, getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, { text: '❌ Apenas admins podem remover figurinhas do pacote.' }, { quoted: msg });
     return;
   }

@@ -13,6 +13,8 @@ const {
   getGroupOwner,
 } = require('./helpers');
 const { normalizarDominio } = require('../../utils/links');
+const { getAlternateSenderJids } = require('../../utils/identity');
+const { isOwnerIdentity } = require('../extras/_shared');
 
 function obterTexto(msg, content) {
   return content?.conversation || content?.extendedTextMessage?.text ||
@@ -60,10 +62,12 @@ function invalidarCacheConfig(jid) {
 
 async function confirmarDonoDoGrupo(sock, jid, msg) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderAlternateJids = getAlternateSenderJids(msg);
+  const globalOwner = await isOwnerIdentity(senderJid, senderAlternateJids);
   const meta = await getGroupMetadataCached(sock, jid, true).catch(() => null);
   const sender = await encontrarParticipanteDoGrupo(meta, senderJid);
   const owner = await getGroupOwner(sock, jid).catch(() => null);
-  const isOwner = sender?.admin === 'superadmin' || (
+  const isOwner = globalOwner || sender?.admin === 'superadmin' || (
     owner && normalizarBaseJid(owner) === normalizarBaseJid(senderJid)
   );
   if (!isOwner) {

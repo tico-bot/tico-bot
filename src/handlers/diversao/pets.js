@@ -3,6 +3,8 @@ const fs            = require('fs');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { isAdmin } = require('../grupo/helpers');
+const { getAlternateSenderJids } = require('../../utils/identity');
 
 const { prepareDailyMissionState } = require('./missoes');
 
@@ -1704,17 +1706,7 @@ async function handlePetToggle(sock, msg, jid, caption = '') {
     return reply(sock, jid, msg, '❌ Não foi possível identificar quem enviou o comando.');
   }
 
-  let souAdmin = false;
-  try {
-    const meta = await sock.groupMetadata(jid);
-    const part = meta.participants?.find(
-      p => p.id === senderJid || p.lid === senderJid
-    );
-    souAdmin = part?.admin === 'admin' || part?.admin === 'superadmin';
-  } catch (err) {
-    console.error('[handlePetToggle] Erro ao checar admin:', err.message);
-    return reply(sock, jid, msg, '❌ Erro ao verificar permissões. Tente novamente!');
-  }
+  const souAdmin = await isAdmin(sock, jid, senderJid, getAlternateSenderJids(msg));
 
   if (!souAdmin) {
     return reply(sock, jid, msg, '❌ Apenas administradores podem usar este comando!');

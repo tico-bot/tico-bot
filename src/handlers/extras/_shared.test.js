@@ -13,6 +13,8 @@ test('número cadastrado como ADM supremo mantém permissão global fixa', () =>
     assert.equal(isOwnerJid('5565993354137@s.whatsapp.net'), true);
     assert.equal(isOwnerJid('5565993354137:4@s.whatsapp.net'), true);
     assert.equal(isOwnerJid('+55 65 99335-4137'), true);
+    assert.equal(isOwnerJid('65993354137@s.whatsapp.net'), true);
+    assert.equal(isOwnerJid('65993354137'), true);
   } finally {
     if (original === undefined) delete process.env.BOT_OWNERS;
     else process.env.BOT_OWNERS = original;
