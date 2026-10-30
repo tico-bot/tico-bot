@@ -69,19 +69,11 @@ test('XP/níveis da carteira começam desativados por padrão', () => {
   assert.equal(carteira.config.xpAtivo, false);
 });
 
-test('boot desativa XP/níveis nas configurações de todas as carteiras', async () => {
-  const original = CarteiraGrupo.updateMany;
-  let args;
-  CarteiraGrupo.updateMany = (...values) => {
-    args = values;
-    return Promise.resolve({ matchedCount: 8, modifiedCount: 4 });
-  };
-  try {
-    const result = await CarteiraGrupo.desativarXpTodosNoBoot();
-    assert.deepEqual(args, [{}, { $set: { 'config.xpAtivo': false } }]);
-    assert.equal(result.matchedCount, 8);
-    assert.equal(result.modifiedCount, 4);
-  } finally {
-    CarteiraGrupo.updateMany = original;
-  }
+test('cópia de XP da carteira mantém o estado explicitamente ativado', () => {
+  const carteira = new CarteiraGrupo({
+    idWhatsApp: 'usuario@s.whatsapp.net',
+    idGrupo: 'grupo@g.us',
+    config: { xpAtivo: true },
+  });
+  assert.equal(carteira.config.xpAtivo, true);
 });

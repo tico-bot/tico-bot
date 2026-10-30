@@ -192,10 +192,6 @@ const carteiraGrupoSchema = new mongoose.Schema(
   }
 );
 
-// Reseta também a cópia de config mantida nas carteiras, usada pelo painel admin.
-carteiraGrupoSchema.statics.desativarXpTodosNoBoot = function () {
-  return this.updateMany({}, { $set: { 'config.xpAtivo': false } });
-};
 
 // ─── Índices ──────────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ No comando `!perfil`, mensagens, comandos, figurinhas, total e posição no rank
 - `!level on` — ativar o ganho de XP/níveis neste grupo (somente administradores).
 - `!level off` — desativar o ganho de XP/níveis neste grupo (somente administradores).
 
-O ganho automático de XP/níveis continua voltando a ficar desligado em todos os grupos quando o bot reinicia, conforme a configuração de inicialização segura.
+O estado de XP/níveis é salvo por grupo e permanece como foi configurado mesmo após reiniciar o bot. Novos grupos começam desativados; use `/level on` ou `/level off` como administrador para alterar o estado.
 
 ## Visão geral
 
@@ -31,7 +31,7 @@ O Tico reúne ferramentas para comunidades e grupos, desde moderação e utilida
 - **Economia virtual:** saldo por grupo, transações e extratos, missões, garimpo, loja, inventário, marketplace e atividades com recompensas.
 - **Progressão:** XP, níveis e rankings.
 
-O ganho automático de XP/níveis por mensagens em grupos começa desativado e volta a ficar desligado em todos os grupos sempre que o bot é inicializado. Para ativá-lo durante a execução, use a opção de XP no painel administrativo. Os XP e níveis já acumulados são preservados.
+O ganho automático de XP/níveis por mensagens em grupos começa desativado para grupos sem configuração. Um administrador pode usar `/level on` para ativá-lo ou `/level off` para desativá-lo; a escolha é persistida no banco e continua após reiniciar o bot. Os XP e níveis já acumulados são preservados.
 - **Pets e família:** pets, cuidados, relacionamentos, casamento virtual, filhos e atividades relacionadas.
 - **Modo medieval:** personagens, combate, magia, equipamentos, loja e saque.
 - **Relacionamentos e eventos:** comandos para casais, aniversários e interações sociais.

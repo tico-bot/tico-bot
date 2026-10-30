@@ -144,7 +144,7 @@ async function handleLevelToggle(sock, msg, jid, args, isAdminUser) {
         '⭐ *SISTEMA DE LEVEL — ON/OFF*\n\n' +
         '▸ */level on* — ativar XP e níveis neste grupo\n' +
         '▸ */level off* — desativar XP e níveis neste grupo\n\n' +
-        '_Apenas administradores do grupo podem usar estes comandos. O sistema volta a ficar OFF quando o bot reinicia._',
+        '_Apenas administradores do grupo podem usar estes comandos. A configuração fica salva mesmo após reiniciar o bot._',
     }, { quoted: msg });
   }
 
@@ -167,7 +167,7 @@ async function handleLevelToggle(sock, msg, jid, args, isAdminUser) {
 
     return sock.sendMessage(jid, {
       text: ativo
-        ? '✅ *Sistema de level ativado neste grupo!*\n💬 As mensagens voltarão a conceder XP e poderão gerar níveis.\n_Nota: será desligado novamente quando o bot reiniciar._'
+        ? '✅ *Sistema de level ativado neste grupo!*\n💬 As mensagens voltarão a conceder XP e poderão gerar níveis.\n💾 _Essa configuração continuará ativa após reiniciar o bot._'
         : '🔕 *Sistema de level desativado neste grupo.*\n💾 O XP e os níveis já conquistados foram preservados.',
     }, { quoted: msg });
   } catch (err) {

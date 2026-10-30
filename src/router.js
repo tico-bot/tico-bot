@@ -32,7 +32,7 @@ const {
 } = require('./utils/prefixos');
 
 // ─── Identidade / JID ─────────────────────────────────────────────────────
-const { normalizarJid, extrairNumero, registrarLidEMapping } = require('./utils/identity');
+const { normalizarJid, extrairNumero, registrarLidEMapping, getAlternateSenderJids } = require('./utils/identity');
 
 // ─── Models ───────────────────────────────────────────────────────────────
 const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
@@ -147,6 +147,7 @@ async function handleMessage(sock, msg) {
   const caption   = (imageMsg?.caption || videoMsg?.caption || textMsg || '').trim();
   const author    = getSenderName(msg);
   const senderJid = msg.key.participant || msg.key.remoteJid;
+  const senderAlternateJids = getAlternateSenderJids(msg);
 
   const raw     = caption.toLowerCase();
   const cmdWord = raw.split(/\s+/)[0];
@@ -166,7 +167,7 @@ async function handleMessage(sock, msg) {
     const args = extractPrefixArgs(caption, 'bot', jid);
     if (args.trim()) {
       if (senderJid) contarCmd(senderJid, jid);
-      const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+      const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
       await grupoHandler.handleBotToggle(sock, msg, jid, args, isAdm);
       return;
     }
@@ -304,7 +305,7 @@ async function handleMessage(sock, msg) {
     if (dominios.length > 0) {
       const cfgLink = await getCachedGrupoConfig(jid);
       if (cfgLink?.antiLink) {
-        const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+        const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
         if (!isAdm && !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
           let removida = false;
           try {
@@ -728,7 +729,7 @@ async function handleMessage(sock, msg) {
 
   // ── MEDIEVAL ──────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'medieval') || matchCmdStart(cmd, 'medieval '))
-    { await medievalHandler.handleMedievalToggle(sock, msg, jid, caption.replace(/^[!.,\/]medieval\s*/i, ''), await grupoHandler.isAdmin(sock, jid, senderJid)); return; }
+    { await medievalHandler.handleMedievalToggle(sock, msg, jid, caption.replace(/^[!.,\/]medieval\s*/i, ''), await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids)); return; }
   if (matchCmd(cmdWord, 'ficha'))
     { await medievalHandler.handleFicha(sock, msg, jid, senderJid, author); return; }
   if (matchCmd(cmdWord, 'atacar') || matchCmdStart(cmd, 'atacar ')) {
@@ -876,7 +877,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'level') || matchCmd(cmdWord, 'nivel') || matchCmd(cmdWord, 'mylevel') || matchCmd(cmdWord, 'meunivel')) {
     const levelArgs = caption.trim().split(/\s+/).slice(1).join(' ').trim();
     if (levelArgs) {
-      const isAdminLevel = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+      const isAdminLevel = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
       await utilidadeHandler.handleLevelToggle(sock, msg, jid, levelArgs, isAdminLevel);
     } else {
       await utilidadeHandler.handleLevel(sock, msg, jid);
@@ -1047,7 +1048,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'listaniversarios'))
     { await aniversarioHandler.handleListAniversarios(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'sistemaniversario')) {
-    const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid).catch(() => false);
+    const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
     await aniversarioHandler.handleSistemaAniversario(sock, msg, jid, isAdm);
     return;
   }

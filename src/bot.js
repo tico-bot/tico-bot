@@ -446,22 +446,16 @@ async function main() {
   // o Render pode encerrar a versão antiga só 60s depois da troca.
   const acquired = await acquireLockWithRetry({ acquireLock });
 
-  // Só o processo que adquiriu o lock pode resetar as preferências automáticas.
-  // Assim, uma instância concorrente não altera os sistemas da instância ativa.
+  // Só o processo que adquiriu o lock pode resetar os spawns automáticos.
+  // A configuração de XP/níveis é persistente e não deve ser alterada no boot.
   try {
     const resultadoSpawn = await PetSpawn.desativarTodosNoBoot();
     console.log(
       `[PetScheduler] Inicialização segura: spawn automático OFF em ${resultadoSpawn.matchedCount ?? 0} grupo(s).`
     );
-
-    const resultadoLevel = await GrupoConfig.desativarTodosNoBoot();
-    const resultadoCarteirasXp = await CarteiraGrupo.desativarXpTodosNoBoot();
-    console.log(
-      `[LevelSystem] Inicialização segura: XP/níveis OFF em ${resultadoLevel.matchedCount ?? 0} configuração(ões) de grupo e ${resultadoCarteirasXp.matchedCount ?? 0} carteira(s).`
-    );
   } catch (err) {
     console.error(
-      '❌ Não foi possível garantir os sistemas automáticos OFF (pets/níveis). O bot do WhatsApp não será iniciado:',
+      '❌ Não foi possível desativar os spawns automáticos. O bot do WhatsApp não será iniciado:',
       err.message
     );
     await releaseLock().catch(() => {});

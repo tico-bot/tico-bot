@@ -55,9 +55,29 @@ function getOwners() {
     .filter(Boolean);
   return [...new Set([...ownersFixos, ...ownersEnv])];
 }
-function isOwnerJid(jid) {
-  const base = String(jid || '').split(':')[0].split('@')[0].replace(/\D/g, '');
-  return !!base && getOwners().includes(base);
+function isOwnerJid(jid, ...aliases) {
+  const candidates = [jid, ...aliases].flat(Infinity);
+  const owners = getOwners();
+  return candidates.some(candidate => {
+    const base = String(candidate || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+    return !!base && owners.includes(base);
+  });
+}
+
+/** Resolve owner permissions even when WhatsApp provides only the LID JID. */
+async function isOwnerIdentity(jid, ...aliases) {
+  const candidates = [jid, ...aliases].flat(Infinity).filter(Boolean);
+  if (isOwnerJid(candidates)) return true;
+
+  for (const candidate of candidates) {
+    const normalized = normalizarJid(candidate) || String(candidate);
+    if (!normalized.endsWith('@lid')) continue;
+    try {
+      const mapping = await LidMapping.findOne({ lid: normalized }).lean();
+      if (mapping?.pn && isOwnerJid(mapping.pn)) return true;
+    } catch { /* sem mapeamento disponível: não concede permissão */ }
+  }
+  return false;
 }
 
 function menc(jid) { return `@${String(jid).split(':')[0].split('@')[0]}`; }
@@ -67,4 +87,4 @@ let sockGetter = () => null;
 function setSockGetter(fn) { if (typeof fn === 'function') sockGetter = fn; }
 function getSock() { try { return sockGetter(); } catch { return null; } }
 
-module.exports = { getUserId, creditarGold, requestIdDe, getOwners, isOwnerJid, menc, formatarSaldo, setSockGetter, getSock };
+module.exports = { getUserId, creditarGold, requestIdDe, getOwners, isOwnerJid, isOwnerIdentity, menc, formatarSaldo, setSockGetter, getSock };

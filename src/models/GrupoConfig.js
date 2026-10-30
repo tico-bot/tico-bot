@@ -56,11 +56,6 @@ const grupoConfigSchema = new mongoose.Schema(
   }
 );
 
-// O sistema de XP/níveis começa desligado e deve permanecer OFF após cada boot.
-grupoConfigSchema.statics.desativarTodosNoBoot = function () {
-  return this.updateMany({}, { $set: { xpAtivo: false } });
-};
-
 module.exports =
   mongoose.models.GrupoConfig ||
   mongoose.model('GrupoConfig', grupoConfigSchema);

@@ -104,6 +104,28 @@ function getSenderJid(msg) {
 }
 
 /**
+ * Retorna os JIDs alternativos que o WhatsApp informa para o mesmo remetente.
+ * Isso permite conferir permissões quando participant/remoteJid vem como @lid,
+ * mas a mensagem também carrega a identidade telefônica @s.whatsapp.net.
+ */
+function getAlternateSenderJids(msg) {
+  const key = msg?.key || {};
+  const candidates = [
+    key.participantPn,
+    key.remoteJidPn,
+    key.participantAlt,
+    key.remoteJidAlt,
+    msg?.participantPn,
+    msg?.participantAlt,
+  ];
+
+  return [...new Set(candidates
+    .filter(value => typeof value === 'string' && value.trim())
+    .map(value => normalizarJid(value))
+    .filter(Boolean))];
+}
+
+/**
  * Normaliza um JID para o formato usado como identidade nos models
  * (Usuario.idWhatsApp, CarteiraGrupo.idWhatsApp).
  *
@@ -357,6 +379,7 @@ async function registrarLidEMapping(msg, pushName) {
 
 module.exports = {
   getSenderJid,
+  getAlternateSenderJids,
   resolveGlobalId,
   resolveUserFromMsg,
   resolveJidComLid,

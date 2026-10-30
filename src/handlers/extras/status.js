@@ -3,7 +3,8 @@
 const os       = require('os');
 const mongoose = require('mongoose');
 const { isAdmin } = require('../grupo/helpers');
-const { getOwners, isOwnerJid, getSock } = require('./_shared');
+const { getOwners, isOwnerIdentity, getSock } = require('./_shared');
+const { getAlternateSenderJids } = require('../../utils/identity');
 const { getLockInfo, isOwner: souDonoDoLock } = require('../../utils/instanceLock');
 const { getAuthStats } = require('../../mongoAuthState');
 
@@ -24,9 +25,10 @@ const mb = n => `${(n / 1024 / 1024).toFixed(0)} MB`;
  */
 async function handleBotStatus(sock, msg, jid, senderJid) {
   const donos = getOwners();
-  let permitido = isOwnerJid(senderJid);
+  const alternateJids = getAlternateSenderJids(msg);
+  let permitido = await isOwnerIdentity(senderJid, alternateJids);
   if (!permitido && donos.length === 0 && jid.endsWith('@g.us')) {
-    permitido = await isAdmin(sock, jid, senderJid).catch(() => false);
+    permitido = await isAdmin(sock, jid, senderJid, alternateJids).catch(() => false);
   }
   if (!permitido) {
     await sock.sendMessage(jid, { text: '❌ Este comando é restrito aos donos do bot.' }, { quoted: msg });

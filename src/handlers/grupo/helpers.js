@@ -2,7 +2,8 @@
 
 const { normalizarJid } = require('../../utils/jid');
 const LidMapping = require('../../models/LidMapping');
-const { isOwnerJid } = require('../extras/_shared');
+const { getAlternateSenderJids } = require('../../utils/identity');
+const { isOwnerIdentity } = require('../extras/_shared');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── ESTADO GLOBAL COMPARTILHADO (em memória) ──────────────────
@@ -73,27 +74,24 @@ function normalizeJidBase(jid) {
   return jid.split(':')[0].split('@')[0].toLowerCase();
 }
 
-async function isAdmin(sock, groupJid, userJid) {
+async function isAdmin(sock, groupJid, userJid, alternateJids = []) {
   if (!groupJid || !userJid) return false;
-  // Donos globais do bot têm permissão administrativa mesmo sem serem admins do grupo.
-  if (isOwnerJid(userJid)) return true;
+  const aliases = Array.isArray(alternateJids) ? alternateJids : [alternateJids];
+  // Donos globais têm permissão mesmo se o WhatsApp apresentar um LID no lugar do telefone.
+  if (await isOwnerIdentity(userJid, aliases)) return true;
   try {
-    // O WhatsApp pode entregar o remetente como @lid; resolve para o número
-    // antes de decidir se ele é um dos donos globais configurados.
-    if (String(userJid).endsWith('@lid')) {
-      const mapping = await LidMapping.findOne({ lid: normalizarJid(userJid) || userJid }).lean().catch(() => null);
-      if (mapping?.pn && isOwnerJid(mapping.pn)) return true;
-    }
     const meta = await getGroupMetadataCached(sock, groupJid);
     if (!meta?.participants) return false;
 
-    const userBase = normalizeJidBase(userJid);
+    const userBases = new Set([userJid, ...aliases]
+      .map(normalizeJidBase)
+      .filter(Boolean));
 
     let part = meta.participants.find(p => {
       if (!p) return false;
       const pIdBase  = normalizeJidBase(p.id);
       const pLidBase = p.lid ? normalizeJidBase(p.lid) : '';
-      return pIdBase === userBase || pLidBase === userBase;
+      return userBases.has(pIdBase) || userBases.has(pLidBase);
     });
 
     // Fallback: a metadata do grupo às vezes só traz UMA forma do JID
@@ -194,7 +192,8 @@ function somenteGrupo(jid) {
  */
 async function checkAdmin(sock, msg, jid, cmd = 'este comando') {
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (!await isAdmin(sock, jid, senderJid)) {
+  const alternateJids = getAlternateSenderJids(msg);
+  if (!await isAdmin(sock, jid, senderJid, alternateJids)) {
     await sock.sendMessage(
       jid,
       { text: `❌ Apenas admins podem usar *!${cmd}*!` },
