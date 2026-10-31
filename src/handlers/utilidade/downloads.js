@@ -166,15 +166,89 @@ function getFfprobePath() {
   return 'ffprobe';
 }
 
+function getYtDlpRuntimePaths() {
+  const projectRoot = path.resolve(__dirname, '..', '..', '..');
+  const runtimeRoot = path.join(projectRoot, '.yt-dlp-runtime');
+  return {
+    pluginRoot: path.join(runtimeRoot, 'python'),
+    providerServer: path.join(runtimeRoot, 'bgutil-ytdlp-pot-provider', 'server'),
+  };
+}
+
+let _warnedMissingYoutubePotProvider = false;
+
+function getYtDlpYouTubeArgs() {
+  const args = ['--remote-components', 'ejs:github'];
+  const { pluginRoot, providerServer } = getYtDlpRuntimePaths();
+  const pluginFile = path.join(pluginRoot, 'yt_dlp_plugins', 'extractor', 'getpot_bgutil_script.py');
+  const providerScript = path.join(providerServer, 'build', 'generate_once.js');
+
+  if (fs.existsSync(pluginFile) && fs.existsSync(providerScript)) {
+    args.push('--plugin-dirs', pluginRoot);
+    args.push('--extractor-args', 'youtubepot-bgutilscript:server_home=' + providerServer);
+    args.push('--extractor-args', 'youtube:player-client=mweb');
+  } else if (!_warnedMissingYoutubePotProvider) {
+    _warnedMissingYoutubePotProvider = true;
+    log.warn('[yt-dlp] Provedor PO Token do YouTube não instalado; execute o build para habilitá-lo.');
+  }
+
+  const userAgent = process.env.YOUTUBE_USER_AGENT?.trim();
+  if (userAgent && userAgent.length <= 1024) args.push('--user-agent', userAgent);
+  return args;
+}
+
+function getYtDlpFfmpegLocation() {
+  if (process.platform === 'win32') {
+    const ffmpegPath = getFfmpegPath();
+    return ffmpegPath && ffmpegPath !== 'ffmpeg' ? path.dirname(ffmpegPath) : null;
+  }
+
+  const { execSync } = require('child_process');
+  const resolveBinary = (configured, command) => {
+    if (configured && configured !== command && fs.existsSync(configured)) return configured;
+    try {
+      const located = execSync('which ' + command, { timeout: 3000 }).toString().trim().split('\n')[0];
+      return located && fs.existsSync(located) ? located : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const ffmpegPath = resolveBinary(getFfmpegPath(), 'ffmpeg');
+  const ffprobePath = resolveBinary(getFfprobePath(), 'ffprobe');
+  if (!ffmpegPath) return null;
+  if (ffprobePath && path.dirname(ffmpegPath) === path.dirname(ffprobePath)) return path.dirname(ffmpegPath);
+
+  // ffmpeg-static e ffprobe-static são instalados em diretórios diferentes.
+  // yt-dlp precisa encontrar os dois no local informado por --ffmpeg-location.
+  const binDir = path.join(require('os').tmpdir(), 'tico-ytdlp-bin');
+  try {
+    fs.mkdirSync(binDir, { recursive: true });
+    for (const [name, target] of [['ffmpeg', ffmpegPath], ['ffprobe', ffprobePath]]) {
+      if (!target) continue;
+      const linkPath = path.join(binDir, name);
+      try {
+        if (fs.existsSync(linkPath) && fs.realpathSync(linkPath) === fs.realpathSync(target)) continue;
+      } catch {}
+      try { fs.unlinkSync(linkPath); } catch {}
+      fs.symlinkSync(target, linkPath);
+    }
+    return binDir;
+  } catch (error) {
+    log.warn('[yt-dlp] Não foi possível preparar ffmpeg/ffprobe juntos:', error.message);
+    return path.dirname(ffmpegPath);
+  }
+}
+
 function getYtDlpArgs() {
   const args = [];
-  const ffmpegPath = getFfmpegPath();
-  if (ffmpegPath && ffmpegPath !== 'ffmpeg') args.push('--ffmpeg-location', path.dirname(ffmpegPath));
+  const ffmpegLocation = getYtDlpFfmpegLocation();
+  if (ffmpegLocation) args.push('--ffmpeg-location', ffmpegLocation);
   try {
     const { execSync } = require('child_process');
     const cmd = process.platform === 'win32' ? 'where node' : 'which node';
     const nodeExe = execSync(cmd, { timeout: 3000 }).toString().trim().split('\n')[0].trim();
-    if (nodeExe) args.push('--js-runtimes', `node:${nodeExe}`);
+    if (nodeExe) args.push('--js-runtimes', 'node:' + nodeExe);
   } catch {}
   return args;
 }
@@ -231,6 +305,22 @@ async function getYtDlpPath() {
   // esse local, era a causa do "não encontrei a música" mesmo com o
   // binário funcionando manualmente.
   const projectRoot = path.resolve(__dirname, '..', '..', '..');
+
+  // Prioriza a instalação Python isolada preparada no build do Render;
+  // ela carrega o plugin PO Token no mesmo ambiente do yt-dlp.
+  if (process.platform !== 'win32') {
+    const bundledYtDlp = path.join(projectRoot, '.yt-dlp-runtime', 'bin', 'yt-dlp');
+    if (fs.existsSync(bundledYtDlp)) {
+      try {
+        const { execSync } = require('child_process');
+        execSync('"' + bundledYtDlp + '" --version', { timeout: 10000 });
+        _cachedYtDlpPath = bundledYtDlp;
+        return bundledYtDlp;
+      } catch (e) {
+        log.warn('[yt-dlp] Runtime Python isolado falhou na validação:', e.message);
+      }
+    }
+  }
 
   // 1) which / where
   try {
@@ -332,19 +422,45 @@ async function getYtDlpPath() {
   return null;
 }
 
+function isYouTubeTarget(value) {
+  return typeof value === 'string' && (
+    /^ytsearch(?:date)?\d*:/i.test(value) ||
+    /^https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)(?:\/|$)/i.test(value)
+  );
+}
+
 function ytDlp(ytdlp, args, timeout = 120000) {
   if (!ytdlp) {
     log.warn('yt-dlp err: executável não encontrado; verifique o log de build do Render e a instalação do yt-dlp.');
     return Promise.resolve({ ok: false, stdout: '', stderr: 'yt-dlp executable not found' });
   }
   const { execFile } = require('child_process');
+  const commandArgs = args.some(isYouTubeTarget)
+    ? [...getYtDlpYouTubeArgs(), ...args]
+    : args;
+
   return new Promise((resolve) => {
-    execFile(ytdlp, args, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
+    execFile(ytdlp, commandArgs, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
+      const output = typeof stdout === 'string' ? stdout : '';
+      const errors = typeof stderr === 'string' ? stderr : '';
       if (err) {
-        log.warn('yt-dlp err:', stderr?.slice(-400) || err.message);
-        resolve({ ok: false, stdout: '', stderr: stderr || '' });
+        const diagnostic = errors.trim() || output.trim() || err.message || 'yt-dlp encerrou sem informar a causa.';
+        const exitInfo = [
+          err.code !== undefined ? 'code=' + err.code : null,
+          err.signal ? 'signal=' + err.signal : null,
+          err.killed ? 'killed=true' : null,
+        ].filter(Boolean).join(' ');
+        log.warn('[yt-dlp] Falha', exitInfo, diagnostic.slice(-1800));
+        resolve({
+          ok: false,
+          stdout: output,
+          stderr: errors.trim() || diagnostic,
+          errorCode: err.code ?? null,
+          signal: err.signal ?? null,
+          killed: Boolean(err.killed),
+        });
       } else {
-        resolve({ ok: true, stdout: stdout || '', stderr: '' });
+        resolve({ ok: true, stdout: output, stderr: '' });
       }
     });
   });
@@ -362,6 +478,52 @@ function ffmpeg(bin, args, timeout = 120000) {
       }
     });
   });
+}
+
+function normalizeYoutubeCookies(raw) {
+  const content = String(raw || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!content) throw new Error('arquivo vazio');
+
+  const lines = content.split('\n');
+  const header = lines.find(line => line.trim());
+  if (!/^#\s*(?:Netscape HTTP Cookie File|HTTP Cookie File)\b/i.test(header || '')) {
+    throw new Error('formato inválido; esperado Netscape/HTTP Cookie File');
+  }
+
+  const rows = lines.filter(line => line.trim() && (!line.startsWith('#') || line.startsWith('#HttpOnly_')));
+  const validYoutubeRow = rows.some(line => {
+    const fields = line.split('\t');
+    const domain = (fields[0] || '').replace(/^#HttpOnly_/i, '').replace(/^\./, '').toLowerCase();
+    return fields.length === 7 && fields[5] && fields[6] &&
+      (domain === 'youtube.com' || domain.endsWith('.youtube.com'));
+  });
+  if (!validYoutubeRow) throw new Error('nenhum cookie válido do domínio youtube.com');
+  return content + '\n';
+}
+
+function parseYtDlpJson(stdout) {
+  const lines = String(stdout || '').split(/\r?\n/).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return null;
+}
+
+function getYtDlpUserError(stderr, fallback) {
+  const message = String(stderr || '');
+  if (/sign in to confirm|login_required|confirm you.re not a bot/i.test(message)) {
+    return '❌ O YouTube recusou a autenticação desta requisição. Confira se YOUTUBE_COOKIES contém uma sessão recente exportada no formato Netscape.';
+  }
+  if (/po.?token|bot.?guard|HTTP Error 403|HTTP Error 429|too many requests/i.test(message)) {
+    return '❌ O YouTube bloqueou temporariamente a extração. Tente novamente mais tarde.';
+  }
+  return fallback;
 }
 
 // Lê metadados via yt-dlp (não bloqueia o fluxo principal)
@@ -1144,44 +1306,62 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const outTemplate = tmpPath(id, '.%(ext)s');
   const query = `ytsearch1:${nome} official audio`;
 
-  // ── Cookies do YouTube (evita "Sign in to confirm you're not a bot") ──
-  console.log('YOUTUBE_COOKIES:', process.env.YOUTUBE_COOKIES ? `OK (${process.env.YOUTUBE_COOKIES.length} bytes)` : 'VAZIO');
-  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES?.trim();
+  // ── Cookies do YouTube (sessão exportada em formato Netscape) ──
+  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES;
   let cookieFilePath = null;
   let cookieTempFile = null;
-  if (youtubeCookiesEnv) {
-    log.info(`✅ YOUTUBE_COOKIES encontrado (${youtubeCookiesEnv.length} bytes)`);
+  if (youtubeCookiesEnv?.trim()) {
     cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
     try {
-      fs.writeFileSync(cookieTempFile, youtubeCookiesEnv, 'utf8');
+      const normalizedCookies = normalizeYoutubeCookies(youtubeCookiesEnv);
+      fs.writeFileSync(cookieTempFile, normalizedCookies, { encoding: 'utf8', mode: 0o600 });
       cookieFilePath = cookieTempFile;
+      log.info('✅ YOUTUBE_COOKIES válido (' + Buffer.byteLength(normalizedCookies) + ' bytes)');
     } catch (e) {
-      log.warn('Erro ao gravar cookie do YouTube:', e.message);
+      safeDel(cookieTempFile);
+      cookieTempFile = null;
+      log.warn('[yt-dlp] YOUTUBE_COOKIES inválido:', e.message);
     }
   } else {
     const local = path.join(__dirname, '../../youtube_cookies.txt');
     if (fs.existsSync(local)) {
-      cookieFilePath = local;
-      log.info('✅ Usando cookies locais do YouTube');
+      try {
+        normalizeYoutubeCookies(fs.readFileSync(local, 'utf8'));
+        cookieFilePath = local;
+        log.info('✅ Usando cookies locais do YouTube');
+      } catch (e) {
+        log.warn('[yt-dlp] youtube_cookies.txt inválido:', e.message);
+      }
     } else {
-      log.warn('⚠️ Sem cookies do YouTube — pode falhar com "Sign in to confirm"');
+      log.warn('⚠️ Sem cookies do YouTube — pode falhar com autenticação');
     }
   }
   const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
   const cookieArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
 
-  // Metadados em background
-  const metaPromise = fetchMeta(ytdlp, query, ['--match-filter', '!is_live', ...cookieArgs]);
-
+  // Uma única pesquisa/extração: evita duplicar requisições ao YouTube em paralelo.
   const dlArgs = [
     ...getYtDlpArgs(), '--no-playlist', '-x', '--audio-format', 'mp3',
-    '--audio-quality', '0', '--match-filter', '!is_live',
+    '--audio-quality', '0', '--match-filter', '!is_live', '--print-json',
     '--max-filesize', '50m', ...cookieArgs, '-o', outTemplate, query
   ];
-  const { ok } = await ytDlp(ytdlp, dlArgs, 90000);
+  let downloadResult = await ytDlp(ytdlp, dlArgs, 120000);
+  if (!downloadResult.ok && cookieArgs.length && /sign in to confirm|login_required|confirm you.re not a bot/i.test(downloadResult.stderr || '')) {
+    log.warn('[yt-dlp] YouTube recusou a sessão enviada; tentando uma vez sem cookies.');
+    const argsWithoutCookies = [];
+    for (let i = 0; i < dlArgs.length; i++) {
+      if (dlArgs[i] === '--cookies') { i++; continue; }
+      argsWithoutCookies.push(dlArgs[i]);
+    }
+    downloadResult = await ytDlp(ytdlp, argsWithoutCookies, 90000);
+  }
+
+  const { ok, stdout, stderr } = downloadResult;
   if (!ok) {
     cleanupCookie();
-    return sock.sendMessage(jid, { text: `❌ Não encontrei a música *"${nome}"*.` }, { quoted: msg });
+    return sock.sendMessage(jid, {
+      text: getYtDlpUserError(stderr, '❌ Não encontrei a música *"' + nome + '"*.')
+    }, { quoted: msg });
   }
 
   const base = outTemplate.replace('.%(ext)s', '');
@@ -1196,7 +1376,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   cleanupCookie();
   if (audioBuffer.length > SIZE_LIMIT) return sock.sendMessage(jid, { text: '❌ Arquivo muito grande (máx 64MB).' }, { quoted: msg });
 
-  const meta = await metaPromise;
+  const meta = parseYtDlpJson(stdout);
 
   // Thumbnail como card
   let cardBuffer = null;
@@ -1483,6 +1663,11 @@ module.exports = {
   handlePinterest:     safeHandler(handlePinterest),
   getYtDlpPath,
   getYtDlpArgs,
+  _getYtDlpFfmpegLocation: getYtDlpFfmpegLocation,
+  getYtDlpYouTubeArgs,
+  _normalizeYoutubeCookies: normalizeYoutubeCookies,
+  _parseYtDlpJson: parseYtDlpJson,
+  _isYouTubeTarget: isYouTubeTarget,
   getFfmpegPath,
   getFfprobePath,
   limparTmpAntigos,

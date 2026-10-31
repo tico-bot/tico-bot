@@ -104,7 +104,8 @@ Alguns recursos opcionais podem utilizar variáveis adicionais, dependendo do qu
 | `GIPHY_KEY` | Integrações que utilizam a API do GIPHY |
 | `FOOTBALL_API_KEY` | Recursos que dependem de uma API de futebol |
 | `REMOVEBG_KEY` | Recursos de remoção de fundo que utilizam esse serviço |
-| `YOUTUBE_COOKIES` / `TIKTOK_COOKIES` | Cookies opcionais para fluxos de download compatíveis |
+| `YOUTUBE_COOKIES` / `TIKTOK_COOKIES` | Cookies opcionais para fluxos de download compatíveis (YouTube em formato Netscape) |
+| `YOUTUBE_USER_AGENT` | User-Agent exato do navegador que exportou `YOUTUBE_COOKIES` (opcional) |
 | `CONTAS_KEY` | Chave de determinados recursos de contas |
 
 Configure somente as variáveis dos recursos que realmente utilizar. Os nomes acima não significam que todos os serviços externos estejam ativos por padrão. Consulte o código correspondente para conhecer o formato esperado de cada valor.

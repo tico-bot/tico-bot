@@ -8,6 +8,7 @@
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
     "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
+    "test:ytdlp": "node --test src/handlers/utilidade/downloads.ytdlp.test.js",
     "test:cloud-downloads": "node --test src/handlers/utilidade/cloud-downloads.test.js",
     "test:attp": "node --test src/sticker.attp.test.js",
     "test:lyrics": "node --test src/handlers/utilidade/letras-musica.test.js",
