@@ -76,16 +76,47 @@ function invalidateGrupoConfigCache(jid) {
   else _grupoConfigCache.clear();
 }
 
+
+async function avisarAdminsFalhaAntiLink(sock, jid, participanteJid) {
+  let admins = [];
+  try {
+    const meta = await getGroupMetadataCached(sock, jid, true);
+    admins = (meta?.participants || []).filter(p => p?.admin && p?.id);
+  } catch (err) {
+    console.error('[AntiLink] Não consegui consultar administradores para o alerta:', err.message);
+  }
+
+  const autorTag = participanteJid ? `@${normalizeJidBase(participanteJid)}` : 'autor não identificado';
+  const tagsAdmins = admins.map(p => `@${normalizeJidBase(p.id)}`).join(' ');
+  const mentions = [...new Set([
+    ...admins.map(p => p.id),
+    ...(participanteJid ? [participanteJid] : []),
+  ])];
+
+  const texto =
+    '🚨 *ANTI-LINK — AÇÃO NECESSÁRIA DOS ADMINISTRADORES* 🚨\n\n' +
+    `O membro ${autorTag} enviou uma mensagem de pagamento/convite com link suspeito.\n\n` +
+    '⚠️ O Tico Bot tentou remover o autor, mas não conseguiu. O bot pode estar sem cargo de administrador ou sem permissão para remover membros.\n\n' +
+    (tagsAdmins
+      ? `🛡️ *Administradores:* ${tagsAdmins}\n\nRemovam esse membro manualmente e verifiquem as permissões do bot.`
+      : '⚠️ Não consegui consultar a lista de administradores. Verifiquem as permissões do bot e removam o autor manualmente.');
+
+  await sock.sendMessage(jid, { text: texto, mentions }).catch(err => {
+    console.error('[AntiLink] Não consegui enviar alerta aos administradores:', err.message);
+  });
+}
+
 const { handleRankGold, handleGive }                                 = require('./handlers/diversao/economia');
 const { handleEmprestimo, handlePayEmprestimo, handleDivida }        = require('./handlers/diversao/emprestimo');
 const { registerActiveGroup }                                       = require('./handlers/diversao');
 
 const { prepareDailyMissionState, incrementMission } = require('./handlers/diversao/missoes');
 const { addUserXp, getBonusHorario, isXpEnabledForMessage } = require('./utils/xp');
-const { extrairDominiosDeLinks, todosLinksPermitidos } = require('./utils/links');
+const { extrairDominiosDeLinks, todosLinksPermitidos, isGroupMigrationSpam, isPaymentMessageContent } = require('./utils/links');
 
 // Fix #1: unmuteUser agora é corretamente re-exportado por handlers/grupo/index.js!
 const { isMuted, unmuteUser } = require('./handlers/grupo');
+const { getGroupMetadataCached, normalizeJidBase } = require('./handlers/grupo/helpers');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── Estado compartilhado com bot.js (NÃO persistido) ──────────
@@ -312,8 +343,8 @@ async function handleMessage(sock, msg) {
 
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
-  // ── Anti-Link com lista branca ───────────────────────────────
-  // Os comandos que gerenciam a lista branca podem conter domínios nos argumentos.
+  // ── Anti-Link com lista branca e bloqueio de mensagens de pagamento ──
+  // Comandos de gestão podem conter domínios nos argumentos.
   const comandosGestaoLinks = new Set(['permlink', 'rmpermlink', 'listlinkbranco', 'antilink', 'gimage']);
   const comandoGestaoLinks = VALID_PREFIXES.some(prefix => {
     if (!caption.startsWith(prefix)) return false;
@@ -322,26 +353,64 @@ async function handleMessage(sock, msg) {
   });
 
   if (isGroup && !comandoGestaoLinks) {
+    const mensagemPagamento = isPaymentMessageContent(content);
     const dominios = extrairDominiosDeLinks(caption);
-    if (dominios.length > 0) {
+
+    if (mensagemPagamento || dominios.length > 0) {
       const cfgLink = await getCachedGrupoConfig(jid);
       if (cfgLink?.antiLink) {
         const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
-        if (!isAdm && !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
-          let removida = false;
-          try {
-            await sock.sendMessage(jid, { delete: msg.key });
-            removida = true;
-          } catch (err) {
-            console.error('[AntiLink] Não consegui remover mensagem:', err.message);
+
+        // Mensagens nativas de pagamento não são removíveis como texto comum.
+        // Com Anti-Link ativo, o autor não-administrador é removido imediatamente.
+        if (!isAdm && mensagemPagamento) {
+          const participanteJid =
+            (msg.key.participant && msg.key.participant !== jid)
+              ? msg.key.participant
+              : senderAlternateJids.find(id => typeof id === 'string' && id.includes('@'));
+
+          if (!participanteJid) {
+            console.error('[AntiLink] Mensagem de pagamento detectada sem JID de participante válido.');
+            await avisarAdminsFalhaAntiLink(sock, jid, null);
+            return;
           }
-          await sock.sendMessage(jid, {
-            text: removida
-              ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida porque contém link(s) fora da lista branca.`
-              : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
-            mentions: senderJid ? [senderJid] : [],
-          }).catch(() => {});
+
+          try {
+            const resultadosRemocao = await sock.groupParticipantsUpdate(jid, [participanteJid], 'remove');
+            const resultadoRemocao = Array.isArray(resultadosRemocao) ? resultadosRemocao[0] : null;
+            if (!resultadoRemocao || String(resultadoRemocao.status) !== '200') {
+              throw new Error(`WhatsApp não confirmou a remoção (status: ${resultadoRemocao?.status || 'sem resposta'}).`);
+            }
+
+            await sock.sendMessage(jid, {
+              text: `🚫 *@${participanteJid.split('@')[0].split(':')[0]}* foi removido automaticamente pelo Anti-Link por enviar uma mensagem de pagamento no grupo.`,
+              mentions: [participanteJid],
+            }).catch(() => {});
+          } catch (err) {
+            console.error('[AntiLink] Não consegui remover autor de mensagem de pagamento:', err.message);
+            await avisarAdminsFalhaAntiLink(sock, jid, participanteJid);
+          }
           return;
+        }
+
+        if (!isAdm && dominios.length > 0) {
+          const spamMigracaoGrupo = isGroupMigrationSpam(caption);
+          if (spamMigracaoGrupo || !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
+            let removida = false;
+            try {
+              await sock.sendMessage(jid, { delete: msg.key });
+              removida = true;
+            } catch (err) {
+              console.error('[AntiLink] Não consegui remover mensagem:', err.message);
+            }
+            await sock.sendMessage(jid, {
+              text: removida
+                ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida pelo Anti-Link por conter links não autorizados ou anúncio suspeito de migração de grupo.`
+                : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
+              mentions: senderJid && senderJid !== jid ? [senderJid] : [],
+            }).catch(() => {});
+            return;
+          }
         }
       }
     }

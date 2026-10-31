@@ -28,6 +28,74 @@ function extrairDominiosDeLinks(texto) {
   return [...encontrados];
 }
 
+
+/**
+ * Identifica anúncios de migração falsa de grupo: texto que diz que o grupo
+ * atual será apagado/trocado e direciona membros para convites externos.
+ * A regra é intencionalmente específica para evitar bloquear links comuns.
+ */
+function isGroupMigrationSpam(texto) {
+  if (typeof texto !== 'string' || !texto) return false;
+
+  const links = [...texto.matchAll(URL_LIKE_REGEX)].map(match => match[0]);
+  if (links.length === 0) return false;
+
+  const temConviteOuCanal = links.some(link => {
+    const dominio = normalizarDominio(link);
+    return dominio === 'chat.whatsapp.com' ||
+      (dominio === 'whatsapp.com' && /\/channel\//i.test(link)) ||
+      dominio === 't.me' ||
+      dominio === 'telegram.me';
+  });
+  if (!temConviteOuCanal) return false;
+
+  const normalizado = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const anunciaMigracao = [
+    /\b(?:trocando|mudando|migrando|transferindo)\s+de\s+grupo\b/,
+    /\b(?:esse|este|o)\s+grupo\s+(?:sera|vai\s+ser)\s+(?:apagado|excluido|deletado|encerrado)\b/,
+    /\bentrem?\s+(?:no|para\s+o)\s+novo\s+grupo\b/,
+    /\b(?:grupo\s+atual|grupo\s+antigo)\s+(?:sera|vai\s+ser)\s+(?:apagado|excluido|deletado|encerrado)\b/,
+  ].some(pattern => pattern.test(normalizado));
+
+  return anunciaMigracao;
+}
+
+
+/**
+ * Detecta mensagens nativas de pagamento do WhatsApp, inclusive quando
+ * chegam encapsuladas em mensagens temporárias ou de visualização única.
+ */
+function isPaymentMessageContent(content) {
+  const paymentFields = [
+    'sendPaymentMessage',
+    'requestPaymentMessage',
+    'declinePaymentRequestMessage',
+    'cancelPaymentRequestMessage',
+    'paymentInviteMessage',
+    'invoiceMessage',
+    'paymentMessage',
+  ];
+
+  let current = content;
+  for (let depth = 0; depth < 8 && current && typeof current === 'object'; depth += 1) {
+    if (paymentFields.some(field => current[field] != null)) return true;
+
+    current =
+      current.ephemeralMessage?.message ||
+      current.viewOnceMessage?.message ||
+      current.viewOnceMessageV2?.message ||
+      current.documentWithCaptionMessage?.message ||
+      current.deviceSentMessage?.message ||
+      null;
+  }
+
+  return false;
+}
+
 /** Permite o domínio exato e seus subdomínios (youtube.com inclui m.youtube.com). */
 function dominioEstaPermitido(dominio, listaPermitida = []) {
   const host = normalizarDominio(dominio);
@@ -49,4 +117,6 @@ module.exports = {
   extrairDominiosDeLinks,
   dominioEstaPermitido,
   todosLinksPermitidos,
+  isGroupMigrationSpam,
+  isPaymentMessageContent,
 };
