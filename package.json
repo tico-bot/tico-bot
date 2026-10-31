@@ -25,7 +25,8 @@
     "test:games-api": "node --test src/routes/api.games.test.js",
     "test:menus": "node --test --test-force-exit src/handlers/menus/menus.test.js",
     "test:futebol": "node --test src/handlers/futebol-api.test.js",
-    "test:auth-security": "node --test src/routes/api.auth.test.js src/routes/api.privacy.test.js src/utils/cors.test.js src/utils/otp.test.js src/handlers/utilidade/perfil.bio.test.js"
+    "test:auth-security": "node --test src/routes/api.auth.test.js src/routes/api.privacy.test.js src/utils/cors.test.js src/utils/otp.test.js src/handlers/utilidade/perfil.bio.test.js",
+    "postinstall": "node src/scripts/render-postinstall.js"
   },
   "engines": {
     "node": ">=20.0.0"
