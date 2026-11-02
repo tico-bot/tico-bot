@@ -159,6 +159,84 @@ function getSenderName(msg) {
   return msg.pushName || senderJid?.split('@')[0] || 'Usuário';
 }
 
+// A proteção Anti-Link é uma exceção ao estado /bot off: ela deve continuar
+// moderando mensagens mesmo quando os demais comandos e recursos estão desligados.
+async function handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid, senderAlternateJids, cfgGrupo = null) {
+  if (!jid?.endsWith('@g.us')) return false;
+
+  // Comandos de gestão podem conter domínios nos argumentos e não devem ser moderados.
+  const comandosGestaoLinks = new Set(['permlink', 'rmpermlink', 'listlinkbranco', 'antilink', 'gimage']);
+  const comandoGestaoLinks = VALID_PREFIXES.some(prefix => {
+    if (!caption.startsWith(prefix)) return false;
+    const palavra = caption.slice(prefix.length).trim().split(/\s+/)[0]?.toLowerCase();
+    return comandosGestaoLinks.has(palavra);
+  });
+  if (comandoGestaoLinks) return false;
+
+  const mensagemPagamento = isPaymentMessageContent(content);
+  const dominios = extrairDominiosDeLinks(caption);
+  if (!mensagemPagamento && dominios.length === 0) return false;
+
+  const cfgLink = cfgGrupo || await getCachedGrupoConfig(jid);
+  if (!cfgLink?.antiLink) return false;
+
+  const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
+
+  // Mensagens nativas de pagamento não são removíveis como texto comum.
+  // Com Anti-Link ativo, o autor não-administrador é removido imediatamente.
+  if (!isAdm && mensagemPagamento) {
+    const participanteJid =
+      (msg.key.participant && msg.key.participant !== jid)
+        ? msg.key.participant
+        : senderAlternateJids.find(id => typeof id === 'string' && id.includes('@'));
+
+    if (!participanteJid) {
+      console.error('[AntiLink] Mensagem de pagamento detectada sem JID de participante válido.');
+      await avisarAdminsFalhaAntiLink(sock, jid, null);
+      return true;
+    }
+
+    try {
+      const resultadosRemocao = await sock.groupParticipantsUpdate(jid, [participanteJid], 'remove');
+      const resultadoRemocao = Array.isArray(resultadosRemocao) ? resultadosRemocao[0] : null;
+      if (!resultadoRemocao || String(resultadoRemocao.status) !== '200') {
+        throw new Error(`WhatsApp não confirmou a remoção (status: ${resultadoRemocao?.status || 'sem resposta'}).`);
+      }
+
+      await sock.sendMessage(jid, {
+        text: `🚫 *@${participanteJid.split('@')[0].split(':')[0]}* foi removido automaticamente pelo Anti-Link por enviar uma mensagem de pagamento no grupo.`,
+        mentions: [participanteJid],
+      }).catch(() => {});
+    } catch (err) {
+      console.error('[AntiLink] Não consegui remover autor de mensagem de pagamento:', err.message);
+      await avisarAdminsFalhaAntiLink(sock, jid, participanteJid);
+    }
+    return true;
+  }
+
+  if (!isAdm && dominios.length > 0) {
+    const spamMigracaoGrupo = isGroupMigrationSpam(caption);
+    if (spamMigracaoGrupo || !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
+      let removida = false;
+      try {
+        await sock.sendMessage(jid, { delete: msg.key });
+        removida = true;
+      } catch (err) {
+        console.error('[AntiLink] Não consegui remover mensagem:', err.message);
+      }
+      await sock.sendMessage(jid, {
+        text: removida
+          ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida pelo Anti-Link por conter links não autorizados ou anúncio suspeito de migração de grupo.`
+          : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
+        mentions: senderJid && senderJid !== jid ? [senderJid] : [],
+      }).catch(() => {});
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // ─── HANDLER PRINCIPAL (ROTEADOR DE COMANDOS) ──────────────────
 // ═══════════════════════════════════════════════════════════════
@@ -214,7 +292,11 @@ async function handleMessage(sock, msg) {
   let cfgGrupo = null;
   if (isGroup) {
     cfgGrupo = await getCachedGrupoConfig(jid);
-    if (cfgGrupo?.botAtivo === false) return;
+    if (cfgGrupo?.botAtivo === false) {
+      // /bot off desativa comandos e demais recursos, mas nunca a proteção Anti-Link.
+      await handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid, senderAlternateJids, cfgGrupo);
+      return;
+    }
   }
 
   // ── Mute check (agora funciona perfeitamente com unmuteUser exportado!) ──
@@ -344,77 +426,7 @@ async function handleMessage(sock, msg) {
   if (isPrivate && textMsg && !isAnyCmd(raw)) lastTexts.set(jid, textMsg);
 
   // ── Anti-Link com lista branca e bloqueio de mensagens de pagamento ──
-  // Comandos de gestão podem conter domínios nos argumentos.
-  const comandosGestaoLinks = new Set(['permlink', 'rmpermlink', 'listlinkbranco', 'antilink', 'gimage']);
-  const comandoGestaoLinks = VALID_PREFIXES.some(prefix => {
-    if (!caption.startsWith(prefix)) return false;
-    const palavra = caption.slice(prefix.length).trim().split(/\s+/)[0]?.toLowerCase();
-    return comandosGestaoLinks.has(palavra);
-  });
-
-  if (isGroup && !comandoGestaoLinks) {
-    const mensagemPagamento = isPaymentMessageContent(content);
-    const dominios = extrairDominiosDeLinks(caption);
-
-    if (mensagemPagamento || dominios.length > 0) {
-      const cfgLink = await getCachedGrupoConfig(jid);
-      if (cfgLink?.antiLink) {
-        const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
-
-        // Mensagens nativas de pagamento não são removíveis como texto comum.
-        // Com Anti-Link ativo, o autor não-administrador é removido imediatamente.
-        if (!isAdm && mensagemPagamento) {
-          const participanteJid =
-            (msg.key.participant && msg.key.participant !== jid)
-              ? msg.key.participant
-              : senderAlternateJids.find(id => typeof id === 'string' && id.includes('@'));
-
-          if (!participanteJid) {
-            console.error('[AntiLink] Mensagem de pagamento detectada sem JID de participante válido.');
-            await avisarAdminsFalhaAntiLink(sock, jid, null);
-            return;
-          }
-
-          try {
-            const resultadosRemocao = await sock.groupParticipantsUpdate(jid, [participanteJid], 'remove');
-            const resultadoRemocao = Array.isArray(resultadosRemocao) ? resultadosRemocao[0] : null;
-            if (!resultadoRemocao || String(resultadoRemocao.status) !== '200') {
-              throw new Error(`WhatsApp não confirmou a remoção (status: ${resultadoRemocao?.status || 'sem resposta'}).`);
-            }
-
-            await sock.sendMessage(jid, {
-              text: `🚫 *@${participanteJid.split('@')[0].split(':')[0]}* foi removido automaticamente pelo Anti-Link por enviar uma mensagem de pagamento no grupo.`,
-              mentions: [participanteJid],
-            }).catch(() => {});
-          } catch (err) {
-            console.error('[AntiLink] Não consegui remover autor de mensagem de pagamento:', err.message);
-            await avisarAdminsFalhaAntiLink(sock, jid, participanteJid);
-          }
-          return;
-        }
-
-        if (!isAdm && dominios.length > 0) {
-          const spamMigracaoGrupo = isGroupMigrationSpam(caption);
-          if (spamMigracaoGrupo || !todosLinksPermitidos(caption, cfgLink.linksPermitidos || [])) {
-            let removida = false;
-            try {
-              await sock.sendMessage(jid, { delete: msg.key });
-              removida = true;
-            } catch (err) {
-              console.error('[AntiLink] Não consegui remover mensagem:', err.message);
-            }
-            await sock.sendMessage(jid, {
-              text: removida
-                ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida pelo Anti-Link por conter links não autorizados ou anúncio suspeito de migração de grupo.`
-                : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
-              mentions: senderJid && senderJid !== jid ? [senderJid] : [],
-            }).catch(() => {});
-            return;
-          }
-        }
-      }
-    }
-  }
+  if (await handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid, senderAlternateJids, cfgGrupo)) return;
 
   // ── Auto-Sticker ─────────────────────────────────────────────
   if (isGroup && autoStickerGroups.has(jid) && !isAnyCmd(raw)) {
@@ -719,12 +731,6 @@ async function handleMessage(sock, msg) {
     { await grupoHandler.handleRemovePermLink(sock, msg, content, jid); return; }
   if (matchCmd(cmdWord, 'listlinkbranco'))
     { await grupoHandler.handleListLinkBranco(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'permadm') || matchCmdStart(cmd, 'permadm '))
-    { await grupoHandler.handlePermAdm(sock, msg, content, jid); return; }
-  if (matchCmd(cmdWord, 'rmpermadm') || matchCmdStart(cmd, 'rmpermadm '))
-    { await grupoHandler.handleRemovePermAdm(sock, msg, content, jid); return; }
-  if (matchCmd(cmdWord, 'admsperm'))
-    { await grupoHandler.handleAdmsPerm(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'autosticker') || matchCmdStart(cmd, 'autosticker '))
     { await grupoHandler.handleAutoSticker(sock, msg, content, jid, autoStickerGroups, saveData); return; }
   if (matchCmd(cmdWord, 'slowmode') || matchCmdStart(cmd, 'slowmode '))

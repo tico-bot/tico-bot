@@ -6,6 +6,7 @@ const {
   _normalizeYoutubeCookies,
   _parseYtDlpJson,
   _isYouTubeTarget,
+  _getYtDlpUserError,
 } = require('./downloads');
 
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
@@ -40,4 +41,14 @@ test('identifica pesquisas e URLs do YouTube sem classificar outros serviços', 
   assert.equal(_isYouTubeTarget('https://www.youtube.com/watch?v=abc123'), true);
   assert.equal(_isYouTubeTarget('https://youtu.be/abc123'), true);
   assert.equal(_isYouTubeTarget('https://www.tiktok.com/@user/video/123'), false);
+});
+
+
+test('diferencia limite de requisições HTTP 429 de acesso negado HTTP 403', () => {
+  assert.match(_getYtDlpUserError('HTTP Error 429: Too Many Requests', 'fallback'), /limite de requisições/);
+  assert.match(_getYtDlpUserError('ERROR: HTTP Error 403: Forbidden', 'fallback'), /recusou o acesso ao áudio/);
+});
+
+test('mantém mensagem específica quando o YouTube exige autenticação', () => {
+  assert.match(_getYtDlpUserError('Sign in to confirm you are not a bot', 'fallback'), /recusou a autenticação/);
 });

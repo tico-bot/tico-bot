@@ -3,8 +3,6 @@
 const fs   = require('fs');
 const path = require('path');
 const Usuario = require('../../models/Usuario');
-const GrupoConfig = require('../../models/GrupoConfig');
-const LidMapping = require('../../models/LidMapping');
 const { normalizarJid } = require('../../utils/jid');
 const { resolveUsuarioInfo } = require('../../utils/identity');
 
@@ -20,14 +18,21 @@ const {
   mutedCount,
   clearMuted,
   getGroupMetadataCached,
-  isAdmin,
 } = require('./helpers');
 const { getAlternateSenderJids } = require('../../utils/identity');
-const { isOwnerIdentity } = require('../extras/_shared');
 
 const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'imageban.jpg');
 const BAN_VIDEO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'ban.mp4');
 const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'audioban.mp4');
+
+function getSenderIdentity(msg) {
+  const rawSender = msg?.key?.participant || msg?.key?.remoteJid;
+  const senderJids = [...new Set([rawSender, ...getAlternateSenderJids(msg)]
+    .filter(Boolean)
+    .map(jid => normalizarJid(jid) || jid))];
+  const senderBases = new Set(senderJids.map(normalizeJidBase).filter(Boolean));
+  return { senderJids, senderBases };
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !ban ──────────────────────────────────────────────────────
@@ -337,79 +342,13 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
   }
   const comando = acao === 'promote' ? 'promover' : 'rebaixar';
+  // Qualquer administrador atual do grupo pode executar as ações de moderação.
+  // Não existe mais permissão especial nem punição/rebaixamento automático.
+  if (!await checkAdmin(sock, msg, jid, comando)) return;
+
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderAlternateJids = getAlternateSenderJids(msg);
-  const isGlobalOwner = await isOwnerIdentity(senderJid, senderAlternateJids);
-  if (!await isAdmin(sock, jid, senderJid, senderAlternateJids)) {
-    await checkAdmin(sock, msg, jid, comando);
-    return;
-  }
-
-  // A permissão especial vale apenas para este grupo. O dono do grupo tem
-  // autorização automática; um ADM comum sem permissão é rebaixado ao tentar.
-  let metaPermissao;
-  try {
-    metaPermissao = await getGroupMetadataCached(sock, jid, true);
-  } catch {
-    await sock.sendMessage(jid, {
-      text: '❌ Não consegui verificar as permissões do grupo. A ação foi cancelada por segurança.',
-    }, { quoted: msg });
-    return;
-  }
-  if (!metaPermissao?.participants) {
-    await sock.sendMessage(jid, {
-      text: '❌ Não consegui verificar os administradores. A ação foi cancelada por segurança.',
-    }, { quoted: msg });
-    return;
-  }
-
   const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizeJidBase).filter(Boolean));
-  let senderPart = metaPermissao.participants.find(p => p && (
-    senderBases.has(normalizeJidBase(p.id)) || senderBases.has(normalizeJidBase(p.lid))
-  ));
-  if (!senderPart) {
-    const mapping = await LidMapping.findOne({ $or: [{ pn: senderJid }, { lid: senderJid }] }).lean().catch(() => null);
-    const alternateJid = mapping
-      ? (normalizarJid(mapping.pn) === normalizarJid(senderJid) ? mapping.lid : mapping.pn)
-      : null;
-    if (alternateJid) {
-      const alternateBase = normalizeJidBase(alternateJid);
-      senderPart = metaPermissao.participants.find(p => p && (
-        normalizeJidBase(p.id) === alternateBase || normalizeJidBase(p.lid) === alternateBase
-      ));
-    }
-  }
-  if (!senderPart?.admin && !isGlobalOwner) {
-    await sock.sendMessage(jid, {
-      text: '❌ Não consegui confirmar que você é administrador deste grupo. A ação foi cancelada.',
-    }, { quoted: msg });
-    return;
-  }
-
-  if (senderPart?.admin === 'admin' && !isGlobalOwner) {
-    const cfgPermissao = await GrupoConfig.findOne({ idGrupo: jid }).lean();
-    const basesSender = new Set([senderJid, senderPart.id, senderPart.lid]
-      .filter(Boolean).map(normalizeJidBase));
-    const autorizado = (Array.isArray(cfgPermissao?.admsPermissao) ? cfgPermissao.admsPermissao : [])
-      .some(id => basesSender.has(normalizeJidBase(id)));
-
-    if (!autorizado) {
-      let rebaixado = false;
-      try {
-        await sock.groupParticipantsUpdate(jid, [senderPart.id || senderJid], 'demote');
-        rebaixado = true;
-      } catch (err) {
-        console.error('[handlePromoverRebaixar] Falha ao rebaixar ADM sem permissão:', err.message);
-      }
-      await sock.sendMessage(jid, {
-        text: rebaixado
-          ? `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* tentou usar !${comando} sem permissão especial e foi rebaixado automaticamente.`
-          : `🚫 *@${normalizeJidBase(senderPart.id || senderJid)}* não tem permissão especial para !${comando}. Não consegui rebaixá-lo. O *Tico Bot precisa ser administrador do grupo* para rebaixar participantes.`,
-        mentions: [senderPart.id || senderJid],
-      }, { quoted: msg });
-      return;
-    }
-  }
 
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const isAll     = /@all\b/i.test(textMsg);
@@ -522,8 +461,8 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   const reportedJid = userData?.idWhatsApp || resolvedJid || reportedJidRaw;
   const reportedBase = normalizeJidBase(reportedJid);
 
-  const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
-  if (reportedBase === normalizeJidBase(senderJid)) {
+  const { senderBases } = getSenderIdentity(msg);
+  if (senderBases.has(reportedBase)) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
 
@@ -590,8 +529,7 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
 
   if (!await checkAdmin(sock, msg, jid, 'removerreporte')) return;
 
-  const senderJid  = normalizarJid(msg.key.participant || msg.key.remoteJid);
-  const senderBase = normalizeJidBase(senderJid);
+  const { senderBases } = getSenderIdentity(msg);
 
   const targetJidRaw = await resolveTargetJid(sock, msg, content, jid);
 
@@ -607,9 +545,9 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
   const targetBase = normalizeJidBase(targetJid);
 
-  if (targetBase === senderBase) {
+  if (senderBases.has(targetBase)) {
     return sock.sendMessage(jid, {
-      text: '🤡 Você não pode remover sua própria advertência. Peça a outro admin.',
+      text: '🤡 Você não pode remover suas próprias advertências. Peça a outro ADM.',
     }, { quoted: msg });
   }
 
@@ -713,15 +651,20 @@ async function handleLimparWarns(sock, msg, content, jid, botJid) {
   if (!await checkAdmin(sock, msg, jid, 'limparwarns')) return;
 
   const groupKey = jid.replace(/\./g, '_');
+  const warningsKey = 'warnings.' + groupKey;
   const textCmd  = (content?.conversation || content?.extendedTextMessage?.text || '').toLowerCase();
+  const { senderJids, senderBases } = getSenderIdentity(msg);
 
   if (/@all\b/i.test(textCmd)) {
     await Usuario.updateMany(
-      { [`warnings.${groupKey}`]: { $exists: true } },
-      { $unset: { [`warnings.${groupKey}`]: '' } }
+      {
+        [warningsKey]: { $exists: true },
+        idWhatsApp: { $nin: senderJids },
+      },
+      { $unset: { [warningsKey]: '' } }
     );
     await sock.sendMessage(jid, {
-      text: '🧹✅ *Todas as advertências deste grupo foram zeradas!*',
+      text: '🧹✅ *Advertências dos demais membros foram zeradas!* As suas foram preservadas.',
     }, { quoted: msg });
     return;
   }
@@ -737,6 +680,14 @@ async function handleLimparWarns(sock, msg, content, jid, botJid) {
   const { resolvedJid, userData } = await resolveUsuarioInfo(targetJidRaw, sock);
   const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
   const targetBase = normalizeJidBase(targetJid);
+
+  if (senderBases.has(targetBase)) {
+    await sock.sendMessage(jid, {
+      text: '🤡 Você não pode limpar suas próprias advertências. Peça a outro ADM.',
+    }, { quoted: msg });
+    return;
+  }
+
 
   await Usuario.updateOne(
     { idWhatsApp: targetJid },

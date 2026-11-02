@@ -4,6 +4,7 @@ const axios = require('axios');
 const dns = require('node:dns').promises;
 const net = require('node:net');
 const sharp = require('sharp');
+const { createYoutubeRequestQueue } = require('./youtube-request-queue');
 const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
 const { convertVideoToSticker } = require(path.join(__dirname, '..', '..', 'sticker'));
 
@@ -41,6 +42,13 @@ const log = {
   warn:  (...a) => console.warn(...a),
   error: (...a) => console.error(...a),
 };
+
+// O YouTube limita extrações em sequência. Serializa chamadas e aplica cooldown após HTTP 429.
+const enqueueYoutubeRequest = createYoutubeRequestQueue({
+  minIntervalMs: 8000,
+  rateLimitCooldownMs: 60000,
+  onWait: (ms) => log.info('[yt-dlp] Aguardando intervalo do YouTube:', Math.ceil(ms / 1000) + 's'),
+});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -439,7 +447,7 @@ function ytDlp(ytdlp, args, timeout = 120000) {
     ? [...getYtDlpYouTubeArgs(), ...args]
     : args;
 
-  return new Promise((resolve) => {
+  const execute = () => new Promise((resolve) => {
     execFile(ytdlp, commandArgs, { timeout, maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
       const output = typeof stdout === 'string' ? stdout : '';
       const errors = typeof stderr === 'string' ? stderr : '';
@@ -464,6 +472,10 @@ function ytDlp(ytdlp, args, timeout = 120000) {
       }
     });
   });
+
+  return commandArgs.some(isYouTubeTarget)
+    ? enqueueYoutubeRequest(execute)
+    : execute();
 }
 
 function ffmpeg(bin, args, timeout = 120000) {
@@ -520,8 +532,11 @@ function getYtDlpUserError(stderr, fallback) {
   if (/sign in to confirm|login_required|confirm you.re not a bot/i.test(message)) {
     return '❌ O YouTube recusou a autenticação desta requisição. Confira se YOUTUBE_COOKIES contém uma sessão recente exportada no formato Netscape.';
   }
-  if (/po.?token|bot.?guard|HTTP Error 403|HTTP Error 429|too many requests/i.test(message)) {
-    return '❌ O YouTube bloqueou temporariamente a extração. Tente novamente mais tarde.';
+  if (/HTTP Error 429|too many requests|this content isn.t available, try again later/i.test(message)) {
+    return '⏳ O YouTube atingiu o limite de requisições deste servidor. Aguarde cerca de 1 minuto antes de tentar novamente.';
+  }
+  if (/po.?token|bot.?guard|HTTP Error 403|forbidden/i.test(message)) {
+    return '❌ O YouTube recusou o acesso ao áudio (403/PO Token). Pode ser uma restrição temporária do YouTube ou da sessão usada pelo servidor.';
   }
   return fallback;
 }
@@ -1668,6 +1683,7 @@ module.exports = {
   _normalizeYoutubeCookies: normalizeYoutubeCookies,
   _parseYtDlpJson: parseYtDlpJson,
   _isYouTubeTarget: isYouTubeTarget,
+  _getYtDlpUserError: getYtDlpUserError,
   getFfmpegPath,
   getFfprobePath,
   limparTmpAntigos,
