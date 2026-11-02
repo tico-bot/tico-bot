@@ -790,7 +790,7 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleInventario(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'pixmulti') || matchCmd(cmdWord, 'pixtodos') || matchCmdStart(cmd, 'pixmulti ') || matchCmdStart(cmd, 'pixtodos '))
     { await diversaoHandler.handlePixMulti(sock, msg, jid, caption); return; }
-  if (matchCmd(cmdWord, 'doarprata') || matchCmd(cmdWord, 'pixdoar') || matchCmd(cmdWord, 'doargold') || matchCmdStart(cmd, 'doarprata ') || matchCmdStart(cmd, 'pixdoar ') || matchCmdStart(cmd, 'doargold '))
+  if (matchCmd(cmdWord, 'doarprata') || matchCmd(cmdWord, 'pixdoar') || matchCmdStart(cmd, 'doarprata ') || matchCmdStart(cmd, 'pixdoar '))
     { await diversaoHandler.handlePixDoar(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pix') || matchCmd(cmdWord, 'transferir') || matchCmdStart(cmd, 'pix ') || matchCmdStart(cmd, 'transferir '))
     { await diversaoHandler.handlePix(sock, msg, jid, caption); return; }

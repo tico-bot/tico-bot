@@ -2,7 +2,7 @@ const { createHash } = require('crypto');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 
-const PREMIOS = [1000, 500, 350];
+const PREMIOS_PRATA = [1000, 500, 350];
 
 // Aceita Set/Array. Se vier vazio (o bot.js passa new Set()), descobre os grupos pelo banco.
 async function resolverGruposAtivos(gruposAtivos, filtro = {}) {
@@ -13,6 +13,12 @@ async function resolverGruposAtivos(gruposAtivos, filtro = {}) {
   return CarteiraGrupo.distinct('idGrupo', { idGrupo: { $regex: /@g\.us$/ }, ...filtro });
 }
 const MEDALS  = ['🥇', '🥈', '🥉'];
+
+function formatarPremiosPrata() {
+  return PREMIOS_PRATA.map((valor, i) =>
+    `${MEDALS[i]} +${valor.toLocaleString('pt-BR')} Prata`
+  ).join('\n');
+}
 
 const DOMINGO   = 0;   // 0 = domingo
 const HORA      = 15;
@@ -83,19 +89,35 @@ async function executarPremiacao(sock, gruposAtivos) {
       for (let i = 0; i < top3.length; i++) {
         const u = top3[i];
         if (!u || !u.idWhatsApp) continue;
-        const gold = PREMIOS[i];
+        const premioPrata = PREMIOS_PRATA[i];
         const jidNorm = jidNormalizedUser(u.idWhatsApp);
 
-        const pagaGold = true;
+        const pagaPrata = true;
 
         await CarteiraGrupo.findOneAndUpdate(
           { idWhatsApp: u.idWhatsApp, idGrupo: groupJid },
-          { ...(pagaGold ? { $inc: { gold } } : {}), $set: { quizPoints: 0 } },
+          {
+            ...(pagaPrata ? {
+              $inc: { gold: premioPrata },
+              $push: {
+                goldHistory: {
+                  $each: [{
+                    type: 'recebido',
+                    item: `Premiação semanal de quiz — ${i + 1}º lugar`,
+                    amount: premioPrata,
+                    date: new Date(),
+                  }],
+                  $slice: -50,
+                },
+              },
+            } : {}),
+            $set: { quizPoints: 0 },
+          },
           { upsert: true }
         );
 
-        texto += pagaGold
-          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${gold} Prata!*\n`
+        texto += pagaPrata
+          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${premioPrata.toLocaleString('pt-BR')} Prata!*\n`
           : `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → _sem Prata (conta vinculada ao app)_\n`;
         mentions.push(jidNorm);
       }
@@ -121,7 +143,7 @@ async function executarPremiacao(sock, gruposAtivos) {
 // ─── Aviso ────────────────────────────────────────────────────────────────────
 async function enviarAviso(sock, gruposAtivos, tipo) {
   const textos = {
-    '60min': `⏰ *ATENÇÃO!* A premiação semanal de quiz começa em *1 hora!*\n\n🏆 Top 3 ganham:\n🥇 R$ 10,00\n🥈 R$ 5,00\n🥉 R$ 3,50\n\n_Joga *!quiz* agora pra subir no ranking!_`,
+    '60min': `⏰ *ATENÇÃO!* A premiação semanal de quiz começa em *1 hora!*\n\n🏆 Top 3 ganham:\n${formatarPremiosPrata()}\n\n_Joga *!quiz* agora pra subir no ranking!_`,
     '10min': `🔔 *Faltam apenas 10 minutos* para a premiação semanal de quiz!\n\n_Use *!rankjogos* para ver sua posição!_`,
     '5min':  `🚨 *ÚLTIMOS 5 MINUTOS!* A premiação começa já já!\n\n_Última chance de jogar *!quiz* e subir no ranking!_ 🏃`,
   };
@@ -214,4 +236,9 @@ function initQuizRankingScheduler(sock, gruposAtivos) {
   agendar();
 }
 
-module.exports = { initQuizRankingScheduler };
+module.exports = {
+  initQuizRankingScheduler,
+  executarPremiacao,
+  enviarAviso,
+  PREMIOS_PRATA,
+};

@@ -5,6 +5,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { isAdmin } = require('../grupo/helpers');
 const { getAlternateSenderJids } = require('../../utils/identity');
+const GrupoConfig = require('../../models/GrupoConfig');
 
 const { prepareDailyMissionState } = require('./missoes');
 
@@ -1258,9 +1259,21 @@ async function handleAdoptarPet(sock, msg, jid, caption = '') {
  * Dispara um spawn de pet selvagem num grupo.
  * Retorna true em sucesso, false em falha (sem lançar exceção).
  */
+async function grupoPodeReceberSpawn(groupJid) {
+  const config = await GrupoConfig.findOne({ idGrupo: groupJid }).select('botAtivo').lean();
+  // Grupo sem configuração ainda segue o padrão do roteador: bot ligado.
+  return config?.botAtivo !== false;
+}
+
 async function triggerSpawn(sock, groupJid) {
   let spawn;
   try {
+    // O scheduler deve respeitar /bot off, mesmo que !pet on continue configurado.
+    if (!(await grupoPodeReceberSpawn(groupJid))) {
+      console.log(`[triggerSpawn] Bot desligado em ${groupJid}; spawn cancelado.`);
+      return false;
+    }
+
     // Garante o documento e reivindica o espaço apenas se não houver personagem válido.
     await PetSpawn.obterOuCriar(groupJid);
     const agora = Date.now();
@@ -1300,6 +1313,31 @@ async function triggerSpawn(sock, groupJid) {
   if (!def) {
     console.error(`[triggerSpawn] Tipo de pet inválido após spawn: "${spawn.type}"`);
     spawnedPets.delete(groupJid); // limpa spawn inválido
+    return false;
+  }
+
+  // Evita anunciar caso /bot off tenha sido ativado durante a reserva do personagem.
+  try {
+    if (!(await grupoPodeReceberSpawn(groupJid))) {
+      spawnedPets.delete(groupJid);
+      await PetSpawn.updateOne(
+        { idGrupo: groupJid, 'personagemAtivo.spawnedAt': spawn.spawnedAt },
+        { $unset: { personagemAtivo: '' } }
+      );
+      console.log(`[triggerSpawn] Bot desligado durante a reserva em ${groupJid}; spawn cancelado.`);
+      return false;
+    }
+  } catch (err) {
+    spawnedPets.delete(groupJid);
+    try {
+      await PetSpawn.updateOne(
+        { idGrupo: groupJid, 'personagemAtivo.spawnedAt': spawn.spawnedAt },
+        { $unset: { personagemAtivo: '' } }
+      );
+    } catch (cleanupErr) {
+      console.error('[triggerSpawn] Falha ao liberar reserva após erro de configuração:', cleanupErr.message || cleanupErr);
+    }
+    console.error('[triggerSpawn] Não foi possível confirmar se o bot está ligado:', err.message || err);
     return false;
   }
 
@@ -1486,6 +1524,12 @@ function initPetScheduler(sock) {
 
     for (const jid of activeGroups) {
       try {
+        // /bot off também pausa spawns automáticos, sem alterar a preferência !pet on/off.
+        if (!(await grupoPodeReceberSpawn(jid))) {
+          desativados++;
+          continue;
+        }
+
         // Busca o registro completo deste grupo no banco
         const registro = await PetSpawn.findOne({ idGrupo: jid }).lean();
 
@@ -1789,6 +1833,7 @@ module.exports = {
 
   // Utilitários externos
   triggerSpawn,
+  grupoPodeReceberSpawn,
   PET_SYSTEM,
   getSpawnAtivo,
 };

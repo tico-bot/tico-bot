@@ -3,7 +3,8 @@
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
-const { resolveUserFromMsg } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const identidade = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { resolveUserFromMsg } = identidade;
 const { formatWalletAmount } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 
 const EXTRATO_LIMITE = 10;
@@ -20,7 +21,8 @@ const EXTRATO_ICONES = Object.freeze({
   enviado: '📤',
   gasto: '📉',
 });
-const JID_MENTION_REGEX = /@(\d+)(@(?:s\.whatsapp\.net|lid))?/g;
+// Aceita menção formatada (@número[@domínio]) e JID cru (número@domínio).
+const JID_REFERENCE_REGEX = /(?:@(\d+)(?:@(s\.whatsapp\.net|lid))?|(\d+)@(s\.whatsapp\.net|lid))/g;
 
 function numeroSeguro(value) {
   const n = Number(value);
@@ -48,12 +50,85 @@ function obterNomeContato(contactNames, jid) {
 
 function resolverNomesNoItem(item = '', contactNames = {}) {
   const texto = String(item ?? 'Transação sem descrição');
-  return texto.replace(JID_MENTION_REGEX, (match, numero, dominio) => {
-    const jidCompleto = `${numero}${dominio || '@s.whatsapp.net'}`;
+  return texto.replace(JID_REFERENCE_REGEX, (match, numeroMenção, dominioMenção, numeroCru, dominioCru) => {
+    const numero = numeroMenção || numeroCru;
+    const dominio = dominioMenção || dominioCru;
+    const jidCompleto = `${numero}@${dominio || 's.whatsapp.net'}`;
     const nome = obterNomeContato(contactNames, jidCompleto)
-      || obterNomeContato(contactNames, `${numero}@lid`);
+      || obterNomeContato(contactNames, `${numero}@lid`)
+      || obterNomeContato(contactNames, numero);
     return nome ? `*${nome.replace(/\*/g, '')}*` : `@${numero}`;
   });
+}
+
+function nomeExibicaoValido(value) {
+  if (typeof value !== 'string') return null;
+  const nome = value.trim().replace(/[\r\n]/g, ' ');
+  if (!nome || /^\+?[\d\s().-]+$/.test(nome)) return null;
+  return nome;
+}
+
+function extrairReferenciasDeTransacoes(transacoes = []) {
+  const referencias = new Map();
+  for (const transacao of transacoes) {
+    const item = String(transacao?.item ?? '');
+    const regex = new RegExp(JID_REFERENCE_REGEX.source, 'g');
+    let match;
+    while ((match = regex.exec(item)) !== null) {
+      const numero = match[1] || match[3];
+      const dominio = match[2] || match[4] || null;
+      const chave = `${numero}${dominio || ''}`;
+      if (!referencias.has(chave)) referencias.set(chave, { numero, dominio: dominio ? `@${dominio}` : null });
+    }
+  }
+  return [...referencias.values()];
+}
+
+// Complementa o cache volátil de contactos com Usuario + LidMapping. Isso também
+// recupera o nome de lançamentos antigos, que guardavam somente @número.
+async function carregarNomesHistorico(transacoes, sock, contactNames = {}) {
+  const nomes = Object.create(null);
+  if (contactNames instanceof Map) {
+    for (const [jid, nome] of contactNames) nomes[jid] = nome;
+  } else if (contactNames && typeof contactNames === 'object') {
+    Object.assign(nomes, contactNames);
+  }
+
+  const referencias = extrairReferenciasDeTransacoes(transacoes);
+  await Promise.all(referencias.map(async ({ numero, dominio }) => {
+    const pnJid = `${numero}@s.whatsapp.net`;
+    const lidJid = `${numero}@lid`;
+    const candidatos = dominio === '@lid'
+      ? [lidJid, pnJid]
+      : dominio === '@s.whatsapp.net'
+        ? [pnJid, lidJid]
+        : [pnJid, lidJid];
+
+    let nome = candidatos.map(jid => obterNomeContato(nomes, jid)).find(Boolean) || null;
+    const infos = nome ? [] : await Promise.all(candidatos.map(jid =>
+      identidade.resolveUsuarioInfo(jid, sock, nomes).catch(() => null)
+    ));
+
+    if (!nome) {
+      for (const info of infos) {
+        nome = nomeExibicaoValido(info?.userData?.nome)
+          || nomeExibicaoValido(info?.userData?.displayName);
+        if (nome) break;
+      }
+    }
+
+    if (!nome) return;
+
+    const aliases = new Set([pnJid, lidJid, `${numero}`]);
+    for (const info of infos) {
+      for (const alias of [info?.resolvedJid, info?.pnJid, info?.lidJid, info?.userData?.idWhatsApp]) {
+        if (typeof alias === 'string' && alias.includes('@')) aliases.add(alias);
+      }
+    }
+    for (const alias of aliases) nomes[alias] = nome;
+  }));
+
+  return nomes;
 }
 
 function buildLinhaTransacao(transacao, index, contactNames = {}, wallet = {}) {
@@ -109,7 +184,8 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
     const balanco = entradas - saidas;
     const sinalBalanco = balanco > 0 ? '+' : balanco < 0 ? '−' : '';
     const iconeBalanco = balanco > 0 ? '📈' : balanco < 0 ? '📉' : '⚖️';
-    const linhas = ultimas.map((t, i) => buildLinhaTransacao(t, i, contactNames, carteira || {}));
+    const nomesHistorico = await carregarNomesHistorico(ultimas, sock, contactNames);
+    const linhas = ultimas.map((t, i) => buildLinhaTransacao(t, i, nomesHistorico, carteira || {}));
 
     let texto = `📊 ═══ EXTRATO DE TRANSAÇÕES ═══ 📊\n\n` +
       `*ÚLTIMAS ${ultimas.length} MOVIMENTAÇÕES*\n` +
@@ -132,4 +208,4 @@ async function handleExtrato(sock, msg, jid, contactNames = {}) {
   }
 }
 
-module.exports = { handleExtrato, formatarDataHora, resolverNomesNoItem, buildLinhaTransacao, resumirTransacoes };
+module.exports = { handleExtrato, formatarDataHora, resolverNomesNoItem, extrairReferenciasDeTransacoes, carregarNomesHistorico, buildLinhaTransacao, resumirTransacoes };

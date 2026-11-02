@@ -8,6 +8,16 @@ function getJidBase(jid) {
   return jid.split('@')[0].split(':')[0];
 }
 
+// Preserva o domínio PN/LID no histórico para que o /extrato resolva a pessoa correta.
+function formatarReferenciaHistorico(jid) {
+  const base = getJidBase(jid);
+  if (!base) return '@desconhecido';
+  const dominio = String(jid || '').split('@').at(-1).toLowerCase();
+  return ['s.whatsapp.net', 'lid'].includes(dominio)
+    ? `@${base}@${dominio}`
+    : `@${base}`;
+}
+
 function erroComCodigo(mensagem, code, Tipo = Error) {
   const erro = new Tipo(mensagem);
   erro.code = code;
@@ -28,8 +38,8 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   }
 
   const label = (descricao || 'transferência').trim();
-  const descricaoDebito = `${label} para @${basePara}`;
-  const descricaoCredito = `${label} de @${baseDe}`;
+  const descricaoDebito = `${label} para ${formatarReferenciaHistorico(paraIdWhatsApp)}`;
+  const descricaoCredito = `${label} de ${formatarReferenciaHistorico(deIdWhatsApp)}`;
 
   // Em replica set, débito e crédito são confirmados juntos no MongoDB.
   let session;
@@ -58,7 +68,7 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
     return { de: carteiraDE, para: carteiraPARA };
   } catch (err) {
     try {
-      await alterarGold(deIdWhatsApp, idGrupo, val, `estorno: falha ao transferir para @${basePara}`);
+      await alterarGold(deIdWhatsApp, idGrupo, val, `estorno: falha ao transferir para ${formatarReferenciaHistorico(paraIdWhatsApp)}`);
     } catch (estornoErr) {
       console.error(`❌ FALHA CRÍTICA: débito de ${val} gold de ${deIdWhatsApp} não pôde ser estornado. Motivo original: ${err.message} | Motivo do estorno: ${estornoErr.message}`);
     }
@@ -66,4 +76,4 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
   }
 }
 
-module.exports = { transferirGold };
+module.exports = { transferirGold, formatarReferenciaHistorico };
