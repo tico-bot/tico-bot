@@ -5,6 +5,38 @@ const dns = require('node:dns').promises;
 const net = require('node:net');
 const sharp = require('sharp');
 const { createYoutubeRequestQueue } = require('./youtube-request-queue');
+const { getSenderJid, getAlternateSenderJids, normalizarJid } = require('../../utils/identity');
+
+const PENDING_MUSIC_TTL_MS = 10 * 60 * 1000;
+
+function getPendingMusicKeys(msg) {
+  const senderJid = getSenderJid(msg);
+  const candidates = [senderJid, senderJid ? normalizarJid(senderJid) : null, ...getAlternateSenderJids(msg)];
+  return [...new Set(candidates.filter(value => typeof value === 'string' && value.trim()))];
+}
+
+function findPendingMusicForMessage(pendingMusic, msg) {
+  if (!(pendingMusic instanceof Map)) return null;
+  for (const key of getPendingMusicKeys(msg)) {
+    const pending = pendingMusic.get(key);
+    if (pending) return pending;
+  }
+  return null;
+}
+
+function storePendingMusicForMessage(pendingMusic, msg, pending, ttlMs = PENDING_MUSIC_TTL_MS) {
+  if (!(pendingMusic instanceof Map)) throw new TypeError('pendingMusic precisa ser um Map.');
+  const keys = getPendingMusicKeys(msg);
+  if (keys.length === 0) throw new Error('Não foi possível identificar o remetente da música.');
+  for (const key of keys) pendingMusic.set(key, pending);
+  const timer = setTimeout(() => {
+    for (const key of keys) {
+      if (pendingMusic.get(key) === pending) pendingMusic.delete(key);
+    }
+  }, ttlMs);
+  timer.unref?.();
+  return keys;
+}
 const { fetchBuffer } = require(path.join(__dirname, '..', '..', 'fetchurl'));
 const { convertVideoToSticker } = require(path.join(__dirname, '..', '..', 'sticker'));
 
@@ -514,6 +546,55 @@ function normalizeYoutubeCookies(raw) {
   });
   if (!validYoutubeRow) throw new Error('nenhum cookie válido do domínio youtube.com');
   return content + '\n';
+}
+
+function createYoutubeCookieContext(id) {
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES;
+
+  if (youtubeCookiesEnv?.trim()) {
+    cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
+    try {
+      const normalizedCookies = normalizeYoutubeCookies(youtubeCookiesEnv);
+      fs.writeFileSync(cookieTempFile, normalizedCookies, { encoding: 'utf8', mode: 0o600 });
+      cookieFilePath = cookieTempFile;
+      log.info('✅ YOUTUBE_COOKIES válido (' + Buffer.byteLength(normalizedCookies) + ' bytes)');
+    } catch (error) {
+      safeDel(cookieTempFile);
+      cookieTempFile = null;
+      log.warn('[yt-dlp] YOUTUBE_COOKIES inválido:', error.message);
+    }
+  } else {
+    const local = path.join(__dirname, '../../youtube_cookies.txt');
+    if (fs.existsSync(local)) {
+      try {
+        normalizeYoutubeCookies(fs.readFileSync(local, 'utf8'));
+        cookieFilePath = local;
+        log.info('✅ Usando cookies locais do YouTube');
+      } catch (error) {
+        log.warn('[yt-dlp] youtube_cookies.txt inválido:', error.message);
+      }
+    } else {
+      log.warn('⚠️ Sem cookies do YouTube — pode falhar com autenticação');
+    }
+  }
+
+  return {
+    cookieArgs: cookieFilePath ? ['--cookies', cookieFilePath] : [],
+    cleanup() {
+      if (cookieTempFile) safeDel(cookieTempFile);
+    },
+  };
+}
+
+function argsWithoutYoutubeCookies(args) {
+  const result = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--cookies') { i++; continue; }
+    result.push(args[i]);
+  }
+  return result;
 }
 
 function parseYtDlpJson(stdout) {
@@ -1321,38 +1402,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
   const outTemplate = tmpPath(id, '.%(ext)s');
   const query = `ytsearch1:${nome} official audio`;
 
-  // ── Cookies do YouTube (sessão exportada em formato Netscape) ──
-  const youtubeCookiesEnv = process.env.YOUTUBE_COOKIES;
-  let cookieFilePath = null;
-  let cookieTempFile = null;
-  if (youtubeCookiesEnv?.trim()) {
-    cookieTempFile = tmpPath(id, '_youtube_cookies.txt');
-    try {
-      const normalizedCookies = normalizeYoutubeCookies(youtubeCookiesEnv);
-      fs.writeFileSync(cookieTempFile, normalizedCookies, { encoding: 'utf8', mode: 0o600 });
-      cookieFilePath = cookieTempFile;
-      log.info('✅ YOUTUBE_COOKIES válido (' + Buffer.byteLength(normalizedCookies) + ' bytes)');
-    } catch (e) {
-      safeDel(cookieTempFile);
-      cookieTempFile = null;
-      log.warn('[yt-dlp] YOUTUBE_COOKIES inválido:', e.message);
-    }
-  } else {
-    const local = path.join(__dirname, '../../youtube_cookies.txt');
-    if (fs.existsSync(local)) {
-      try {
-        normalizeYoutubeCookies(fs.readFileSync(local, 'utf8'));
-        cookieFilePath = local;
-        log.info('✅ Usando cookies locais do YouTube');
-      } catch (e) {
-        log.warn('[yt-dlp] youtube_cookies.txt inválido:', e.message);
-      }
-    } else {
-      log.warn('⚠️ Sem cookies do YouTube — pode falhar com autenticação');
-    }
-  }
-  const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
-  const cookieArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
+  const { cookieArgs, cleanup: cleanupCookie } = createYoutubeCookieContext(id);
 
   // Uma única pesquisa/extração: evita duplicar requisições ao YouTube em paralelo.
   const dlArgs = [
@@ -1427,9 +1477,7 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
     : null;
   const videoUrl    = meta?.webpage_url || meta?.url || null;
 
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  pendingMusic.set(senderJid, { audioBuffer, titulo, meta, nome });
-  setTimeout(() => pendingMusic.delete(senderJid), 10 * 60 * 1000);
+  storePendingMusicForMessage(pendingMusic, msg, { audioBuffer, titulo, meta, nome });
 
   let texto = `━━━ [ 🎧 *Tico* 🎧 ] ━━━\n\n`;
   texto += `🔎 *Pesquisa:* _${nome}_\n\n`;
@@ -1464,10 +1512,9 @@ async function handleSom(sock, msg, jid, caption, getPrefix, pendingMusic) {
 
 // !playmp4
 async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const pending = pendingMusic.get(senderJid);
+  const pending = findPendingMusicForMessage(pendingMusic, msg);
   const P = getPrefix(jid);
-  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
+  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Não encontrei uma música recente sua. Use *${P}play <música>* e, em seguida, *${P}playmp4* ou *${P}playdoc* em até 10 minutos.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
@@ -1483,10 +1530,24 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
     if (!target) return;
   }
 
-  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', '-o', rawPath, target];
-  const { ok: dlOk } = await ytDlp(ytdlp, dlArgs, 180000);
+  const { cookieArgs, cleanup: cleanupCookie } = createYoutubeCookieContext(id);
+  const dlArgs = [...getYtDlpArgs(), '--no-playlist', '-f', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '--max-filesize', '120m', ...cookieArgs, '-o', rawPath, target];
+  let downloadResult;
+  try {
+    downloadResult = await ytDlp(ytdlp, dlArgs, 180000);
+    if (!downloadResult.ok && cookieArgs.length && /sign in to confirm|login_required|confirm you.re not a bot/i.test(downloadResult.stderr || '')) {
+      log.warn('[yt-dlp] YouTube recusou a sessão enviada no playmp4; tentando uma vez sem cookies.');
+      downloadResult = await ytDlp(ytdlp, argsWithoutYoutubeCookies(dlArgs), 120000);
+    }
+  } finally {
+    cleanupCookie();
+  }
+  const { ok: dlOk } = downloadResult;
 
-  if (!dlOk || !fs.existsSync(rawPath)) return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+  if (!dlOk || !fs.existsSync(rawPath)) {
+    safeDel(rawPath, outPath);
+    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o vídeo.' }, { quoted: msg });
+  }
 
   const encOk = await ffmpeg(ffmpegBin, [
     '-y', '-i', rawPath,
@@ -1549,10 +1610,9 @@ async function handlePlayMp4(sock, msg, jid, getPrefix, pendingMusic) {
 
 // !playdoc
 async function handlePlayDoc(sock, msg, jid, getPrefix, pendingMusic) {
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const pending = pendingMusic.get(senderJid);
+  const pending = findPendingMusicForMessage(pendingMusic, msg);
   const P = getPrefix(jid);
-  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Nenhuma música recente. Use *${P}som <música>* primeiro.` }, { quoted: msg });
+  if (!pending) return sock.sendMessage(jid, { text: `⚠️ Não encontrei uma música recente sua. Use *${P}play <música>* e, em seguida, *${P}playmp4* ou *${P}playdoc* em até 10 minutos.` }, { quoted: msg });
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
@@ -1678,6 +1738,11 @@ module.exports = {
   handlePinterest:     safeHandler(handlePinterest),
   getYtDlpPath,
   getYtDlpArgs,
+  _getPendingMusicKeys: getPendingMusicKeys,
+  _createYoutubeCookieContext: createYoutubeCookieContext,
+  _argsWithoutYoutubeCookies: argsWithoutYoutubeCookies,
+  _findPendingMusicForMessage: findPendingMusicForMessage,
+  _storePendingMusicForMessage: storePendingMusicForMessage,
   _getYtDlpFfmpegLocation: getYtDlpFfmpegLocation,
   getYtDlpYouTubeArgs,
   _normalizeYoutubeCookies: normalizeYoutubeCookies,
