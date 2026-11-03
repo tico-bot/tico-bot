@@ -4,10 +4,12 @@
  */
 
 const path = require('path');
+const mongoose   = require('mongoose');
 const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
-const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { formatarSaldo } = carteiraService;
 
 // ─── DEFINIÇÃO DAS MISSÕES ──────────────────────────────────────────────────
 
@@ -225,6 +227,16 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
       return;
     }
 
+    // A economia do jogo é por grupo (CarteiraGrupo). Não permitir que o
+    // resgate em conversa privada credite Usuario.gold, que não é o saldo
+    // utilizado pelos comandos de Prata dentro dos grupos.
+    if (!jid.endsWith('@g.us')) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Resgate suas recompensas de missão dentro do grupo em que deseja receber as Pratas.'
+      }, { quoted: msg });
+      return;
+    }
+
     const progress    = state.progress?.[mission.id] ?? 0;
     const isCompleted = progress >= mission.target || !!state.completed?.[mission.id];
     const isClaimed   = !!state.claimed?.[mission.id];
@@ -258,25 +270,48 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
 
     // ── Concede recompensa atomicamente ───────────────────────────
     try {
-      const updated = await Usuario.findOneAndUpdate(
-        {
-          idWhatsApp: userId,
-          'dailyMissions.date': state.date,
-          [`dailyMissions.claimed.${mission.id}`]: { $ne: true }, // evita duplo resgate em race condition
-          $or: [
-            { [`dailyMissions.progress.${mission.id}`]: { $gte: mission.target } },
-            { [`dailyMissions.completed.${mission.id}`]: true },
-          ],
-        },
-        {
-          $set: {
-            [`dailyMissions.completed.${mission.id}`]: true,
-            [`dailyMissions.claimed.${mission.id}`]:   true,
-          },
-          $inc: { gold: mission.reward },
-        },
-        { new: true }
-      );
+      const session = await mongoose.startSession();
+      let updated = null;
+      let carteiraAtualizada = null;
+
+      try {
+        await session.withTransaction(async () => {
+          updated = await Usuario.findOneAndUpdate(
+            {
+              idWhatsApp: userId,
+              'dailyMissions.date': state.date,
+              [`dailyMissions.claimed.${mission.id}`]: { $ne: true }, // evita duplo resgate em race condition
+              $or: [
+                { [`dailyMissions.progress.${mission.id}`]: { $gte: mission.target } },
+                { [`dailyMissions.completed.${mission.id}`]: true },
+              ],
+            },
+            {
+              $set: {
+                [`dailyMissions.completed.${mission.id}`]: true,
+                [`dailyMissions.claimed.${mission.id}`]:   true,
+              },
+            },
+            { new: true, session }
+          );
+
+          if (!updated) return;
+
+          // Credita a carteira usada pelo restante da economia do grupo.
+          // A transação garante que a missão só fique resgatada se o crédito
+          // em CarteiraGrupo também for persistido.
+          carteiraAtualizada = await carteiraService.alterarGold(
+            userId,
+            jid,
+            mission.reward,
+            `Recompensa da missão: ${mission.label}`,
+            { session }
+          );
+          if (!carteiraAtualizada) throw new Error('Não foi possível confirmar o crédito na carteira do grupo.');
+        });
+      } finally {
+        await session.endSession();
+      }
 
       if (!updated) {
         // O estado pode ter mudado entre a leitura e a gravação (ex.: duas
@@ -301,7 +336,7 @@ async function handleMissao(sock, msg, jid, caption, getPrefix) {
           `🎉 *MISSÃO CONCLUÍDA!* 🎉\n\n` +
           `${mission.emoji} *${mission.label}*\n` +
           `💰 Recompensa: *${formatarSaldo(mission.reward)}* adicionada!\n` +
-          `💵 Seu saldo atual em Prata: *${formatarSaldo(updated.gold)}*\n\n` +
+          `💵 Seu saldo atual em Prata: *${formatarSaldo(carteiraAtualizada.gold)}*\n\n` +
           `_${mission.desc}_`
       }, { quoted: msg });
     } catch (e) {
