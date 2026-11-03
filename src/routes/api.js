@@ -1137,7 +1137,7 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover', 'definir', 'set'].includes(op))
       return res.status(400).json({ error: 'operacao deve ser "dar", "remover" ou "definir".' });
 
-    const jidsBusca = await resolverJidsBusca(termoOriginal);
+    const jidsBusca = await resolverJidsEquivalentes(termoOriginal);
     const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
 
     if (!eGlobal) {
