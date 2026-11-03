@@ -10,9 +10,15 @@
 
 const path = require('path');
 const fs   = require('fs');
+const mongoose = require('mongoose');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-const Usuario     = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
-const CasalEstado = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
+const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
+const CasalEstado   = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
+const Relacionamento = require(path.join(__dirname, '..', '..', 'models', 'Relacionamento'));
+const {
+  normalizarRegistro,
+  podeConverterNamoroEmCasamento,
+} = require(path.join(__dirname, '..', '..', 'utils', 'relacionamentos'));
 const { getGroupPrefix } = require(path.join(__dirname, '..', '..', 'utils', 'prefixos'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -113,38 +119,83 @@ function getRelacionamento(jid, a, b, relacionamentos) {
   return relacionamentos.get(relKey(jid, jidNormalizedUser(a), jidNormalizedUser(b))) || null;
 }
 
-async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now(), idGrupo = null) {
+async function syncCasamentoToDb(jidA, jidB, tipo = 'casamento', desde = Date.now(), idGrupo = null, nomeA = '', nomeB = '', xpInicial = 0) {
   const normA = jidNormalizedUser(jidA);
   const normB = jidNormalizedUser(jidB);
+  const registro = normalizarRegistro({
+    idGrupo,
+    jidA: normA,
+    jidB: normB,
+    tipo,
+    desde,
+    nomeA,
+    nomeB,
+    xpCasal: xpInicial,
+  });
+
+  if (!registro) {
+    throw new TypeError('Dados inválidos: não foi possível persistir o relacionamento.');
+  }
+
+  const session = await mongoose.startSession();
   try {
-    await Promise.all([
-      Usuario.findOneAndUpdate(
+    await session.withTransaction(async () => {
+      await Relacionamento.updateOne(
+        { chave: registro.chave },
+        { $set: registro },
+        { upsert: true, session }
+      );
+
+      const dataDesde = registro.desde;
+      await Usuario.updateOne(
         { idWhatsApp: normA },
-        { $set: { casadoCom: normB, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: normA } },
-        { upsert: true, new: true }
-      ),
-      Usuario.findOneAndUpdate(
+        { $set: { casadoCom: normB, casadoTipo: tipo, casadoDesde: dataDesde, casadoGrupo: idGrupo, xpCasal: xpInicial, idWhatsApp: normA } },
+        { upsert: true, session }
+      );
+      await Usuario.updateOne(
         { idWhatsApp: normB },
-        { $set: { casadoCom: normA, casadoTipo: tipo, casadoDesde: desde, casadoGrupo: idGrupo, idWhatsApp: normB } },
-        { upsert: true, new: true }
-      ),
-    ]);
+        { $set: { casadoCom: normA, casadoTipo: tipo, casadoDesde: dataDesde, casadoGrupo: idGrupo, xpCasal: xpInicial, idWhatsApp: normB } },
+        { upsert: true, session }
+      );
+    });
   } catch (e) {
-    console.error('⚠️ Erro ao sincronizar casamento no MongoDB:', e.message);
+    console.error('⚠️ Erro ao sincronizar relacionamento no MongoDB:', e.message);
+    throw e;
+  } finally {
+    await session.endSession();
   }
 }
 
-async function clearCasamentoDb(jidA, jidB) {
+async function clearCasamentoDb(jidA, jidB, idGrupo) {
   const normA = jidNormalizedUser(jidA);
   const normB = jidNormalizedUser(jidB);
+  if (!idGrupo || !String(idGrupo).endsWith('@g.us')) {
+    throw new TypeError('O grupo é obrigatório para encerrar o relacionamento.');
+  }
+
+  const chave = relKey(idGrupo, normA, normB);
   const limpar = { $set: { casadoCom: null, casadoTipo: null, casadoDesde: null, casadoGrupo: null, xpCasal: 0 } };
+  const session = await mongoose.startSession();
   try {
-    await Promise.all([
-      Usuario.updateOne({ idWhatsApp: normA }, limpar),
-      Usuario.updateOne({ idWhatsApp: normB }, limpar),
-    ]);
+    await session.withTransaction(async () => {
+      await Relacionamento.deleteOne({ chave }, { session });
+      await CasalEstado.deleteOne({ chave: `bonus:${chave}` }, { session });
+      await Usuario.updateOne(
+        { idWhatsApp: normA, casadoCom: normB, casadoGrupo: idGrupo },
+        limpar,
+        { session }
+      );
+      await Usuario.updateOne(
+        { idWhatsApp: normB, casadoCom: normA, casadoGrupo: idGrupo },
+        limpar,
+        { session }
+      );
+    });
   } catch (e) {
-    console.error('⚠️ Erro ao limpar casamento no MongoDB:', e.message);
+    console.error('⚠️ Erro ao limpar relacionamento no MongoDB:', e.message);
+    throw e;
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -388,10 +439,21 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     ? [jidANormalizado, jidBNormalizado].filter(Boolean)
     : [senderJidNormalizado];
 
-  Usuario.updateMany(
-    { idWhatsApp: { $in: jidsParaXp } },
-    { $inc: { xpCasal: ganho } }
-  ).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao persistir XP no DB:`, e.message));
+  const persistirXp = [
+    temRelacionamento
+      ? Usuario.updateMany(
+          { idWhatsApp: { $in: jidsParaXp }, casadoCom: { $in: jidsParaXp }, casadoGrupo: jid },
+          { $inc: { xpCasal: ganho } }
+        )
+      : Usuario.updateOne(
+          { idWhatsApp: senderJidNormalizado },
+          { $inc: { xpCasal: ganho } }
+        ),
+  ];
+  if (temRelacionamento) {
+    persistirXp.push(Relacionamento.updateOne({ chave: key }, { $inc: { xpCasal: ganho } }));
+  }
+  Promise.all(persistirXp).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao persistir XP no DB:`, e.message));
 
   // ── 4. Formatação da Resposta ──
   const tagRemetente = `@${numeroDe(senderJidNormalizado)}`;
@@ -422,6 +484,13 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 // ═══════════════════════════════════════════════════════════════
 
 async function handleRelacionamento(sock, msg, content, jid, author, tipo, relacionamentos, pedidosPendentes, contactNames) {
+  if (!String(jid || '').endsWith('@g.us')) {
+    await sock.sendMessage(jid, {
+      text: '💑 Os comandos /namoro e /casar precisam ser iniciados dentro do grupo em que o relacionamento ficará registrado.',
+    }, { quoted: msg });
+    return;
+  }
+
   const senderJid    = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
   const contextInfo  = content.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid || [];
@@ -476,14 +545,16 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
 
   const relacionamentoAtual = getRelacionamento(jid, senderJid, alvoJid, relacionamentos);
+  const chaveDoPar = relKey(jid, senderJid, alvoJid);
+  let atualizandoNamoro = false;
 
   if (tipo === 'casamento') {
     const tresDiasMs = 3 * 24 * 60 * 60 * 1000;
     if (!relacionamentoAtual || relacionamentoAtual.tipo !== 'namoro') {
-      await sock.sendMessage(jid, {
-        text: `💍 Calma lá! Antes de casar, vocês precisam estar namorando há pelo menos *3 dias*. Use *${prefixo(jid)}namorar @${alvoJid.split('@')[0]}* primeiro.`,
-        mentions: [alvoJid],
-      }, { quoted: msg });
+      const mensagem = relacionamentoAtual?.tipo === 'casamento'
+        ? '💍 Vocês já estão casados! Renovação de votos fica para outra ocasião. ❤️'
+        : `💍 Calma lá! Antes de casar, vocês precisam estar namorando há pelo menos *3 dias*. Use *${prefixo(jid)}namorar @${alvoJid.split('@')[0]}* primeiro.`;
+      await sock.sendMessage(jid, { text: mensagem, mentions: [alvoJid] }, { quoted: msg });
       return;
     }
 
@@ -498,6 +569,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
       }, { quoted: msg });
       return;
     }
+    atualizandoNamoro = true;
   }
 
   if (relacionamentoAtual && tipo !== 'casamento') {
@@ -513,7 +585,16 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
 
   const jaSender = findRelByJid(jid, senderJid, relacionamentos);
-  if (jaSender) {
+  const jaAlvoAtual = findRelByJid(jid, alvoJid, relacionamentos);
+  const mesmoCasal = atualizandoNamoro && podeConverterNamoroEmCasamento({
+    tipoPedido: tipo,
+    chave: chaveDoPar,
+    relacionamento: relacionamentoAtual,
+    relA: jaSender,
+    relB: jaAlvoAtual,
+  });
+
+  if (jaSender && !mesmoCasal) {
     const frases = [
       `💔 TRAIDOR(A)! Você já tem alguém! Quer derramar todo o drama com *${prefixo(jid)}terminar*? 😤`,
       `🤡 Boa tentativa de bigamia! Termina seu relacionamento primeiro, seu(ua) miserável!`,
@@ -526,7 +607,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   }
 
   const jaAlvo = findRelByJid(jid, alvoJid, relacionamentos);
-  if (jaAlvo) {
+  if (jaAlvo && !mesmoCasal) {
     const frases = [
       `😂 *${nomeAlvo}* JÁ tá comprometido(a)! Vai afastar esse lobisomem aí!`,
       `💔 Deprimente! *${nomeAlvo}* tá numa relação! Esse é o seu sinal pra desistir!`,
@@ -599,38 +680,84 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
-  if (pedido.timer) clearTimeout(pedido.timer);
-  pedidosPendentes.delete(senderNorm);
-  pedidosPendentes.delete(senderJid);
 
   const nomeAlvo = msg.pushName || contactNames[senderNorm] || senderNorm.split('@')[0];
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
   const pedinteNorm = jidNormalizedUser(jidPedinte);
   const grupoOrigem = jidOrigem || jid;
+  const key = relKey(grupoOrigem, senderNorm, pedinteNorm);
+  const relacionamentoAnterior = relacionamentos.get(key) || null;
+  const relSender = findRelByJid(grupoOrigem, senderNorm, relacionamentos);
+  const relPedinte = findRelByJid(grupoOrigem, pedinteNorm, relacionamentos);
 
-  // Durante os 5 minutos de espera, um dos dois pode ter entrado em outro relacionamento.
-  if (findRelByJid(grupoOrigem, senderNorm, relacionamentos) ||
-      findRelByJid(grupoOrigem, pedinteNorm, relacionamentos)) {
+  const atualizandoNamoro = podeConverterNamoroEmCasamento({
+    tipoPedido: tipo,
+    chave: key,
+    relacionamento: relacionamentoAnterior,
+    relA: relSender,
+    relB: relPedinte,
+  });
+
+  // O pedido de casamento é a única transição permitida sobre um relacionamento
+  // existente: o mesmo casal pode converter namoro em casamento após 3 dias.
+  if ((relSender || relPedinte) && !atualizandoNamoro) {
+    if (pedido.timer) clearTimeout(pedido.timer);
+    pedidosPendentes.delete(senderNorm);
+    pedidosPendentes.delete(senderJid);
     await sock.sendMessage(jid, {
       text: '⚠️ Um de vocês já está em outro relacionamento. O pedido foi cancelado.',
     }, { quoted: msg });
     return;
   }
 
-  const key   = relKey(grupoOrigem, senderNorm, pedinteNorm);
-  const agora = Date.now();
+  if (tipo === 'casamento' && !atualizandoNamoro) {
+    if (pedido.timer) clearTimeout(pedido.timer);
+    pedidosPendentes.delete(senderNorm);
+    pedidosPendentes.delete(senderJid);
+    await sock.sendMessage(jid, {
+      text: '⚠️ O namoro não está mais elegível para casamento. O pedido foi cancelado.',
+    }, { quoted: msg });
+    return;
+  }
 
+  const agora = Date.now();
+  const tipoFinal = tipo || 'casamento';
+  try {
+    // Persistir primeiro: se o MongoDB falhar, não anuncia nem ativa um estado
+    // que desapareceria no próximo reinício.
+    await syncCasamentoToDb(
+      pedinteNorm,
+      senderNorm,
+      tipoFinal,
+      agora,
+      grupoOrigem,
+      nomePedinte,
+      nomeAlvo,
+      atualizandoNamoro ? (xpCasais.get(key) || 0) : 0
+    );
+  } catch (error) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Não consegui salvar o relacionamento no banco de dados. Nada foi alterado; tente aceitar novamente em alguns instantes.',
+    }, { quoted: msg });
+    return;
+  }
+
+  if (pedido.timer) clearTimeout(pedido.timer);
+  pedidosPendentes.delete(senderNorm);
+  pedidosPendentes.delete(senderJid);
+
+  const xpAnterior = xpCasais.get(key) || 0;
   relacionamentos.set(key, {
-    tipo:    tipo || 'casamento',
-    nomeA:   nomePedinte,
-    nomeB:   nomeAlvo,
-    jidA:    pedinteNorm,
-    jidB:    senderNorm,
-    desde:   agora,
+    tipo: tipoFinal,
+    nomeA: nomePedinte,
+    nomeB: nomeAlvo,
+    jidA: pedinteNorm,
+    jidB: senderNorm,
+    desde: agora,
     idGrupo: grupoOrigem,
   });
-  xpCasais.set(key, 0);
-  await syncCasamentoToDb(pedinteNorm, senderNorm, tipo || 'casamento', agora, grupoOrigem);
+  // A conversão de namoro para casamento conserva todo o XP já conquistado.
+  xpCasais.set(key, atualizandoNamoro ? xpAnterior : 0);
 
   const frases = [
     `💍 CARALHOOOOO! *${nomePedinte}* e *${nomeAlvo}* são CASADOS AGORA! Corre gritando que ninguém acreditava! 😂💍`,
@@ -715,11 +842,19 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   const tagSelf = `@${numeroDe(senderNorm)}`;
   const tagParc = `@${numeroDe(parcJid)}`;
 
+  try {
+    // Só remove da memória depois que o término foi confirmado no MongoDB.
+    await clearCasamentoDb(senderNorm, parcJid, rel.idGrupo || jid);
+  } catch (error) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Não consegui registrar o término no banco de dados. O relacionamento continua ativo; tente novamente em alguns instantes.',
+    }, { quoted: msg });
+    return;
+  }
+
   relacionamentos.delete(key);
   xpCasais.delete(key);
-  xpBonus.delete(key); // o XP Dobro pertence ao casal: não deve sobrar depois do término
-  CasalEstado.deleteOne({ chave: `bonus:${key}` }).catch(() => {});
-  await clearCasamentoDb(senderNorm, parcJid);
+  xpBonus.delete(key); // o XP Dobro já foi removido no mesmo transaction do término.
 
   const expiry = Date.now() + 10 * 60 * 1000;
   bloqueados.set(senderNorm, expiry);

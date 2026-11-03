@@ -36,7 +36,11 @@ const CarteiraGrupo = require('./models/CarteiraGrupo');
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
 const { acquireLock, startHeartbeat, releaseLock } = require('./utils/instanceLock');
 const { acquireLockWithRetry } = require('./utils/acquireLockWithRetry');
-const { saveData } = require('./utils/persistence');
+const { saveData, relacionamentos } = require('./utils/persistence');
+const Usuario = require('./models/Usuario');
+const Relacionamento = require('./models/Relacionamento');
+const { hidratarRelacionamentos } = require('./utils/relacionamentos');
+const relacionamentoHandler = require('./handlers/relacionamento');
 
 // ─── Router & Handlers ────────────────────────────────────────────────────────
 // Fix #3: Conectado ao router.js modular!
@@ -445,6 +449,22 @@ async function main() {
   // A nova instância aguarda a antiga liberar o lock. Não desistir após 30s:
   // o Render pode encerrar a versão antiga só 60s depois da troca.
   const acquired = await acquireLockWithRetry({ acquireLock });
+  startHeartbeat();
+
+  // O MongoDB é a fonte de verdade dos relacionamentos. Recuperá-los antes de
+  // abrir o socket evita que mensagens cheguem enquanto o Map ainda está vazio.
+  try {
+    await hidratarRelacionamentos({
+      Usuario,
+      Relacionamento,
+      relacionamentos,
+      xpCasais: relacionamentoHandler.xpCasais,
+    });
+  } catch (err) {
+    console.error('❌ Não foi possível restaurar os relacionamentos do MongoDB. O WhatsApp não será iniciado:', err.message);
+    await releaseLock().catch(() => {});
+    return;
+  }
 
   // Só o processo que adquiriu o lock pode resetar os spawns automáticos.
   // A configuração de XP/níveis é persistente e não deve ser alterada no boot.
@@ -462,7 +482,6 @@ async function main() {
     return;
   }
 
-  startHeartbeat();
   startBot().catch(console.error);
 }
 
