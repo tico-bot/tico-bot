@@ -7,7 +7,7 @@ const path = require('path');
 const mongoose   = require('mongoose');
 const Usuario    = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
-const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const { normalizarJid, normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { formatarSaldo } = carteiraService;
 
@@ -39,8 +39,9 @@ async function getUserId(msg) {
   if (!norm.endsWith('@lid')) {
     try {
       const lidMap = await LidMapping.findOne({ pn: norm }).lean();
-      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
-        return lidMap.lid;
+      const lid = normalizarJidComDominio(lidMap?.lid, 'lid');
+      if (lid && await Usuario.exists({ idWhatsApp: lid })) {
+        return lid;
       }
     } catch {
       // Falha na consulta de mapeamento não deve travar o comando —

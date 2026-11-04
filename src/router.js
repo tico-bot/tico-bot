@@ -32,7 +32,8 @@ const {
 } = require('./utils/prefixos');
 
 // ─── Identidade / JID ─────────────────────────────────────────────────────
-const { normalizarJid, extrairNumero, registrarLidEMapping, getAlternateSenderJids } = require('./utils/identity');
+const { normalizarJid, extrairNumero, registrarLidEMapping, getAlternateSenderJids, getParticipantJids, resolveDisplayName } = require('./utils/identity');
+const { normalizarJidComDominio } = require('./utils/jid');
 
 // ─── Models ───────────────────────────────────────────────────────────────
 const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
@@ -86,22 +87,22 @@ async function avisarAdminsFalhaAntiLink(sock, jid, participanteJid) {
     console.error('[AntiLink] Não consegui consultar administradores para o alerta:', err.message);
   }
 
-  const autorTag = participanteJid ? `@${normalizeJidBase(participanteJid)}` : 'autor não identificado';
-  const tagsAdmins = admins.map(p => `@${normalizeJidBase(p.id)}`).join(' ');
-  const mentions = [...new Set([
-    ...admins.map(p => p.id),
-    ...(participanteJid ? [participanteJid] : []),
-  ])];
+  const autorTag = participanteJid
+    ? await resolveDisplayName(participanteJid, sock, contactNames, { fallback: 'um membro' })
+    : 'autor não identificado';
+  const tagsAdmins = (await Promise.all(admins.map(p => resolveDisplayName(
+    p.id, sock, contactNames, { candidateJids: getParticipantJids(p), preferredName: p.notify || p.name, fallback: 'Administrador' }
+  )))).map(nome => '*' + nome + '*').join(' · ');
 
   const texto =
     '🚨 *ANTI-LINK — AÇÃO NECESSÁRIA DOS ADMINISTRADORES* 🚨\n\n' +
-    `O membro ${autorTag} enviou uma mensagem de pagamento/convite com link suspeito.\n\n` +
+    `O membro *${autorTag}* enviou uma mensagem de pagamento/convite com link suspeito.\n\n` +
     '⚠️ O Tico Bot tentou remover o autor, mas não conseguiu. O bot pode estar sem cargo de administrador ou sem permissão para remover membros.\n\n' +
     (tagsAdmins
       ? `🛡️ *Administradores:* ${tagsAdmins}\n\nRemovam esse membro manualmente e verifiquem as permissões do bot.`
       : '⚠️ Não consegui consultar a lista de administradores. Verifiquem as permissões do bot e removam o autor manualmente.');
 
-  await sock.sendMessage(jid, { text: texto, mentions }).catch(err => {
+  await sock.sendMessage(jid, { text: texto }).catch(err => {
     console.error('[AntiLink] Não consegui enviar alerta aos administradores:', err.message);
   });
 }
@@ -154,9 +155,13 @@ function matchCmdStart(raw, cmdName) {
   return false;
 }
 
-function getSenderName(msg) {
+async function getSenderName(msg, sock, names = contactNames) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  return msg.pushName || senderJid?.split('@')[0] || 'Usuário';
+  return resolveDisplayName(senderJid, sock, names, {
+    candidateJids: getAlternateSenderJids(msg),
+    preferredName: msg.pushName,
+    fallback: 'Usuário',
+  });
 }
 
 // A proteção Anti-Link é uma exceção ao estado /bot off: ela deve continuar
@@ -203,9 +208,9 @@ async function handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid
         throw new Error(`WhatsApp não confirmou a remoção (status: ${resultadoRemocao?.status || 'sem resposta'}).`);
       }
 
+      const nomeParticipante = await resolveDisplayName(participanteJid, sock, contactNames, { fallback: 'um membro' });
       await sock.sendMessage(jid, {
-        text: `🚫 *@${participanteJid.split('@')[0].split(':')[0]}* foi removido automaticamente pelo Anti-Link por enviar uma mensagem de pagamento no grupo.`,
-        mentions: [participanteJid],
+        text: `🚫 *${nomeParticipante}* foi removido automaticamente pelo Anti-Link por enviar uma mensagem de pagamento no grupo.`,
       }).catch(() => {});
     } catch (err) {
       console.error('[AntiLink] Não consegui remover autor de mensagem de pagamento:', err.message);
@@ -224,11 +229,13 @@ async function handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid
       } catch (err) {
         console.error('[AntiLink] Não consegui remover mensagem:', err.message);
       }
+      const nomeRemetente = senderJid
+        ? await resolveDisplayName(senderJid, sock, contactNames, { fallback: 'Usuário' })
+        : 'Usuário';
       await sock.sendMessage(jid, {
         text: removida
-          ? `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, a mensagem foi removida pelo Anti-Link por conter links não autorizados ou anúncio suspeito de migração de grupo.`
-          : `🚫 *@${senderJid?.split('@')[0]?.split(':')[0] || 'usuário'}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
-        mentions: senderJid && senderJid !== jid ? [senderJid] : [],
+          ? `🚫 *${nomeRemetente}*, a mensagem foi removida pelo Anti-Link por conter links não autorizados ou anúncio suspeito de migração de grupo.`
+          : `🚫 *${nomeRemetente}*, há link fora da lista branca, mas não consegui remover a mensagem. Verifique se o bot é administrador.`,
       }).catch(() => {});
       return true;
     }
@@ -254,7 +261,7 @@ async function handleMessage(sock, msg) {
   const videoMsg  = content.videoMessage;
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const caption   = (imageMsg?.caption || videoMsg?.caption || textMsg || '').trim();
-  const author    = getSenderName(msg);
+  const author    = await getSenderName(msg, sock, contactNames);
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderAlternateJids = getAlternateSenderJids(msg);
 
@@ -302,15 +309,14 @@ async function handleMessage(sock, msg) {
   // ── Mute check (agora funciona perfeitamente com unmuteUser exportado!) ──
   if (isGroup && senderJid) {
     const senderNorm = normalizarJid(senderJid);
-    if (senderNorm && isMuted(jid, senderNorm)) {
+    if (senderNorm && isMuted(jid, senderNorm, senderAlternateJids)) {
       const chaveTimer = `mute:${jid}:${senderNorm}`;
 
       if (!global._muteTimers) global._muteTimers = new Map();
 
       if (!global._muteTimers.has(chaveTimer)) {
         await sock.sendMessage(jid, {
-          text: `🔇 *@${senderNorm.split('@')[0]}* está mutado! Será removido em *20 segundos* se falar novamente.`,
-          mentions: [senderJid],
+          text: `🔇 *${author}* está mutado! Será removido em *20 segundos* se falar novamente.`,
         }).catch(() => {});
 
         const timer = setTimeout(async () => {
@@ -319,11 +325,10 @@ async function handleMessage(sock, msg) {
           } catch (e) {
             console.error('❌ Erro ao remover mutado após cooldown:', e.message);
             await sock.sendMessage(jid, {
-              text: `⚠️ Não consegui remover @${senderNorm.split('@')[0]}. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
-              mentions: [senderJid],
+              text: `⚠️ Não consegui remover *${author}*. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
             }).catch(() => {});
           }
-          unmuteUser(jid, senderNorm);
+          unmuteUser(jid, senderNorm, senderAlternateJids);
           global._muteTimers.delete(chaveTimer);
         }, 20 * 1000);
 
@@ -352,9 +357,8 @@ async function handleMessage(sock, msg) {
           .then(resGroup => {
             if (resGroup?.levelUp) {
               sock.sendMessage(jid, {
-                text: `🎉 *@${senderNorm.split('@')[0]}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
+                text: `🎉 *${author}* subiu para o *Nível ${resGroup.level}*! 🏅\n` +
                       `_${bonusInfo.emoji} ${bonusInfo.bonusName}: +${xpGanho} XP por mensagem!_`,
-                mentions: [senderJid],
               }).catch(() => {});
             }
           })
@@ -381,14 +385,12 @@ async function handleMessage(sock, msg) {
         } catch (err) {
           console.error('[AntiFlood] Não consegui remover participante:', err.message);
           await sock.sendMessage(jid, {
-            text: `⚠️ Detectei flood de @${senderJid.split('@')[0]}, mas não consegui removê-lo. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
-            mentions: [senderJid],
+            text: `⚠️ Detectei flood de *${author}*, mas não consegui removê-lo. O *Tico Bot precisa ser administrador do grupo* para remover participantes.`,
           }).catch(() => {});
           return;
         }
         await sock.sendMessage(jid, {
-          text: `🚫 *@${senderJid.split('@')[0]}* foi removido por flood!`,
-          mentions: [senderJid],
+          text: `🚫 *${author}* foi removido por flood!`,
         });
         return;
       }
@@ -538,22 +540,22 @@ async function handleMessage(sock, msg) {
     const OtpCadastro = require('./models/OtpCadastro');
     const { hashOtpCode } = require('./utils/otp');
     const LidMapping = require('./models/LidMapping');
-    const senderBase = String(senderJid || '').split(':')[0].toLowerCase();
-    let pnInformado = String(msg.key.participantPn || '').split(':')[0].toLowerCase();
-    if (!pnInformado.endsWith('@s.whatsapp.net')) pnInformado = '';
+    const senderBase = normalizarJid(senderJid) || '';
+    let pnInformado = getAlternateSenderJids(msg).find(value => value.endsWith('@s.whatsapp.net')) || '';
     let mapaLid = null;
     if (!pnInformado && senderBase.endsWith('@lid')) {
       mapaLid = await LidMapping.findOne({ lid: senderBase }).lean();
-      pnInformado = String(mapaLid?.pn || '').toLowerCase();
+      const pnMapeado = normalizarJidComDominio(mapaLid?.pn, 's.whatsapp.net');
+      pnInformado = pnMapeado?.endsWith('@s.whatsapp.net') ? pnMapeado : '';
     }
-    if (senderBase.endsWith('@lid') && !pnInformado) {
+    if (!pnInformado && !senderBase.endsWith('@s.whatsapp.net')) {
       await sock.sendMessage(jid, { text: '❌ Não consegui confirmar sua identidade do WhatsApp. Tente novamente após enviar uma mensagem ao bot.' }, { quoted: msg });
       return;
     }
 
-    const rawNum = (pnInformado || senderBase).split('@')[0].replace(/\D/g, '');
+    const pnJid = pnInformado || senderBase;
+    const rawNum = extrairNumero(pnJid);
     if (!rawNum || rawNum.length < 8 || rawNum.length > 15) return;
-    const pnJid = `${rawNum}@s.whatsapp.net`;
     const mapaAtual = mapaLid || await LidMapping.findOne({ pn: pnJid }).lean();
     // Prefer the same canonical PN account selected by the website auth routes; only
     // fall back to a legacy LID document when no PN-backed account exists.
@@ -694,7 +696,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'rebaixar') || matchCmdStart(cmd, 'rebaixar '))
     { await grupoHandler.handlePromoverRebaixar(sock, msg, content, jid, 'demote', botJid, contactNames); return; }
   if (matchCmd(cmdWord, 'grupinfo') || matchCmd(cmdWord, 'grupoinfo'))
-    { await grupoHandler.handleGrupInfo(sock, msg, jid); return; }
+    { await grupoHandler.handleGrupInfo(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'listaadm'))
     { await grupoHandler.handleListaAdm(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'listamembros'))
@@ -892,7 +894,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'statuspet') || matchCmd(cmdWord, 'pet'))
     { await diversaoHandler.handleStatusPet(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'petrank') || matchCmd(cmdWord, 'rankpet'))
-    { await diversaoHandler.handlePetRank(sock, msg, jid); return; }
+    { await diversaoHandler.handlePetRank(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'pets'))
     { await diversaoHandler.handlePets(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
@@ -981,7 +983,7 @@ async function handleMessage(sock, msg) {
     return;
   }
   if (matchCmd(cmdWord, 'ranklevel') || matchCmd(cmdWord, 'ranknivel') || matchCmd(cmdWord, 'rankxp') || matchCmd(cmdWord, 'toplevel') || matchCmd(cmdWord, 'topnivel'))
-    { await utilidadeHandler.handleRankLevel(sock, msg, jid); return; }
+    { await utilidadeHandler.handleRankLevel(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'alteradores'))  { await utilidadeHandler.handleAlteradores(sock, msg, jid, getPrefix); return; }
   if (matchCmdStart(cmd, 'qrcode ')      || matchCmd(cmdWord, 'qrcode'))      { await utilidadeHandler.handleQrcode(sock, msg, jid, caption);       return; }
   if (matchCmdStart(cmd, 'encurtar ')    || matchCmd(cmdWord, 'encurtar'))    { await utilidadeHandler.handleEncurtar(sock, msg, jid, caption);     return; }
@@ -1142,7 +1144,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'meuaniversario'))
     { await aniversarioHandler.handleMeuAniversario(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'listaniversarios'))
-    { await aniversarioHandler.handleListAniversarios(sock, msg, jid); return; }
+    { await aniversarioHandler.handleListAniversarios(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'sistemaniversario')) {
     const isAdm = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids).catch(() => false);
     await aniversarioHandler.handleSistemaAniversario(sock, msg, jid, isAdm);

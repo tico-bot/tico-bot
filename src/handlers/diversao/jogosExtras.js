@@ -3,7 +3,7 @@
 // ─── Jogos extras: forca, adivinha, velha, contas ─────────────────────────────
 // Estado em memória, um jogo por grupo. Expira sozinho (TTL) se ninguém jogar.
 
-const { normalizarJid } = require('../../utils/identity');
+const { normalizarJid, getAlternateSenderJids, sameWhatsAppIdentity } = require('../../utils/identity');
 
 const TTL_MS          = 10 * 60 * 1000;
 const TTL_PENDENTE_MS = 2 * 60 * 1000;
@@ -14,7 +14,7 @@ const TTL_CHARADA_MS  = 60 * 1000;
 const num      = j => (j || '').split(':')[0].split('@')[0];
 const sender   = msg => msg.key.participant || msg.key.remoteJid;
 const norm     = j => { try { const r = normalizarJid(j); return typeof r === 'string' && r ? r : j; } catch { return j; } };
-const mesmo    = (a, b) => !!a && !!b && num(norm(a)) === num(norm(b));
+const mesmo    = (a, b, sock, aliasesA = [], aliasesB = []) => sameWhatsAppIdentity(a, b, sock, aliasesA, aliasesB);
 const limparResp = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   .replace(/[^a-z0-9 ]/g, '').replace(/^(a|o|um|uma)\s+/, '').trim();
 function encerrar(map, jid) {
@@ -359,14 +359,14 @@ async function handleVelha(sock, msg, content, jid, caption, getPrefix) {
 
   if (arg === 'parar') {
     if (!g) return reply(sock, msg, jid, '⚠️ Não há partida em andamento.');
-    if (!mesmo(quem, g.x) && !mesmo(quem, g.o)) return reply(sock, msg, jid, '⚠️ Só os jogadores podem encerrar a partida.');
+    if (!(await mesmo(quem, g.x, sock, getAlternateSenderJids(msg))) && !(await mesmo(quem, g.o, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, '⚠️ Só os jogadores podem encerrar a partida.');
     velhaState.delete(jid);
     return reply(sock, msg, jid, '🛑 Partida encerrada.');
   }
 
   if (arg === 'aceitar') {
     if (!g || g.estado !== 'pendente') return reply(sock, msg, jid, '⚠️ Não há desafio pendente.');
-    if (!mesmo(quem, g.o)) return reply(sock, msg, jid, '⚠️ Só o desafiado pode aceitar.');
+    if (!(await mesmo(quem, g.o, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, '⚠️ Só o desafiado pode aceitar.');
     g.estado = 'jogando';
     g.expira = Date.now() + TTL_MS;
     return reply(sock, msg, jid,
@@ -380,7 +380,7 @@ async function handleVelha(sock, msg, content, jid, caption, getPrefix) {
   const ctx  = content?.extendedTextMessage?.contextInfo;
   const alvo = ctx?.mentionedJid?.[0] || ctx?.participant;
   if (!alvo) return reply(sock, msg, jid, `⚠️ Use: *${P}velha @fulano* (ou responda a mensagem dele)`);
-  if (mesmo(alvo, quem)) return reply(sock, msg, jid, '⚠️ Você não pode jogar contra você mesmo.');
+  if (await mesmo(alvo, quem, sock, [], getAlternateSenderJids(msg))) return reply(sock, msg, jid, '⚠️ Você não pode jogar contra você mesmo.');
 
   velhaState.set(jid, {
     estado: 'pendente', x: quem, o: alvo,
@@ -397,8 +397,8 @@ async function handleJogar(sock, msg, jid, caption) {
 
   const quem = sender(msg);
   const jogadorDaVez = g.vez === 'x' ? g.x : g.o;
-  if (!mesmo(quem, g.x) && !mesmo(quem, g.o)) return reply(sock, msg, jid, '⚠️ Você não está nessa partida.');
-  if (!mesmo(quem, jogadorDaVez)) return reply(sock, msg, jid, '⏳ Não é a sua vez.');
+  if (!(await mesmo(quem, g.x, sock, getAlternateSenderJids(msg))) && !(await mesmo(quem, g.o, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, '⚠️ Você não está nessa partida.');
+  if (!(await mesmo(quem, jogadorDaVez, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, '⏳ Não é a sua vez.');
 
   const txtPos = argsDe(caption);
   const pos = /^\d$/.test(txtPos) ? parseInt(txtPos, 10) : NaN;
@@ -620,7 +620,7 @@ async function handleBatata(sock, msg, jid, caption, getPrefix) {
 
   if (argsDe(caption).toLowerCase() === 'parar') {
     if (!g) return reply(sock, msg, jid, '⚠️ Não há batata em andamento.');
-    if (!mesmo(quem, g.holder)) return reply(sock, msg, jid, '⚠️ Só quem está com a batata pode encerrar.');
+    if (!(await mesmo(quem, g.holder, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, '⚠️ Só quem está com a batata pode encerrar.');
     encerrar(batataState, jid);
     return reply(sock, msg, jid, '🛑 Batata jogada fora. Fim de jogo.');
   }
@@ -650,12 +650,12 @@ async function handlePassar(sock, msg, content, jid) {
   if (!g) return reply(sock, msg, jid, '⚠️ Não há batata em andamento. Use *batata* para começar.');
 
   const quem = sender(msg);
-  if (!mesmo(quem, g.holder)) return reply(sock, msg, jid, `⚠️ Você não está com a batata. Ela está com @${num(g.holder)}.`, [g.holder]);
+  if (!(await mesmo(quem, g.holder, sock, getAlternateSenderJids(msg)))) return reply(sock, msg, jid, `⚠️ Você não está com a batata. Ela está com @${num(g.holder)}.`, [g.holder]);
 
   const ctx  = content?.extendedTextMessage?.contextInfo;
   const alvo = ctx?.mentionedJid?.[0] || ctx?.participant;
   if (!alvo) return reply(sock, msg, jid, '⚠️ Marque alguém ou responda a mensagem dele. Ex: *passar @fulano*');
-  if (mesmo(alvo, quem)) return reply(sock, msg, jid, '⚠️ Você não pode passar a batata para você mesmo!');
+  if (await mesmo(alvo, quem, sock, [], getAlternateSenderJids(msg))) return reply(sock, msg, jid, '⚠️ Você não pode passar a batata para você mesmo!');
 
   g.holder = alvo;
   g.passes++;
@@ -673,7 +673,7 @@ async function handleDuelo(sock, msg, content, jid) {
   const alvo = ctx?.mentionedJid?.[0] || ctx?.participant;
 
   if (!alvo) return reply(sock, msg, jid, '⚠️ Use: *duelo @fulano*');
-  if (mesmo(alvo, quem)) return reply(sock, msg, jid, '⚠️ Você não pode duelar contra você mesmo.');
+  if (await mesmo(alvo, quem, sock, [], getAlternateSenderJids(msg))) return reply(sock, msg, jid, '⚠️ Você não pode duelar contra você mesmo.');
 
   let a, b;
   do { a = rand(1, 100); b = rand(1, 100); } while (a === b);

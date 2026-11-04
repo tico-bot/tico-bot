@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { resolveDisplayName } = require('../../utils/identity');
 
 async function safeReact(sock, jid, msgKey, emoji) {
   try {
@@ -188,7 +189,7 @@ async function handleSayFofoca(sock, msg, content, jid, author, contactNames) {
   const ctx = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = ctx?.mentionedJid?.[0] || null;
   const targetJid = mentionedJid || msg.key.participant || msg.key.remoteJid;
-  const nomeAlvo = contactNames?.[targetJid] || `@${targetJid.split('@')[0].split(':')[0]}`;
+  const nomeAlvo = await resolveDisplayName(targetJid, sock, contactNames, { preferredName: mentionedJid ? undefined : msg.pushName });
 
   const fofocas = [
     `👀 Vazou! *${nomeAlvo}* foi visto(a) conversando no privado por 3 horas seguidas ontem à noite!`,

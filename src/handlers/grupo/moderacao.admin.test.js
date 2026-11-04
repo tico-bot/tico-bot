@@ -27,6 +27,7 @@ function makeHarness(participants = [
       updates.push({ jid, jids, action });
     },
     async sendMessage(_jid, payload) { replies.push(payload); },
+    getName(jid) { return jid === target ? 'Membro teste' : null; },
   };
   const msg = {
     key: { remoteJid: group, participant: admin },

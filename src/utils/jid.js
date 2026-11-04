@@ -73,4 +73,51 @@ function extrairNumero(jid) {
   return parsed.userPart.replace(/\D/g, '');
 }
 
-module.exports = { normalizarJid, extrairNumero };
+
+/**
+ * Normaliza um identificador de usuário informado manualmente.
+ * Aceita telefone numérico sem domínio, PN (@s.whatsapp.net) ou LID (@lid).
+ * Rejeita JIDs opacos/hexadecimais para impedir carteiras órfãs com IDs que
+ * parecem telefones apenas porque os caracteres não numéricos foram removidos.
+ *
+ * @param {*} rawJid
+ * @returns {string|null}
+ */
+/**
+ * Normaliza um campo cuja semântica já define o domínio do JID.
+ * Útil para participant.pn / participant.lid quando a biblioteca omite o domínio.
+ */
+function normalizarJidComDominio(rawJid, domain) {
+  if (!['s.whatsapp.net', 'lid'].includes(domain) || typeof rawJid !== 'string') return null;
+  const value = rawJid.trim().toLowerCase();
+  if (!value) return null;
+  if (value.includes('@')) {
+    const normalized = normalizarJid(value);
+    if (!normalized || normalized.split('@')[1] !== domain) return null;
+    return normalizarJidUsuario(normalized);
+  }
+  if (!/^\d+$/.test(value)) return null;
+  return normalizarJidUsuario(`${value}@${domain}`);
+}
+
+function normalizarJidUsuario(rawJid) {
+  if (typeof rawJid !== 'string') return null;
+  const valor = rawJid.trim().toLowerCase();
+  if (!valor) return null;
+
+  const jid = valor.includes('@')
+    ? normalizarJid(valor)
+    : (/^\d+$/.test(valor) ? `${valor}@s.whatsapp.net` : null);
+  if (!jid) return null;
+
+  const parsed = splitJid(jid);
+  if (!parsed || !['s.whatsapp.net', 'lid'].includes(parsed.domain)) return null;
+  if (!/^\d+$/.test(parsed.userPart)) return null;
+  const minLength = 7;
+  const maxLength = parsed.domain === 'lid' ? 20 : 15;
+  if (parsed.userPart.length < minLength || parsed.userPart.length > maxLength) return null;
+
+  return `${parsed.userPart}@${parsed.domain}`;
+}
+
+module.exports = { normalizarJid, extrairNumero, normalizarJidUsuario, normalizarJidComDominio };

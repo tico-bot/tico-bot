@@ -3,22 +3,17 @@
 const path = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 const { formatWalletAmount } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
+const { resolveDisplayName, getParticipantJids } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const LidMapping = require(path.join(__dirname, '..', '..', '..', 'models', 'LidMapping'));
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio } = require(path.join(__dirname, '..', '..', '..', 'utils', 'jid'));
 
 const TOP_LIMIT = 10;
 const BAR_SIZE = 10;
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-function normalizarJid(jid) {
-  if (typeof jid !== 'string') return '';
-  const value = jid.trim().toLowerCase();
-  const [user, server] = value.split('@');
-  return user && server ? `${user.split(':')[0]}@${server}` : '';
-}
-
 function adicionarIdentificadores(set, jid) {
-  const original = typeof jid === 'string' ? jid.trim().toLowerCase() : '';
-  const normalizado = normalizarJid(original);
-  if (original) set.add(original);
+  if (typeof jid !== 'string' || !jid.includes('@')) return;
+  const normalizado = normalizarJidUsuario(jid);
   if (normalizado) set.add(normalizado);
 }
 
@@ -43,7 +38,7 @@ function numeroExibicao(jid) {
 }
 
 // !rankprata — ranking de saldos dos membros que ainda estão no grupo.
-async function handleRankGold(sock, msg, jid) {
+async function handleRankGold(sock, msg, jid, contactNames = {}) {
   if (typeof jid !== 'string' || !jid.endsWith('@g.us')) {
     if (jid) {
       await sock.sendMessage(jid, {
@@ -59,9 +54,23 @@ async function handleRankGold(sock, msg, jid) {
     const membrosAtuais = new Set();
 
     for (const participante of participantes) {
-      adicionarIdentificadores(membrosAtuais, participante?.id);
-      adicionarIdentificadores(membrosAtuais, participante?.lid);
-      adicionarIdentificadores(membrosAtuais, participante?.phoneNumber);
+      for (const identidade of getParticipantJids(participante)) {
+        adicionarIdentificadores(membrosAtuais, identidade);
+      }
+    }
+
+    const pnsMembros = [...membrosAtuais].filter(value => value.endsWith('@s.whatsapp.net'));
+    const lidsMembros = [...membrosAtuais].filter(value => value.endsWith('@lid'));
+    const condicoesMapa = [
+      ...(pnsMembros.length ? [{ pn: { $in: pnsMembros } }] : []),
+      ...(lidsMembros.length ? [{ lid: { $in: lidsMembros } }] : []),
+    ];
+    if (condicoesMapa.length) {
+      const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+      for (const mapa of mapas) {
+        adicionarIdentificadores(membrosAtuais, normalizarJidComDominio(mapa.pn, 's.whatsapp.net'));
+        adicionarIdentificadores(membrosAtuais, normalizarJidComDominio(mapa.lid, 'lid'));
+      }
     }
 
     if (!participantes.length) {
@@ -94,17 +103,14 @@ async function handleRankGold(sock, msg, jid) {
     }
 
     const maiorSaldo = Math.max(...top.map(usuario => saldoSeguro(usuario.gold)), 1);
-    const mentions = [];
-    const linhas = top.map((usuario, indice) => {
+    const linhas = await Promise.all(top.map(async (usuario, indice) => {
       const jidUsuario = String(usuario.idWhatsApp).trim().toLowerCase();
+      const nome = await resolveDisplayName(jidUsuario, sock, contactNames, { fallback: 'Participante' });
       const saldo = saldoSeguro(usuario.gold);
-      const identificador = jidUsuario.includes('@') ? jidUsuario : '';
-      if (identificador) mentions.push(identificador);
-
-      const medalha = MEDALS[indice] || `🔹 *${indice + 1}.*`;
+      const medalha = MEDALS[indice] || '🔹 *' + (indice + 1) + '.*';
       const barra = barraProgresso(saldo, maiorSaldo);
-      return `${medalha} @${numeroExibicao(jidUsuario)}\n   ${barra} ${formatWalletAmount(saldo)}`;
-    });
+      return medalha + ' *' + nome + '*\n   ' + barra + ' ' + formatWalletAmount(saldo);
+    }));
 
     await sock.sendMessage(jid, {
       text: `💰 *RANKING DE PRATA — TOP ${top.length}* 💰\n` +
@@ -112,7 +118,6 @@ async function handleRankGold(sock, msg, jid) {
         `${linhas.join('\n\n')}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
         `⛏️ Use *!garimpar* para ganhar Prata e subir no ranking!`,
-      mentions: [...new Set(mentions)],
     }, { quoted: msg });
   } catch (err) {
     console.error('[RankingPrata] Falha ao carregar ranking:', err);

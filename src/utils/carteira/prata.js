@@ -3,6 +3,7 @@
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const LidMapping    = require('../../models/LidMapping');
 const { normalizarJid } = require('../identity');
+const { normalizarJidComDominio } = require('../jid');
 
 const GOLD_HISTORY_LIMITE = 50;
 
@@ -49,9 +50,33 @@ function equipamentoValido(carteiras, campo, inventario) {
 
 async function resolverJidsEquivalentes(idWhatsApp) {
   const jidNorm = normalizarJid(idWhatsApp);
-  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-  const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-  return [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+  if (!jidNorm) return [];
+
+  const ids = new Set([jidNorm]);
+  const variantesPn = jidNorm.endsWith('@s.whatsapp.net')
+    ? gerarVariantesNumero(jidNorm.split('@')[0]).map(d => `${d}@s.whatsapp.net`)
+    : [];
+  for (const pn of variantesPn) ids.add(pn);
+
+  const condicoes = [
+    ...(jidNorm.endsWith('@lid') ? [{ lid: jidNorm }] : []),
+    ...(variantesPn.length ? [{ pn: { $in: variantesPn } }] : []),
+  ];
+  if (condicoes.length) {
+    const mapas = await LidMapping.find({ $or: condicoes }).select('lid pn').lean();
+    for (const mapa of mapas) {
+      const lid = normalizarJidComDominio(mapa.lid, 'lid');
+      const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+      if (lid?.endsWith('@lid')) ids.add(lid);
+      if (pn?.endsWith('@s.whatsapp.net')) {
+        ids.add(pn);
+        for (const variante of gerarVariantesNumero(pn.split('@')[0])) {
+          ids.add(`${variante}@s.whatsapp.net`);
+        }
+      }
+    }
+  }
+  return [...ids];
 }
 
 async function getCarteira(idWhatsApp, idGrupo) {

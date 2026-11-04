@@ -8,7 +8,11 @@ function normalizeJid(jid) {
 }
 
 function phoneVariants(jid) {
-  const digits = String(jid || '').split('@')[0].replace(/\D/g, '');
+  const normalized = normalizeJid(jid);
+  if (!normalized.endsWith('@s.whatsapp.net')) return [];
+  const userPart = normalized.split('@')[0];
+  if (!/^\d+$/.test(userPart)) return [];
+  const digits = userPart;
   const variants = new Set([digits]);
   if (digits.startsWith('55') && digits.length >= 12) {
     const ddd = digits.slice(2, 4);

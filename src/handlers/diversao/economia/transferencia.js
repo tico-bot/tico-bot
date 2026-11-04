@@ -3,7 +3,7 @@
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira, transferirGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
-const { resolveUserFromMsg, resolveGlobalId, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { resolveUserFromMsg, resolveGlobalId, extrairNumero, getAlternateSenderJids, getParticipantJids, sameWhatsAppIdentity } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
@@ -124,7 +124,7 @@ async function handlePix(sock, msg, jid, caption) {
 
   const { targetJid, numeroPura, quantia } = parsed;
 
-  if (getNumeroPuro(userId) === getNumeroPuro(targetJid)) {
+  if (await sameWhatsAppIdentity(userId, targetJid, sock, getAlternateSenderJids(msg), [])) {
     await sock.sendMessage(jid, {
       text: '⚠️ Você não pode fazer PIX para si mesmo!',
     }, { quoted: msg });
@@ -198,8 +198,21 @@ async function handlePixMulti(sock, msg, jid, caption) {
     return;
   }
 
-  const targets = Array.from(new Set(mentions.map(m => jidNormalizedUser(m))))
-    .filter(t => getNumeroPuro(t) !== getNumeroPuro(userId));
+  const targets = [];
+  const senderAliases = getAlternateSenderJids(msg);
+  for (const mention of mentions) {
+    const target = jidNormalizedUser(mention);
+    if (!target) continue;
+    if (await sameWhatsAppIdentity(target, userId, sock, [], senderAliases)) continue;
+    let duplicado = false;
+    for (const existente of targets) {
+      if (await sameWhatsAppIdentity(target, existente, sock)) {
+        duplicado = true;
+        break;
+      }
+    }
+    if (!duplicado) targets.push(target);
+  }
 
   if (targets.length === 0) {
     await sock.sendMessage(jid, { text: '⚠️ Nenhum destinatário válido selecionado.' }, { quoted: msg });
@@ -275,15 +288,21 @@ async function handlePixDoar(sock, msg, jid, caption) {
     return;
   }
 
-  const userBase = getNumeroPuro(userId);
-  const botBase  = getNumeroPuro(sock.user?.id || '');
-
-  const participantes = groupMeta.participants
-    .map(p => jidNormalizedUser(p.id))
-    .filter(p => {
-      const base = getNumeroPuro(p);
-      return base !== userBase && base !== botBase;
-    });
+  const botIdentidades = getParticipantJids(sock.user);
+  const senderAliases = getAlternateSenderJids(msg);
+  const participantes = [];
+  for (const participante of groupMeta.participants || []) {
+    const aliasesParticipante = getParticipantJids(participante);
+    const participanteJid = aliasesParticipante[0];
+    if (!participanteJid) continue;
+    const ehRemetente = await sameWhatsAppIdentity(
+      participanteJid, userId, sock, aliasesParticipante, senderAliases
+    );
+    const ehBot = botIdentidades.length
+      ? await sameWhatsAppIdentity(participanteJid, botIdentidades[0], sock, aliasesParticipante, botIdentidades.slice(1))
+      : false;
+    if (!ehRemetente && !ehBot) participantes.push(participanteJid);
+  }
 
   if (participantes.length === 0) {
     await sock.sendMessage(jid, { text: '⚠️ Nenhum membro elegível para receber a doação.' }, { quoted: msg });
@@ -338,7 +357,7 @@ async function handleGive(sock, msg, jid, caption) {
     return;
   }
 
-  if (getNumeroPuro(targetNorm) === getNumeroPuro(userId)) {
+  if (await sameWhatsAppIdentity(targetNorm, userId, sock, [], getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, {
       text: '😂 Você não pode dar item pra si mesmo!',
     }, { quoted: msg });

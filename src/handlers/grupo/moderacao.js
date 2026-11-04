@@ -3,8 +3,8 @@
 const fs   = require('fs');
 const path = require('path');
 const Usuario = require('../../models/Usuario');
-const { normalizarJid } = require('../../utils/jid');
-const { resolveUsuarioInfo } = require('../../utils/identity');
+const { normalizarJid, normalizarJidUsuario } = require('../../utils/jid');
+const { resolveDisplayName, resolveUsuarioInfo, getParticipantJids } = require('../../utils/identity');
 
 const {
   somenteGrupo,
@@ -25,12 +25,18 @@ const BAN_IMAGE_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'im
 const BAN_VIDEO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'ban.mp4');
 const BAN_AUDIO_PATH = path.join(__dirname, '..', '..', '..', 'Audio-Image', 'audioban.mp4');
 
+function getContextTargetJids(content) {
+  const context = content?.extendedTextMessage?.contextInfo;
+  return [...(context?.mentionedJid || []), context?.participant]
+    .filter(value => typeof value === 'string' && value.trim());
+}
+
 function getSenderIdentity(msg) {
   const rawSender = msg?.key?.participant || msg?.key?.remoteJid;
   const senderJids = [...new Set([rawSender, ...getAlternateSenderJids(msg)]
     .filter(Boolean)
-    .map(jid => normalizarJid(jid) || jid))];
-  const senderBases = new Set(senderJids.map(normalizeJidBase).filter(Boolean));
+    .map(jid => normalizarJidUsuario(jid) || jid))];
+  const senderBases = new Set(senderJids.map(normalizarJidUsuario).filter(Boolean));
   return { senderJids, senderBases };
 }
 
@@ -46,7 +52,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
   if (!await checkAdmin(sock, msg, jid, 'ban')) return;
 
   const senderJid  = msg.key.participant || msg.key.remoteJid;
-  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizeJidBase).filter(Boolean));
+  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizarJidUsuario).filter(Boolean));
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
@@ -69,11 +75,10 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     const targets = meta.participants
       .filter(p => {
         if (!p) return false;
-        if (isBotJid(p.id, botJid)) return false;
+        if (isBotJid(p.id, botJid, getParticipantJids(p))) return false;
         if (p.admin) return false; // Proteção: ignora outros admins!
-        const base    = normalizeJidBase(p.id);
-        const baseLid = normalizeJidBase(p.lid || '');
-        return !senderBases.has(base) && !senderBases.has(baseLid);
+        const participantIds = getParticipantJids(p);
+        return !participantIds.some(id => senderBases.has(id));
       })
       .map(p => p.id);
 
@@ -129,7 +134,7 @@ async function handleBan(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  if (senderBases.has(normalizeJidBase(targetJid))) {
+  if (senderBases.has(normalizarJidUsuario(targetJid))) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode banir a si mesmo.' }, { quoted: msg });
     return;
   }
@@ -191,7 +196,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   if (!await checkAdmin(sock, msg, jid, 'mute')) return;
 
   const senderJid  = msg.key.participant || msg.key.remoteJid;
-  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizeJidBase).filter(Boolean));
+  const senderBases = new Set([senderJid, ...getAlternateSenderJids(msg)].map(normalizarJidUsuario).filter(Boolean));
   const textCmd    = (content.conversation || content.extendedTextMessage?.text || '').toLowerCase();
   const isAll      = /@all/.test(textCmd);
 
@@ -214,11 +219,10 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     const targets = meta.participants
       .filter(p => {
         if (!p) return false;
-        if (isBotJid(p.id, botJid)) return false;
+        if (isBotJid(p.id, botJid, getParticipantJids(p))) return false;
         if (p.admin) return false; // Proteção: ignora admins!
-        const base    = normalizeJidBase(p.id);
-        const baseLid = normalizeJidBase(p.lid || '');
-        return !senderBases.has(base) && !senderBases.has(baseLid);
+        const participantIds = getParticipantJids(p);
+        return !participantIds.some(id => senderBases.has(id));
       })
       .map(p => p.id);
 
@@ -251,12 +255,11 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  const tag = `@${normalizeJidBase(targetJid)}`;
+  const nomeAlvo = await resolveDisplayName(targetJid, sock, contactNames, { fallback: 'Participante' });
 
   if (isMuted(jid, targetJid)) {
     await sock.sendMessage(jid, {
-      text: `ℹ️ *${tag}* já está mutado(a).`,
-      mentions: [targetJid],
+      text: `ℹ️ *${nomeAlvo}* já está mutado(a).`,
     }, { quoted: msg });
     return;
   }
@@ -264,8 +267,7 @@ async function handleMute(sock, msg, content, jid, botJid, contactNames) {
   muteUser(jid, targetJid);
 
   await sock.sendMessage(jid, {
-    text: `🔇 *${tag}* foi mutado(a)!\n_Se falar, o Tico tentará removê-lo(a) em 20s. Para isso, precisa ser administrador do grupo._`,
-    mentions: [targetJid],
+    text: `🔇 *${nomeAlvo}* foi mutado(a)!\n_Se falar, o Tico tentará removê-lo(a) em 20s. Para isso, precisa ser administrador do grupo._`,
   }, { quoted: msg });
 }
 
@@ -309,7 +311,7 @@ async function handleDesmute(sock, msg, content, jid, botJid, contactNames) {
     return;
   }
 
-  const nome = contactNames?.[targetJid] || `@${normalizeJidBase(targetJid)}`;
+  const nome = await resolveDisplayName(targetJid, sock, contactNames, { candidateJids: getContextTargetJids(content) });
 
   if (!unmuteUser(jid, targetJid)) {
     await sock.sendMessage(jid, {
@@ -348,7 +350,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderAlternateJids = getAlternateSenderJids(msg);
-  const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizeJidBase).filter(Boolean));
+  const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizarJidUsuario).filter(Boolean));
 
   const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
   const isAll     = /@all\b/i.test(textMsg);
@@ -367,15 +369,14 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
 
     const alvos = acao === 'promote'
       ? meta.participants
-          .filter(p => p && !p.admin && !isBotJid(p.id, botJid))
+          .filter(p => p && !p.admin && !isBotJid(p.id, botJid, getParticipantJids(p)))
           .map(p => p.id)
       : meta.participants
           .filter(p =>
             p &&
             p.admin &&
-            !isBotJid(p.id, botJid) &&
-            !senderBases.has(normalizeJidBase(p.id)) &&
-            !senderBases.has(normalizeJidBase(p.lid))
+            !isBotJid(p.id, botJid, getParticipantJids(p)) &&
+            !getParticipantJids(p).some(id => senderBases.has(id))
           )
           .map(p => p.id);
 
@@ -420,7 +421,7 @@ async function handlePromoverRebaixar(sock, msg, content, jid, acao, botJid, con
     }, { quoted: msg }); return;
   }
 
-  if (acao === 'demote' && senderBases.has(normalizeJidBase(targetJid))) {
+  if (acao === 'demote' && senderBases.has(normalizarJidUsuario(targetJid))) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se rebaixar.' }, { quoted: msg }); return;
   }
 
@@ -462,7 +463,7 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   const reportedBase = normalizeJidBase(reportedJid);
 
   const { senderBases } = getSenderIdentity(msg);
-  if (senderBases.has(reportedBase)) {
+  if (senderBases.has(normalizarJidUsuario(reportedJid))) {
     await sock.sendMessage(jid, { text: '🤡 Você não pode se reportar.' }, { quoted: msg }); return;
   }
 
@@ -480,7 +481,7 @@ async function handleReportar(sock, msg, content, jid, contactNames, botJid) {
   );
 
   const current = usuario?.warnings?.get?.(groupKey) ?? usuario?.warnings?.[groupKey] ?? 0;
-  const nome    = contactNames?.[reportedJid] || `@${reportedBase}`;
+  const nome    = await resolveDisplayName(reportedJid, sock, contactNames, { candidateJids: getContextTargetJids(content) });
 
   if (current >= 3) {
     try {
@@ -545,7 +546,7 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
   const targetBase = normalizeJidBase(targetJid);
 
-  if (senderBases.has(targetBase)) {
+  if (senderBases.has(normalizarJidUsuario(targetJid))) {
     return sock.sendMessage(jid, {
       text: '🤡 Você não pode remover suas próprias advertências. Peça a outro ADM.',
     }, { quoted: msg });
@@ -558,7 +559,7 @@ async function handleRemoverReporte(sock, msg, content, jid, contactNames, botJi
   }
 
   const groupKey = jid.replace(/\./g, '_');
-  const nome     = contactNames?.[targetJid] || `@${targetBase}`;
+  const nome     = await resolveDisplayName(targetJid, sock, contactNames, { candidateJids: getContextTargetJids(content) });
 
   const atual = Number(userData?.warnings?.[groupKey] ?? 0);
 
@@ -681,7 +682,7 @@ async function handleLimparWarns(sock, msg, content, jid, botJid) {
   const targetJid  = userData?.idWhatsApp || resolvedJid || targetJidRaw;
   const targetBase = normalizeJidBase(targetJid);
 
-  if (senderBases.has(targetBase)) {
+  if (senderBases.has(normalizarJidUsuario(targetJid))) {
     await sock.sendMessage(jid, {
       text: '🤡 Você não pode limpar suas próprias advertências. Peça a outro ADM.',
     }, { quoted: msg });

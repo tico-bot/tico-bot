@@ -46,3 +46,10 @@ test('ADM supremo é reconhecido pelo mapeamento salvo quando só chega o LID', 
     LidMapping.findOne = original;
   }
 });
+
+test('isOwnerIdentity nunca interpreta participant.lid numérico como telefone PN', async () => {
+  assert.equal(
+    await isOwnerIdentity('123456789012345@s.whatsapp.net', '5565993354137'),
+    false,
+  );
+});

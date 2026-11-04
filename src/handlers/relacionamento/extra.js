@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -6,7 +6,7 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CasalEstado   = require(path.join(__dirname, '..', '..', 'models', 'CasalEstado'));
 const { getNivelInfo }  = require(path.join(__dirname, '..', '..', 'utils', 'levelUtils'));
-const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { normalizarJid, resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 const { alterarGold, getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 
@@ -65,7 +65,7 @@ function rel() {
   return _rel;
 }
 
-function findRelByJid(jid, userJid, relacionamentos) { return rel().findRelByJid(jid, userJid, relacionamentos); }
+function findRelByJid(jid, userJid, relacionamentos, alternateJids = []) { return rel().findRelByJid(jid, userJid, relacionamentos, alternateJids); }
 function temXpBonus(key)                             { return rel().temXpBonus(key); }
 function formatarTempo(ms)                           { return rel().formatarTempo(ms); }
 function handleCarinh(...args)                       { return rel().handleCarinh(...args); }
@@ -75,8 +75,6 @@ function prefixo(jid)                                { return rel().prefixo(jid)
 // ─── HELPERS ───────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-const numeroDe = (jid) => String(jid || '').split(':')[0].split('@')[0];
-const tag      = (jid) => `@${numeroDe(jid)}`;
 const sortear  = (lista) => lista[Math.floor(Math.random() * lista.length)];
 
 function responder(sock, msg, jid, text, mentions) {
@@ -84,15 +82,15 @@ function responder(sock, msg, jid, text, mentions) {
   return sock.sendMessage(jid, conteudo, { quoted: msg });
 }
 
-/** Devolve o JID do parceiro comparando pelo número (tolera diferenças de domínio/dispositivo). */
-function parceiroDe(r, senderNorm) {
-  const meuNumero = numeroDe(senderNorm);
-  return jidNormalizedUser(numeroDe(r.jidA) === meuNumero ? r.jidB : r.jidA);
+/** Devolve o parceiro usando aliases PN/LID confirmados, nunca só os dígitos. */
+async function parceiroDe(r, senderNorm, sock, msg) {
+  const remetenteEhA = await sameWhatsAppIdentity(r.jidA, senderNorm, sock, getAlternateSenderJids(msg));
+  return jidNormalizedUser(remetenteEhA ? r.jidB : r.jidA);
 }
 
 /** Busca o relacionamento; se não existir, avisa o usuário e devolve null. */
 async function exigirRelacionamento(sock, msg, jid, senderNorm, relacionamentos, textoSemRelacionamento) {
-  const found = findRelByJid(jid, senderNorm, relacionamentos);
+  const found = await findRelByJid(jid, senderNorm, relacionamentos, getAlternateSenderJids(msg));
   if (!found) await responder(sock, msg, jid, textoSemRelacionamento);
   return found;
 }
@@ -136,11 +134,19 @@ const ativandoXpDobro = new Set();
 
 async function handleCancelarPedido(sock, msg, jid, senderJid, pedidosPendentes) {
   const senderNorm = jidNormalizedUser(senderJid);
+  const senderAliases = getAlternateSenderJids(msg);
   let cancelado = false;
 
-  for (const [alvoJid, p] of pedidosPendentes.entries()) {
-    if (jidNormalizedUser(p.jidPedinte) === senderNorm || jidNormalizedUser(alvoJid) === senderNorm) {
-      if (p.timer) clearTimeout(p.timer); // só tem efeito se o index.js guardar o timer no pedido
+  for (const [alvoJid, p] of [...pedidosPendentes.entries()]) {
+    const ehPedinte = await sameWhatsAppIdentity(
+      p.jidPedinte, senderNorm, null, p.jidPedinteAliases || [], senderAliases,
+    );
+    const ehAlvo = await sameWhatsAppIdentity(alvoJid, senderNorm, null, [], senderAliases);
+    if (ehPedinte || ehAlvo) {
+      if (p.timer) clearTimeout(p.timer);
+      for (const [chave, pedidoAtual] of pedidosPendentes.entries()) {
+        if (pedidoAtual === p) pedidosPendentes.delete(chave);
+      }
       pedidosPendentes.delete(alvoJid);
       cancelado = true;
     }
@@ -213,11 +219,14 @@ async function handleDeclarar(sock, msg, content, jid, author, senderJid, relaci
     return;
   }
 
-  const parcJid = parceiroDe(found.rel, senderNorm);
+  const parcJid = await parceiroDe(found.rel, senderNorm, sock, msg);
+  const [nomeAutor, nomeParceiro] = await Promise.all([
+    resolveDisplayName(senderNorm, sock, {}, { preferredName: msg.pushName, fallback: 'Participante' }),
+    resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' }),
+  ]);
 
   await responder(sock, msg, jid,
-    `📜 *DECLARAÇÃO DE AMOR* 📜\n\nDe ${tag(senderNorm)} para ${tag(parcJid)}:\n\n"${declaracao}"\n\n💖✨`,
-    [senderNorm, parcJid]);
+    '📜 *DECLARAÇÃO DE AMOR* 📜\n\nDe *' + nomeAutor + '* para *' + nomeParceiro + '*:\n\n"' + declaracao + '"\n\n💖✨');
 }
 
 async function handleCiumento(sock, msg, jid, senderJid, relacionamentos) {
@@ -238,10 +247,14 @@ async function handleCiumento(sock, msg, jid, senderJid, relacionamentos) {
 
   ciumentosMap.set(senderNorm, agora + CONFIG.COOLDOWN_CIUMENTO_MS);
 
-  const parcJid = parceiroDe(found.rel, senderNorm);
-  const frase   = sortear(FRASES_CIUMENTO)(tag(senderNorm), tag(parcJid));
+  const parcJid = await parceiroDe(found.rel, senderNorm, sock, msg);
+  const [nomeAutor, nomeParceiro] = await Promise.all([
+    resolveDisplayName(senderNorm, sock, {}, { preferredName: msg.pushName, fallback: 'Participante' }),
+    resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' }),
+  ]);
+  const frase = sortear(FRASES_CIUMENTO)(nomeAutor, nomeParceiro);
 
-  await responder(sock, msg, jid, frase, [senderNorm, parcJid]);
+  await responder(sock, msg, jid, frase);
 }
 
 async function handleStatu(sock, msg, jid, senderJid, relacionamentos) {
@@ -253,19 +266,20 @@ async function handleStatu(sock, msg, jid, senderJid, relacionamentos) {
   const { key, rel: r } = found;
   const xp        = rel().xpCasais.get(key) || 0;
   const tempoStr  = formatarTempo(Date.now() - inicioDe(r));
-  const parcJid   = parceiroDe(r, senderNorm);
+  const parcJid   = await parceiroDe(r, senderNorm, sock, msg);
+  const nomeParceiro = await resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' });
   const tipoEmoji = r.tipo === 'namoro' ? '💕' : '💍';
   const nivelInfo = infoNivel(xp);
 
   const texto =
     `${tipoEmoji} *STATUS DO RELACIONAMENTO* ${tipoEmoji}\n\n` +
-    `👤 *Parceiro(a):* ${tag(parcJid)}\n` +
+    '👤 *Parceiro(a):* *' + nomeParceiro + '*\n' +
     `📅 *Juntos há:* ${tempoStr}\n` +
     `✨ *XP do Casal:* ${xp} XP\n` +
     `🏅 *Nível do Casal:* Nível ${nivelInfo.nivel} (${nivelInfo.titulo})\n\n` +
     `💪 _Continuem trocando carinhos diariamente para subir de nível!_`;
 
-  await responder(sock, msg, jid, texto, [senderNorm, parcJid]);
+  await responder(sock, msg, jid, texto);
 }
 
 async function handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos) {
@@ -278,14 +292,14 @@ async function handleAniversarioCasal(sock, msg, jid, senderJid, relacionamentos
   const desde      = inicioDe(r);
   const dataInicio = new Date(desde).toLocaleDateString('pt-BR', { timeZone: CONFIG.FUSO });
   const tempoStr   = formatarTempo(Date.now() - desde);
-  const parcJid    = parceiroDe(r, senderNorm);
+  const parcJid    = await parceiroDe(r, senderNorm, sock, msg);
+  const nomeParceiro = await resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' });
   const acao       = r.tipo === 'namoro' ? 'a namorar' : 'a casar';
 
   await responder(sock, msg, jid,
-    `🎉 *ANIVERSÁRIO DO CASAL* 🎉\n\n` +
-    `👩‍❤️‍👨 Você e ${tag(parcJid)} começaram ${acao} em *${dataInicio}*!\n` +
-    `⏳ Vocês já estão juntos há *${tempoStr}*! Parabéns ao casal! 🥳🥂`,
-    [senderNorm, parcJid]);
+    '🎉 *ANIVERSÁRIO DO CASAL* 🎉\n\n' +
+    '👩‍❤️‍👨 Você e *' + nomeParceiro + '* começaram ' + acao + ' em *' + dataInicio + '*!\n' +
+    '⏳ Vocês já estão juntos há *' + tempoStr + '*! Parabéns ao casal! 🥳🥂');
 }
 
 async function handleMeuPar(sock, msg, jid, senderJid, relacionamentos) {
@@ -294,10 +308,11 @@ async function handleMeuPar(sock, msg, jid, senderJid, relacionamentos) {
     '💔 Você não tem um par no momento!');
   if (!found) return;
 
-  const parcJid = parceiroDe(found.rel, senderNorm);
-  const tipo    = found.rel.tipo === 'namoro' ? 'namorado(a)' : 'esposo(a)';
+  const parcJid = await parceiroDe(found.rel, senderNorm, sock, msg);
+  const nomeParceiro = await resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' });
+  const tipo = found.rel.tipo === 'namoro' ? 'namorado(a)' : 'esposo(a)';
 
-  await responder(sock, msg, jid, `💖 Seu(ua) ${tipo} é ${tag(parcJid)}!`, [parcJid]);
+  await responder(sock, msg, jid, '💖 Seu(ua) ' + tipo + ' é *' + nomeParceiro + '*!');
 }
 
 async function handleXpDobro(sock, msg, jid, senderJid, relacionamentos) {
@@ -355,7 +370,7 @@ async function handleDueloCasais(sock, msg, content, jid, senderJid, relacioname
     return;
   }
 
-  const foundB = findRelByJid(jid, jidNormalizedUser(mentionedJid[0]), relacionamentos);
+  const foundB = await findRelByJid(jid, jidNormalizedUser(mentionedJid[0]), relacionamentos);
   if (!foundB) {
     await responder(sock, msg, jid, '💔 O adversário marcado não está em um relacionamento!');
     return;
@@ -407,7 +422,9 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   const xpAtual  = (xpCasais.get(key) || 0) + ganho;
   xpCasais.set(key, xpAtual);
 
-  const parcJid = parceiroDe(r, senderNorm);
+  const parcJid = await parceiroDe(r, senderNorm, sock, msg);
+  const nomeAutor = await resolveDisplayName(senderNorm, sock, {}, { preferredName: author || msg.pushName, fallback: 'Participante' });
+  const nomeParceiro = await resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' });
 
   Usuario.updateMany(
     { idWhatsApp: { $in: [jidNormalizedUser(r.jidA), jidNormalizedUser(r.jidB)] } },
@@ -417,11 +434,10 @@ async function handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos
   const bonusStr = temBonus ? ` _(XP Dobro ativo!)_` : '';
 
   await responder(sock, msg, jid,
-    `🎉 *SURPRESA ROMÂNTICA!* 🎉\n\n` +
-    `${tag(senderNorm)} fez uma surpresa para ${tag(parcJid)}!\n${surpresa.text}\n\n` +
+    '🎉 *SURPRESA ROMÂNTICA!* 🎉\n\n' +
+    '*' + nomeAutor + '* fez uma surpresa para *' + nomeParceiro + '*!\n' + surpresa.text + '\n\n' +
     `💖 *+${ganho} XP para o casal!*${bonusStr} (Total: ${xpAtual} XP)\n` +
-    `💰 Saldo restante: *${formatarSaldo(carteira.gold, carteira)}*`,
-    [senderNorm, parcJid]);
+    `💰 Saldo restante: *${formatarSaldo(carteira.gold, carteira)}*`);
 }
 
 // ═══════════════════════════════════════════════════════════════

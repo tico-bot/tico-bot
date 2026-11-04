@@ -27,6 +27,7 @@ function makeMessage(text) {
 
 function makeSocket() {
   return {
+    getName(jid) { return jid === member ? 'Membro' : null; },
     async sendMessage(_jid, payload) {
       sentMessages.push(payload);
       return {};

@@ -9,7 +9,8 @@ const Usuario       = require('../models/Usuario');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const LidMapping    = require('../models/LidMapping');
 const JogoRequest   = require('../models/JogoRequest');
-const { normalizarJid } = require('../utils/jid');
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio, extrairNumero } = require('../utils/jid');
+const { resolveDisplayName, validarNomeExibicao } = require('../utils/identity');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const { mapParaObjeto, somarMap } = require('../utils/mapas');
 const { calcularTotalMensagens, calcularTotalAcumulado } = require('../utils/message-count');
@@ -35,24 +36,46 @@ function nomeGrupoFallback(jid = '') {
   return fallback || 'Grupo sem nome';
 }
 
+function nomeExibicaoSeguro(usuario = {}, jid = '') {
+  const ids = [jid, usuario.idWhatsApp].filter(Boolean);
+  return [usuario.displayName, usuario.nome, usuario.username, usuario.name]
+    .map(valor => validarNomeExibicao(valor, ids))
+    .find(Boolean) || 'Participante';
+}
+
+function telefoneExibicaoSeguro(usuario = {}, jid = '') {
+  const id = normalizarJid(jid || usuario.idWhatsApp) || '';
+  // Um PN validado é a fonte primária; num perfil LID, só se mostra um
+  // telefone explícito guardado se não for apenas a sequência de dígitos do LID.
+  if (id.endsWith('@s.whatsapp.net')) return extrairNumero(id) || '—';
+  if (id.endsWith('@lid')) {
+    const telefoneBanco = String(usuario.telefone || '').replace(/\D/g, '');
+    const numeroLid = extrairNumero(id);
+    if (telefoneBanco.length >= 8 && telefoneBanco.length <= 15 && telefoneBanco !== numeroLid) {
+      return telefoneBanco;
+    }
+  }
+  return '—';
+}
+
 function dadosPublicosUsuario(candidatos = [], fallbackJid = '') {
   const usuarios = candidatos.filter(Boolean);
   const ocultarTelefone = usuarios.some(usuario => usuario.mostrarTelefonePublico === false);
-  const usuarioNome = usuarios.find(usuario => usuario.displayName)
-    || usuarios.find(usuario => usuario.nome)
-    || usuarios.find(usuario => usuario.username)
-    || {};
   const usuarioBio = usuarios.find(usuario => typeof usuario.bio === 'string' && usuario.bio.trim()) || {};
-  let telefoneRaw = usuarios.find(usuario => usuario.telefone)?.telefone;
-  if (!telefoneRaw && typeof fallbackJid === 'string' && fallbackJid.endsWith('@s.whatsapp.net')) {
-    telefoneRaw = fallbackJid.split('@')[0].split(':')[0];
-  }
-  const telefoneDigitos = String(telefoneRaw || '').replace(/\D/g, '');
-  const telefone = !ocultarTelefone && telefoneDigitos.length >= 8 && telefoneDigitos.length <= 15
-    ? telefoneDigitos
+  const nome = usuarios
+    .map(usuario => [usuario.displayName, usuario.nome, usuario.username]
+      .map(valor => validarNomeExibicao(valor, [fallbackJid, usuario.idWhatsApp]))
+      .find(Boolean))
+    .find(Boolean) || null;
+  const telefoneCandidato = usuarios
+    .map(usuario => telefoneExibicaoSeguro(usuario, usuario.idWhatsApp))
+    .find(valor => valor && valor !== '—');
+  const telefoneFallback = telefoneExibicaoSeguro({}, fallbackJid);
+  const telefone = !ocultarTelefone
+    ? (telefoneCandidato || (telefoneFallback !== '—' ? telefoneFallback : null))
     : null;
   return {
-    nome: usuarioNome.displayName || usuarioNome.nome || usuarioNome.username || null,
+    nome,
     bio: usuarioBio.bio ? usuarioBio.bio.trim().slice(0, 150) : null,
     telefone,
     telefoneOculto: ocultarTelefone,
@@ -74,7 +97,7 @@ function gerarJidsTelefone(numero = '') {
 }
 
 async function resolverJidsEquivalentes(idWhatsApp) {
-  const id = normalizarJid(idWhatsApp) || String(idWhatsApp || '').trim().toLowerCase();
+  const id = normalizarJidUsuario(idWhatsApp) || '';
   const ids = new Set(id ? [id] : []);
   const pns = new Set(id.endsWith('@s.whatsapp.net') ? gerarJidsTelefone(id.split('@')[0]) : []);
   const lids = new Set(id.endsWith('@lid') ? [id] : []);
@@ -87,17 +110,62 @@ async function resolverJidsEquivalentes(idWhatsApp) {
   }).select('lid pn').lean();
   for (const mapa of mapas) {
     if (mapa.lid) {
-      const lid = normalizarJid(mapa.lid);
+      const lid = normalizarJidComDominio(mapa.lid, 'lid');
       if (lid) { lids.add(lid); ids.add(lid); }
     }
     if (mapa.pn) {
-      for (const pn of gerarJidsTelefone(mapa.pn.split('@')[0])) {
+      const pnMapeado = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+      if (!pnMapeado) continue;
+      for (const pn of gerarJidsTelefone(pnMapeado.split('@')[0])) {
         pns.add(pn);
         ids.add(pn);
       }
     }
   }
   return [...ids];
+}
+
+/**
+ * Resolve aliases PN/LID para rotas administrativas sem inventar um telefone
+ * a partir dos dígitos de um LID. Entradas inválidas não são consultadas.
+ */
+async function resolverIdentidadesUsuario(rawId) {
+  const jid = normalizarJidUsuario(rawId);
+  if (!jid) return [];
+
+  const ids = new Set([jid]);
+  const variantesPn = jid.endsWith('@s.whatsapp.net')
+    ? gerarJidsTelefone(extrairNumero(jid))
+    : [];
+  for (const pn of variantesPn) ids.add(pn);
+
+  const condicoes = [
+    ...(jid.endsWith('@lid') ? [{ lid: jid }] : []),
+    ...(variantesPn.length ? [{ pn: { $in: variantesPn } }] : []),
+  ];
+  if (condicoes.length) {
+    const mapas = await LidMapping.find({ $or: condicoes }).select('lid pn').lean();
+    for (const mapa of mapas) {
+      const lid = normalizarJidComDominio(mapa.lid, 'lid');
+      const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+      if (lid?.endsWith('@lid')) ids.add(lid);
+      if (pn?.endsWith('@s.whatsapp.net')) {
+        ids.add(pn);
+        for (const variante of gerarJidsTelefone(extrairNumero(pn))) ids.add(variante);
+      }
+    }
+  }
+  return [...ids];
+}
+
+async function resolverIdWhatsApp(rawId, idGrupo) {
+  const ids = await resolverIdentidadesUsuario(rawId);
+  if (!ids.length) return null;
+  const carteira = await CarteiraGrupo.findOne({
+    idWhatsApp: { $in: ids },
+    idGrupo,
+  }).select('idWhatsApp').lean();
+  return carteira?.idWhatsApp || ids[0];
 }
 
 function gerarVariantesNumero(numero = '') {
@@ -379,8 +447,8 @@ router.get('/user/ranking', async (req, res) => {
     const lidMaps = lids.length || pns.length
       ? await LidMapping.find({ $or: [{ lid: { $in: lids } }, { pn: { $in: pns } }] }).lean()
       : [];
-    const lidParaPn = Object.fromEntries(lidMaps.map(l => [l.lid, l.pn]));
-    const pnParaLid = Object.fromEntries(lidMaps.map(l => [l.pn, l.lid]));
+    const lidParaPn = Object.fromEntries(lidMaps.map(l => [normalizarJidComDominio(l.lid, 'lid'), normalizarJidComDominio(l.pn, 's.whatsapp.net')]).filter(([lid, pn]) => lid && pn));
+    const pnParaLid = Object.fromEntries(lidMaps.map(l => [normalizarJidComDominio(l.pn, 's.whatsapp.net'), normalizarJidComDominio(l.lid, 'lid')]).filter(([pn, lid]) => pn && lid));
 
     const todosJidsBusca = [...new Set([...jids, ...Object.values(lidParaPn), ...Object.values(pnParaLid)])];
     const usuarios = todosJidsBusca.length
@@ -402,7 +470,7 @@ router.get('/user/ranking', async (req, res) => {
         || candidatos.find(usuario => usuario.username)
         || candidatos[0] || {};
       const publico = dadosPublicosUsuario(candidatos, pn || a._id);
-      const nomeFinal = publico.nome || pushNamesMap[a._id] || 'Anônimo';
+      const nomeFinal = publico.nome || validarNomeExibicao(pushNamesMap[a._id], [a._id]) || 'Anônimo';
 
       return {
         nome:       nomeFinal,
@@ -460,8 +528,8 @@ router.get('/user/ranking/grupo', async (req, res) => {
     const lidMaps = lids.length || pns.length
       ? await LidMapping.find({ $or: [{ lid: { $in: lids } }, { pn: { $in: pns } }] }).lean()
       : [];
-    const lidParaPn = Object.fromEntries(lidMaps.map(l => [l.lid, l.pn]));
-    const pnParaLid = Object.fromEntries(lidMaps.map(l => [l.pn, l.lid]));
+    const lidParaPn = Object.fromEntries(lidMaps.map(l => [normalizarJidComDominio(l.lid, 'lid'), normalizarJidComDominio(l.pn, 's.whatsapp.net')]).filter(([lid, pn]) => lid && pn));
+    const pnParaLid = Object.fromEntries(lidMaps.map(l => [normalizarJidComDominio(l.pn, 's.whatsapp.net'), normalizarJidComDominio(l.lid, 'lid')]).filter(([pn, lid]) => pn && lid));
 
     const todosJidsBusca = [...new Set([...jidsUsuarios, ...Object.values(lidParaPn), ...Object.values(pnParaLid)])];
     const usuarios = todosJidsBusca.length
@@ -483,7 +551,7 @@ router.get('/user/ranking/grupo', async (req, res) => {
         || candidatos.find(usuario => usuario.username)
         || candidatos[0] || {};
       const publico = dadosPublicosUsuario(candidatos, pn || m.idWhatsApp);
-      const nomeFinal = publico.nome || m.nome || 'Anônimo';
+      const nomeFinal = publico.nome || validarNomeExibicao(m.nome, [m.idWhatsApp]) || 'Anônimo';
 
       if (!mapaDeduplicado.has(chave)) {
         mapaDeduplicado.set(chave, {
@@ -539,11 +607,10 @@ router.get('/user/me', auth, async (req, res) => {
     let carteiras = await CarteiraGrupo.find({ idWhatsApp }).sort({ xp: -1 }).lean();
 
 if (!carteiras.length) {
-  const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-    .map(d => `${d}@s.whatsapp.net`);
-  const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
-  if (lidMap) {
-    carteiras = await CarteiraGrupo.find({ idWhatsApp: lidMap.lid }).sort({ xp: -1 }).lean();
+  const identidades = await resolverIdentidadesUsuario(idWhatsApp);
+  const outrasIdentidades = identidades.filter(id => id !== idWhatsApp);
+  if (outrasIdentidades.length) {
+    carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: outrasIdentidades } }).sort({ xp: -1 }).lean();
   }
 }
 
@@ -657,23 +724,30 @@ if (!carteiras.length) {
     let casadoComResolvido = usuario.casadoCom ?? null;
     if (casadoComResolvido && casadoComResolvido.endsWith('@lid')) {
       const mapa = await LidMapping.findOne({ lid: casadoComResolvido }).lean();
-      if (mapa?.pn) casadoComResolvido = mapa.pn;
+      const pnParceiro = normalizarJidComDominio(mapa?.pn, 's.whatsapp.net');
+      if (pnParceiro) casadoComResolvido = pnParceiro;
     }
 
     if (casadoComResolvido) {
-      const parceiroNum = casadoComResolvido.split('@')[0];
-      const variantesParceiro = gerarVariantesNumero(parceiroNum).map(d => `${d}@s.whatsapp.net`);
+      const parceiroNorm = normalizarJidUsuario(casadoComResolvido);
+      // Um LID sem mapa é opaco: nunca fabricar variantes PN a partir de seus dígitos.
+      const variantesParceiro = parceiroNorm?.endsWith('@s.whatsapp.net')
+        ? gerarJidsTelefone(extrairNumero(parceiroNorm))
+        : [];
 
       const [lidMapParceiro, uParceiro] = await Promise.all([
-        LidMapping.findOne({ pn: { $in: variantesParceiro } }).lean(),
+        variantesParceiro.length
+          ? LidMapping.findOne({ pn: { $in: variantesParceiro } }).lean()
+          : Promise.resolve(null),
         Usuario.findOne({ idWhatsApp: { $in: [casadoComResolvido, ...variantesParceiro] } }).lean(),
       ]);
 
+      const lidParceiro = normalizarJidComDominio(lidMapParceiro?.lid, 'lid');
       const parceiroFinal = uParceiro
-        ?? (lidMapParceiro ? await Usuario.findOne({ idWhatsApp: lidMapParceiro.lid }).lean() : null);
+        ?? (lidParceiro ? await Usuario.findOne({ idWhatsApp: lidParceiro }).lean() : null);
 
-      const nomeParceiroReal = parceiroFinal?.nome || parceiroFinal?.username || (parceiroNum ? `+${parceiroNum}` : 'Parceiro(a)');
-      const telParceiroReal  = parceiroFinal?.telefone || parceiroNum || null;
+      const nomeParceiroReal = nomeExibicaoSeguro(parceiroFinal || {}, casadoComResolvido);
+      const telParceiroReal  = telefoneExibicaoSeguro(parceiroFinal || {}, casadoComResolvido);
 
       let nomeGrupoCasamento = null;
       if (usuario.casadoGrupo && usuario.casadoGrupo.endsWith('@g.us')) {
@@ -750,9 +824,10 @@ if (!carteiras.length) {
       ? xpHistoryUsuario
       : xpHistoryGrupos;
 
-    const nomeResolvido     = usuario.nome     || carteirasGruposValidos[0]?.nome || null;
-    const telefoneResolvido = usuario.telefone
-      || (String(idWhatsApp).endsWith('@s.whatsapp.net') ? idWhatsApp.split('@')[0].split(':')[0] : null);
+    const nomeResolvido = [usuario.displayName, usuario.nome, usuario.username, carteirasGruposValidos[0]?.nome]
+      .map(valor => validarNomeExibicao(valor, [idWhatsApp]))
+      .find(Boolean) || null;
+    const telefoneResolvido = telefoneExibicaoSeguro(usuario, idWhatsApp);
 
 
     return res.json({
@@ -814,10 +889,10 @@ router.patch('/user/privacy', auth, async (req, res) => {
     let alias = null;
     if (idProprio.endsWith('@lid')) {
       alias = await LidMapping.findOne({ lid: idProprio }).select('pn').lean();
-      alias = alias?.pn;
+      alias = normalizarJidComDominio(alias?.pn, 's.whatsapp.net');
     } else if (idProprio.endsWith('@s.whatsapp.net')) {
       alias = await LidMapping.findOne({ pn: idProprio }).select('lid').lean();
-      alias = alias?.lid;
+      alias = normalizarJidComDominio(alias?.lid, 'lid');
     }
     if (alias && typeof alias === 'string' && alias.trim().toLowerCase() !== idProprio) {
       await Usuario.updateMany(
@@ -872,12 +947,11 @@ router.get('/user/grupos', auth, async (req, res) => {
       .lean();
 
     if (!carteiras.length) {
-      const variantesPn = gerarVariantesNumero(idWhatsApp.split('@')[0])
-        .map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ pn: { $in: [idWhatsApp, ...variantesPn] } }).lean();
-      if (lidMap) {
+      const identidades = await resolverIdentidadesUsuario(idWhatsApp);
+      const outrasIdentidades = identidades.filter(id => id !== idWhatsApp);
+      if (outrasIdentidades.length) {
         carteiras = await CarteiraGrupo
-          .find({ idWhatsApp: lidMap.lid })
+          .find({ idWhatsApp: { $in: outrasIdentidades } })
           .sort({ xp: -1 })
           .lean();
       }
@@ -966,13 +1040,13 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
   try {
     const todos = await Usuario
       .find({})
-      .select('nome telefone idWhatsApp warnings banido')
+      .select('nome displayName username telefone idWhatsApp warnings banido')
       .lean();
 
     const comWarns = todos
       .map(u => ({
-        nome:          u.nome || u.telefone || 'Anônimo',
-        telefone:      u.telefone || u.idWhatsApp?.split('@')[0] || '—',
+        nome:          nomeExibicaoSeguro(u, u.idWhatsApp),
+        telefone:      telefoneExibicaoSeguro(u, u.idWhatsApp),
         idWhatsApp:    u.idWhatsApp,
         warns:         somarMap(u.warnings),
         warnsPorGrupo: mapParaObjeto(u.warnings),
@@ -994,10 +1068,22 @@ router.get('/admin/usuarios', adminAuth, async (req, res) => {
 router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
   try {
     const termo = decodeURIComponent(req.params.idWhatsApp);
-    const jidNorm = normalizarJid(termo);
-    const variantesPn = gerarVariantesNumero(termo.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+    const jidNorm = normalizarJidUsuario(termo);
+    if (!jidNorm) return res.status(400).json({ error: 'Identificador inválido.' });
+    // Dígitos de @lid jamais viram variantes @s.whatsapp.net.
+    const variantesPn = jidNorm.endsWith('@s.whatsapp.net')
+      ? gerarVariantesNumero(extrairNumero(jidNorm)).map(d => `${d}@s.whatsapp.net`)
+      : [];
+    const condicoesMapa = [
+      ...(variantesPn.length ? [{ pn: { $in: variantesPn } }] : []),
+      ...(jidNorm.endsWith('@lid') ? [{ lid: jidNorm }] : []),
+    ];
+    const lidMap = condicoesMapa.length
+      ? await LidMapping.findOne({ $or: condicoesMapa }).lean()
+      : null;
+    const lidMapLid = normalizarJidComDominio(lidMap?.lid, 'lid');
+    const lidMapPn = normalizarJidComDominio(lidMap?.pn, 's.whatsapp.net');
+    const jidsBusca = [...new Set([jidNorm, lidMapLid, lidMapPn, ...variantesPn].filter(Boolean))];
 
     let carteiras = await CarteiraGrupo.find({ idWhatsApp: { $in: jidsBusca } }).sort({ xp: -1 }).lean();
     const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } }).lean();
@@ -1033,8 +1119,8 @@ router.get('/admin/usuario/:idWhatsApp', adminAuth, async (req, res) => {
       empregoAtual: c.empregoAtual ?? null,
     }));
 
-    const nomeAdmin     = usuario?.nome     || carteiras[0]?.nome || '(sem nome)';
-    const telefoneAdmin = usuario?.telefone || (lidMap?.pn || jidNorm).replace('@s.whatsapp.net', '').replace('@lid', '');
+    const nomeAdmin     = nomeExibicaoSeguro(usuario || carteiras[0] || {}, usuario?.idWhatsApp || jidNorm);
+    const telefoneAdmin = telefoneExibicaoSeguro(usuario || {}, normalizarJidComDominio(lidMap?.pn, 's.whatsapp.net') || jidNorm);
 
     return res.json({
       usuario: {
@@ -1062,10 +1148,9 @@ router.delete('/admin/warn/:idWhatsApp', adminAuth, async (req, res) => {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
     const { grupo }      = req.query;
 
-    const jidNorm = normalizarJid(termoOriginal);
-    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+    const jidNorm = jidsBusca[0];
 
     const usuarios = await Usuario.find({ idWhatsApp: { $in: jidsBusca } });
     if (!usuarios.length)
@@ -1102,10 +1187,9 @@ router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
     if (typeof banido !== 'boolean')
       return res.status(400).json({ error: '"banido" deve ser true ou false.' });
 
-    const jidNorm = normalizarJid(termoOriginal);
-    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+    const jidNorm = jidsBusca[0];
 
     const result = await Usuario.updateMany(
       { idWhatsApp: { $in: jidsBusca } },
@@ -1128,6 +1212,11 @@ router.patch('/admin/usuario/:idWhatsApp/ban', adminAuth, async (req, res) => {
 router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const idUsuario = normalizarJidUsuario(termoOriginal);
+    if (!idUsuario) {
+      return res.status(400).json({ error: 'Identificador inválido. Use um telefone numérico, @s.whatsapp.net ou @lid.' });
+    }
+
     const { idGrupo, valor, operacao } = req.body || {};
     const eGlobal = !idGrupo || idGrupo === 'global';
 
@@ -1137,8 +1226,8 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
     if (!['dar', 'remover', 'definir', 'set'].includes(op))
       return res.status(400).json({ error: 'operacao deve ser "dar", "remover" ou "definir".' });
 
-    const jidsBusca = await resolverJidsEquivalentes(termoOriginal);
-    const jidNorm   = jidsBusca[0] || normalizarJid(termoOriginal);
+    const jidsBusca = await resolverJidsEquivalentes(idUsuario);
+    const jidNorm   = jidsBusca[0] || idUsuario;
 
     if (!eGlobal) {
       const carteiraAtual = await getCarteira(jidNorm, idGrupo);
@@ -1192,10 +1281,9 @@ router.patch('/admin/usuario/:idWhatsApp/gold', adminAuth, async (req, res) => {
 router.delete('/admin/usuario/:idWhatsApp/gold/reset', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
-    const jidNorm = normalizarJid(termoOriginal);
-    const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-    const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-    const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+    const jidNorm = jidsBusca[0];
     const [resultadoCarteira, resultadoUsuario] = await Promise.all([
       CarteiraGrupo.updateMany({ idWhatsApp: { $in: jidsBusca } }, { $set: { gold: 0 } }),
       Usuario.updateMany({ idWhatsApp: { $in: jidsBusca } }, { $set: { gold: 0 } }),
@@ -1227,14 +1315,13 @@ router.post('/admin/gold/transferir', adminAuth, async (req, res) => {
     if (!Number.isFinite(valor) || valor <= 0)
       return res.status(400).json({ error: 'valor deve ser um número positivo.' });
 
-    const getJidsBusca = async (term) => {
-      const norm = normalizarJid(term);
-      const vars = gerarVariantesNumero(term.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const map = await LidMapping.findOne({ $or: [{ pn: { $in: vars } }, { lid: norm }] }).lean();
-      return [...new Set([norm, ...(map ? [map.lid, map.pn] : []), ...vars].filter(Boolean))];
-    };
-
-    const [jidsOrigem, jidsDestino] = await Promise.all([getJidsBusca(idOrigem), getJidsBusca(idDestino)]);
+    const [jidsOrigem, jidsDestino] = await Promise.all([
+      resolverIdentidadesUsuario(idOrigem),
+      resolverIdentidadesUsuario(idDestino),
+    ]);
+    if (!jidsOrigem.length || !jidsDestino.length) {
+      return res.status(400).json({ error: 'Origem ou destino contém um identificador inválido.' });
+    }
 
     if (jidsOrigem.some(j => jidsDestino.includes(j)))
       return res.status(400).json({ error: 'Origem e destino não podem ser o mesmo usuário.' });
@@ -1414,13 +1501,13 @@ router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
     const lidMappings = await LidMapping.find({
       lid: { $in: jids.filter(j => j?.endsWith('@lid')) }
     }).lean();
-    const lidParaPn = Object.fromEntries(lidMappings.map(m => [m.lid, m.pn]));
+    const lidParaPn = Object.fromEntries(lidMappings.map(m => [normalizarJidComDominio(m.lid, 'lid'), normalizarJidComDominio(m.pn, 's.whatsapp.net')]).filter(([lid, pn]) => lid && pn));
     const pnsResolvidos = Object.values(lidParaPn);
 
     const usuariosMap = {};
     if (jids.length) {
       const usuarios = await Usuario.find({ idWhatsApp: { $in: [...jids, ...pnsResolvidos] } })
-        .select('idWhatsApp nome telefone')
+        .select('idWhatsApp nome displayName username telefone')
         .lean();
       for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
     }
@@ -1428,11 +1515,10 @@ router.get('/admin/grupo/:jid/gold-ranking', adminAuth, async (req, res) => {
     const ranking = membros.map(m => {
       const pnResolvido = lidParaPn[m.idWhatsApp] || m.idWhatsApp;
       const u = usuariosMap[m.idWhatsApp] || usuariosMap[pnResolvido] || {};
-      const numeroPuro = (pnResolvido || m.idWhatsApp)?.split('@')[0]?.replace(/\D/g, '') || '';
       return {
         idWhatsApp: m.idWhatsApp,
-        nome:       u.nome || u.telefone || numeroPuro || '—',
-        telefone:   u.telefone || numeroPuro || '—',
+        nome:       nomeExibicaoSeguro(u, m.idWhatsApp),
+        telefone:   telefoneExibicaoSeguro(u, pnResolvido),
         gold:       m.gold ?? 0,
         xp:         m.xp   ?? 0,
         level:      m.level ?? 1,
@@ -1573,16 +1659,20 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
       for (const u of usuarios) usuariosMap[u.idWhatsApp] = u;
     }
 
-    const enriquecer = (lista) => lista.map(m => {
+    const enriquecer = async lista => Promise.all(lista.map(async m => {
       const u = usuariosMap[m._id] || {};
+      const nome = await resolveDisplayName(m._id, null, {}, {
+        preferredName: u.displayName || u.nome || u.username,
+        fallback: 'Anônimo',
+      });
       return {
         idWhatsApp: m._id,
-        nome:       u.nome || u.telefone || m._id?.split('@')[0] || 'Anônimo',
-        gold:       m.gold      ?? 0,
-        xp:         m.xp        ?? 0,
-        mensagens:  m.mensagens ?? 0,
+        nome,
+        gold: m.gold ?? 0,
+        xp: m.xp ?? 0,
+        mensagens: m.mensagens ?? 0,
       };
-    });
+    }));;
 
     const totalUsuariosComGold = await CarteiraGrupo
       .distinct('idWhatsApp', { idGrupo: { $regex: /@g\.us$/ }, gold: { $gt: 0 } })
@@ -1597,9 +1687,9 @@ router.get('/admin/economia', adminAuth, async (req, res) => {
       totalXp:              dados.totalXp,
       mediaGold,
       totalUsuariosComGold,
-      topGold:  enriquecer(topGoldRaw),
-      topXp:    enriquecer(topXpRaw),
-      topMsgs:  enriquecer(topMsgsRaw),
+      topGold:  await enriquecer(topGoldRaw),
+      topXp:    await enriquecer(topXpRaw),
+      topMsgs:  await enriquecer(topMsgsRaw),
     });
   } catch (err) {
     console.error('[API] GET /admin/economia:', err);
@@ -1622,6 +1712,7 @@ router.post('/admin/usuario/gold/reset-grupo', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'idGrupo é obrigatório.' });
 
     const idWhatsApp = await resolverIdWhatsApp(idRaw, idGrupo);
+    if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
 
     const resultado = await CarteiraGrupo.updateOne(
       { idWhatsApp, idGrupo },
@@ -1717,26 +1808,10 @@ async function concluirRequestJogo(dados, status, corpo) {
 }
 
 async function encontrarCarteiraJogo(idWhatsApp, idGrupo) {
-  const rawJid = String(idWhatsApp || '').trim().toLowerCase();
-  if (!rawJid) return null;
-
-  const jidNorm = normalizarJid(rawJid) || rawJid;
-  const digitos = jidNorm.split('@')[0].split(':')[0];
-  const variantesPn = gerarVariantesNumero(digitos).map(n => `${n}@s.whatsapp.net`);
-  const jidsBusca = new Set([rawJid, jidNorm, ...variantesPn]);
-
-  const lidMap = await LidMapping.findOne({
-    $or: [
-      { lid: rawJid },
-      { lid: jidNorm },
-      { pn: { $in: [rawJid, jidNorm, ...variantesPn] } },
-    ],
-  }).lean();
-  if (lidMap?.lid) jidsBusca.add(lidMap.lid);
-  if (lidMap?.pn) jidsBusca.add(lidMap.pn);
-
+  const jidsBusca = await resolverIdentidadesUsuario(idWhatsApp);
+  if (!jidsBusca.length) return null;
   const carteiras = await CarteiraGrupo
-    .find({ idWhatsApp: { $in: [...jidsBusca] }, idGrupo })
+    .find({ idWhatsApp: { $in: jidsBusca }, idGrupo })
     .sort({ gold: -1, xp: -1 })
     .lean();
   return carteiras[0] || null;
@@ -2175,6 +2250,7 @@ router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => 
 
     if (!eGlobal) {
       const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
       const carteira = await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp, idGrupo },
         { $set: updateData },
@@ -2183,10 +2259,9 @@ router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => 
 
       return res.json({ ok: true, idWhatsApp, idGrupo, level: carteira.level, xp: carteira.xp });
     } else {
-      const jidNorm = normalizarJid(termoOriginal);
-      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+      const jidNorm = jidsBusca[0];
 
       const [resCarteiras] = await Promise.all([
         CarteiraGrupo.updateMany(
@@ -2219,6 +2294,7 @@ router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) 
 
     if (!eGlobal) {
       const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
       const carteira   = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
         .select('inventario')
         .lean();
@@ -2233,10 +2309,9 @@ router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) 
       }
       return res.json({ inventario });
     } else {
-      const jidNorm = normalizarJid(termoOriginal);
-      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+      const jidNorm = jidsBusca[0];
 
       const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } })
         .select('inventory')
@@ -2277,6 +2352,7 @@ router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res)
 
     if (!eGlobal) {
       const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
       const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
         .select('inventario')
         .lean();
@@ -2310,10 +2386,9 @@ router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res)
 
       return res.json({ ok: true, inventario: carteira?.inventario });
     } else {
-      const jidNorm = normalizarJid(termoOriginal);
-      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+      const jidNorm = jidsBusca[0];
 
       const u = await Usuario.findOneAndUpdate(
         { idWhatsApp: { $in: jidsBusca } },
@@ -2347,6 +2422,7 @@ router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, re
 
     if (!eGlobal) {
       const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
       const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
         .select('inventario')
         .lean();
@@ -2371,10 +2447,9 @@ router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, re
 
       return res.json({ ok: true, inventario: carteira?.inventario });
     } else {
-      const jidNorm = normalizarJid(termoOriginal);
-      const variantesPn = gerarVariantesNumero(termoOriginal.split('@')[0]).map(d => `${d}@s.whatsapp.net`);
-      const lidMap = await LidMapping.findOne({ $or: [{ pn: { $in: variantesPn } }, { lid: jidNorm }] }).lean();
-      const jidsBusca = [...new Set([jidNorm, ...(lidMap ? [lidMap.lid, lidMap.pn] : []), ...variantesPn].filter(Boolean))];
+      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+      const jidNorm = jidsBusca[0];
 
       const u = await Usuario.findOneAndUpdate(
         { idWhatsApp: { $in: jidsBusca } },
@@ -2490,8 +2565,9 @@ async function encontrarUsuarioPorNumero(digitosBase) {
       .select('idWhatsApp username passwordHash telefone tokenVersion')
       .lean(),
   ]);
-  const usuarioLid = lidMap?.lid
-    ? await Usuario.findOne({ idWhatsApp: String(lidMap.lid).trim().toLowerCase() })
+  const usuarioLidJid = normalizarJidComDominio(lidMap?.lid, 'lid');
+  const usuarioLid = usuarioLidJid
+    ? await Usuario.findOne({ idWhatsApp: usuarioLidJid })
       .select('idWhatsApp username passwordHash telefone tokenVersion')
       .lean()
     : null;
@@ -2508,8 +2584,12 @@ async function encontrarUsuarioPorNumero(digitosBase) {
 }
 
 function idsOtpRelacionados(usuarioId, variantesPn, lidMap) {
-  return [...new Set([usuarioId, ...(variantesPn || []), lidMap?.lid, lidMap?.pn]
-    .filter(Boolean).map(value => String(value).trim().toLowerCase()))];
+  return [...new Set([
+    normalizarJidUsuario(usuarioId),
+    ...(variantesPn || []).map(normalizarJidUsuario),
+    normalizarJidComDominio(lidMap?.lid, 'lid'),
+    normalizarJidComDominio(lidMap?.pn, 's.whatsapp.net'),
+  ].filter(Boolean))];
 }
 
 async function liberarOtpAposFalha(id) {
@@ -2567,7 +2647,8 @@ router.post('/auth/otp/enviar', rateLimitOtp, async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
-    const jidDestino = (lidMap?.pn || (String(usuario.idWhatsApp).endsWith('@s.whatsapp.net') ? usuario.idWhatsApp : `${digitosBase}@s.whatsapp.net`)).split(':')[0];
+    const pnDestino = normalizarJidComDominio(lidMap?.pn, 's.whatsapp.net');
+    const jidDestino = (pnDestino || (String(usuario.idWhatsApp).endsWith('@s.whatsapp.net') ? normalizarJidUsuario(usuario.idWhatsApp) : `${digitosBase}@s.whatsapp.net`)).split(':')[0];
     try {
       await botSock.sendMessage(jidDestino, {
         text: `🔐 *Tico Bot — Verificação de Conta*\n\nSeu código é:\n\n*${codigo}*\n\n⏰ Válido por 10 minutos. Não compartilhe com ninguém.`,
@@ -2700,7 +2781,8 @@ router.post('/auth/login', rateLimitLogin, rateLimitLoginIdentificador, async (r
       const variantesPn = variantes.map(numero => `${numero}@s.whatsapp.net`);
       candidatos.push({ telefone: { $in: variantes } }, { idWhatsApp: { $in: variantesPn } });
       const lidMap = await LidMapping.findOne({ pn: { $in: variantesPn } }).select('lid').lean();
-      if (lidMap?.lid) candidatos.push({ idWhatsApp: lidMap.lid });
+      const lidJid = normalizarJidComDominio(lidMap?.lid, 'lid');
+      if (lidJid) candidatos.push({ idWhatsApp: lidJid });
     }
 
     const usuario = await Usuario.findOne({ $or: candidatos }).lean();
@@ -2900,7 +2982,7 @@ router.get('/admin/grupo/:jid/export', adminAuth, async (req, res) => {
 
     const jids = membros.map(m => m.idWhatsApp);
     const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
-      .select('idWhatsApp nome telefone warnings banido')
+      .select('idWhatsApp nome displayName username telefone warnings banido')
       .lean();
     const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
 
@@ -2908,8 +2990,8 @@ router.get('/admin/grupo/:jid/export', adminAuth, async (req, res) => {
       const u = usuariosMap[m.idWhatsApp] || {};
       return {
         idWhatsApp:   m.idWhatsApp,
-        nome:         u.nome || m.nome || '—',
-        telefone:     u.telefone || m.idWhatsApp.split('@')[0],
+        nome:         nomeExibicaoSeguro({ ...m, ...u }, m.idWhatsApp),
+        telefone:     telefoneExibicaoSeguro(u, m.idWhatsApp),
         xp:           m.xp       ?? 0,
         level:        m.level    ?? 1,
         gold:         m.gold     ?? 0,
@@ -3000,11 +3082,11 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
     const lidMapsRel = todosLidsRel.length
       ? await LidMapping.find({ lid: { $in: todosLidsRel } }).lean()
       : [];
-    const lidParaPnRel = Object.fromEntries(lidMapsRel.map(m => [m.lid, m.pn]));
+    const lidParaPnRel = Object.fromEntries(lidMapsRel.map(m => [normalizarJidComDominio(m.lid, 'lid'), normalizarJidComDominio(m.pn, 's.whatsapp.net')]).filter(([lid, pn]) => lid && pn));
 
     function telefoneExibicao(jid) {
-      const pn = lidParaPnRel[jid] || jid;
-      return pn.split('@')[0].replace(/\D/g, '');
+      const pn = normalizarJid(lidParaPnRel[jid] || jid) || '';
+      return pn.endsWith('@s.whatsapp.net') ? (extrairNumero(pn) || null) : null;
     }
 
     // Deduplica pares (A-B e B-A viram um só)
@@ -3019,8 +3101,16 @@ router.get('/admin/relacionamentos', adminAuth, async (req, res) => {
       vistos.add(chave);
 
       const parceiro = porJid.get(jidB) || {};
-      const nomeA = u.nome || u.telefone || jidA.split('@')[0];
-      const nomeB = parceiro.nome || parceiro.telefone || jidB?.split('@')[0] || '—';
+      const [nomeA, nomeB] = await Promise.all([
+        resolveDisplayName(jidA, null, {}, {
+          preferredName: u.displayName || u.nome || u.username,
+          fallback: 'Usuário',
+        }),
+        resolveDisplayName(jidB, null, {}, {
+          preferredName: parceiro.displayName || parceiro.nome || parceiro.username,
+          fallback: 'Usuário',
+        }),
+      ]);
 
       relacionamentos.push({
         jidA,
@@ -3082,7 +3172,7 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
 
     const jids = [...new Set(carteirasComPet.map(c => c.idWhatsApp))];
     const usuarios = await Usuario.find({ idWhatsApp: { $in: jids } })
-      .select('idWhatsApp nome telefone')
+      .select('idWhatsApp nome displayName username telefone')
       .lean();
     const usuariosMap = Object.fromEntries(usuarios.map(u => [u.idWhatsApp, u]));
 
@@ -3095,11 +3185,15 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
       nomesGrupos.map(g => [g._id, nomeGrupo(g, g._id)])
     );
 
-    const pets = carteirasComPet.map(c => {
+    const pets = await Promise.all(carteirasComPet.map(async c => {
       const u = usuariosMap[c.idWhatsApp] || {};
+      const nomeDono = await resolveDisplayName(c.idWhatsApp, null, {}, {
+        preferredName: u.displayName || u.nome || u.username,
+        fallback: 'Usuário',
+      });
       return {
-        idDono:    c.idWhatsApp,
-        nomeDono:  u.nome || u.telefone || c.idWhatsApp.split('@')[0],
+        idDono: c.idWhatsApp,
+        nomeDono,
         nome:      c.pet.name,
         tipo:      c.pet.type    || '?',
         rarity:    c.pet.rarity  || '?',
@@ -3112,7 +3206,7 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
         idGrupo:   c.idGrupo,
         nomeGrupo: nomesGruposMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       };
-    });
+    }));
 
     return res.json({ pets });
   } catch (err) {
@@ -3194,7 +3288,8 @@ router.get('/user/telefone/:idWhatsApp', auth, async (req, res) => {
     const mapa = await LidMapping.findOne({ lid: idRaw }).lean();
     if (!mapa?.pn) return res.json({ telefone: null });
 
-    const numero = mapa.pn.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+    const numero = pn ? extrairNumero(pn) : '';
     return res.json({ telefone: numero || null });
 
   } catch (err) {
@@ -3212,11 +3307,16 @@ router.get('/admin/contas', adminAuth, contasAuth, async (req, res) => {
     const contas = await Usuario.find({
       username: { $exists: true, $ne: null },
     })
-      .select('idWhatsApp nome telefone username email createdAt')
+      .select('idWhatsApp nome displayName telefone username email createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
-    return res.json({ contas });
+    const contasExibicao = contas.map(conta => ({
+      ...conta,
+      nome: nomeExibicaoSeguro(conta, conta.idWhatsApp),
+      telefone: telefoneExibicaoSeguro(conta, conta.idWhatsApp),
+    }));
+    return res.json({ contas: contasExibicao });
   } catch (err) {
     console.error('[API] GET /admin/contas:', err);
     return res.status(500).json({ error: 'Erro interno.' });
@@ -3237,10 +3337,7 @@ router.delete('/auth/conta', auth, async (req, res) => {
       { $unset: { username: '', passwordHash: '', email: '' }, $inc: { tokenVersion: 1 } }
     );
 
-    const numero = String(idWhatsApp).split('@')[0].replace(/\D/g, '');
-    const variantesPn = gerarVariantesNumero(numero).map(n => `${n}@s.whatsapp.net`);
-    const mapas = await LidMapping.find({ $or: [{ lid: idWhatsApp }, { pn: { $in: variantesPn } }] }).select('lid').lean();
-    const idsOtp = [...new Set([idWhatsApp, ...variantesPn, ...mapas.map(m => m.lid)].filter(Boolean))];
+    const idsOtp = await resolverIdentidadesUsuario(idWhatsApp);
     await OtpCadastro.deleteMany({ idWhatsApp: { $in: idsOtp } });
 
     return res.json({ ok: true });

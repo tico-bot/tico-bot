@@ -2,6 +2,7 @@
 
 const mongoose = require('mongoose');
 const { alterarGold } = require('./prata');
+const { sameWhatsAppIdentity } = require('../identity');
 
 function getJidBase(jid) {
   if (!jid) return '';
@@ -30,10 +31,7 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
     throw new RangeError('transferirGold: valor deve ser um número inteiro positivo.');
   }
 
-  const baseDe   = getJidBase(deIdWhatsApp);
-  const basePara = getJidBase(paraIdWhatsApp);
-
-  if (baseDe === basePara) {
+  if (await sameWhatsAppIdentity(deIdWhatsApp, paraIdWhatsApp)) {
     throw new Error('transferirGold: remetente e destinatário são o mesmo usuário.');
   }
 

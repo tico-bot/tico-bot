@@ -17,6 +17,9 @@ const path          = require('path');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { getCarteira, alterarGold, resolverJidCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
+const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
+const { normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids, getParticipantJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
@@ -985,7 +988,22 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
   try {
     // Coleta os membros que pertencem ao grupo neste exato momento
     const metadata = await sock.groupMetadata(jid);
-    const membrosAtuais = new Set(metadata.participants.map(p => p.id));
+    const membrosAtuais = new Set(metadata.participants.flatMap(getParticipantJids));
+    const pnsMembros = [...membrosAtuais].filter(value => value.endsWith('@s.whatsapp.net'));
+    const lidsMembros = [...membrosAtuais].filter(value => value.endsWith('@lid'));
+    const condicoesMapa = [
+      ...(pnsMembros.length ? [{ pn: { $in: pnsMembros } }] : []),
+      ...(lidsMembros.length ? [{ lid: { $in: lidsMembros } }] : []),
+    ];
+    if (condicoesMapa.length) {
+      const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+      for (const mapa of mapas) {
+        const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+        const lid = normalizarJidComDominio(mapa.lid, 'lid');
+        if (pn) membrosAtuais.add(pn);
+        if (lid) membrosAtuais.add(lid);
+      }
+    }
 
     // ── BUG 11 FIX: antes buscava TODOS os documentos do grupo (com o
     // itensPesca inteiro de cada um) e só depois somava/ordenava em memória —
@@ -1052,23 +1070,17 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
     const maxTotal = scores[0].total || 1;
     const totalGeralGrupo = scores.reduce((a, x) => a + x.total, 0);
 
-    let texto = `🎣 *RANKING DE PESCA — MEMBROS ATIVOS* 🎣\n\n`;
+    let texto = '🎣 *RANKING DE PESCA — MEMBROS ATIVOS* 🎣\n\n';
 
-    scores.forEach((s, i) => {
-      const numero  = s.idWhatsApp.split('@')[0].split(':')[0];
-      const medalha = medalhas[i] ?? `🔹 *${i + 1}.*`;
-
+    const linhas = await Promise.all(scores.map(async (s, i) => {
+      const nome = await resolveDisplayName(s.idWhatsApp, sock, contactNames, { fallback: 'Pescador' });
+      const medalha = medalhas[i] ?? '🔹 *' + (i + 1) + '.*';
       const pct = totalGeralGrupo > 0 ? ((s.total / totalGeralGrupo) * 100).toFixed(1) : '0.0';
       const tamanhoBarra = Math.min(Math.round((s.total / maxTotal) * 10), 10);
       const bar = '█'.repeat(tamanhoBarra) + '░'.repeat(10 - tamanhoBarra);
-
-      texto +=
-        `${medalha} *@${numero}*\n` +
-        `   ${bar} ${s.total} 🐟 (${pct}%)\n` +
-        `   💰 ${formatarSaldo(s.gold)}\n\n`;
-    });
-
-    const mentions = scores.map(s => s.idWhatsApp);
+      return medalha + ' *' + nome + '*\n   ' + bar + ' ' + s.total + ' 🐟 (' + pct + '%)\n   💰 ' + formatarSaldo(s.gold);
+    }));
+    texto += linhas.join('\n\n');
 
     texto +=
       `━━━━━━━━━━━━━━━━\n` +
@@ -1077,7 +1089,6 @@ async function handleRankingPesca(sock, msg, jid, contactNames) {
 
     await sock.sendMessage(jid, {
       text: texto,
-      mentions,
     }, { quoted: msg });
 
   } catch (err) {
@@ -1212,12 +1223,9 @@ async function handleGivePesca(sock, msg, jid, caption) {
 
   const mentionedJid = await resolverJidCarteira(rawMentioned, groupId);
 
-  // Compara apenas o número (parte antes do @), ignorando domínio diferente
-  // entre @s.whatsapp.net e @lid para evitar falso positivo no auto-give
-  const userNumero  = userId.split('@')[0].split(':')[0];
-  const alvoNumero  = mentionedJid.split('@')[0].split(':')[0];
-
-  if (userNumero === alvoNumero) {
+  // Compara a identidade real, resolvendo aliases PN/LID sem tratar os dígitos
+  // de um LID como se fossem um número telefônico.
+  if (await sameWhatsAppIdentity(mentionedJid, userId, sock, [], getAlternateSenderJids(msg))) {
     return reply(sock, jid, msg, '😂 Você não pode dar um item para si mesmo!');
   }
 

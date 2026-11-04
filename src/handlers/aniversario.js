@@ -7,6 +7,7 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Aniversario = require('../models/Aniversario');
 const GrupoConfig = require('../models/GrupoConfig');
+const { resolveDisplayName, getParticipantJids } = require('../utils/identity');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ async function handleRegAniversario(sock, msg, jid, caption, author, senderJid) 
   }
 
   const age       = calcularIdade(dayNum, monthNum, yearNum);
-  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
+  const tagAuthor = author && author !== 'Usuário' ? author : await resolveDisplayName(senderJidNormalizado, sock, {}, { fallback: 'Você' });
 
   return reply(sock, chatJid, msg,
     `✅ *Aniversário registrado!*\n\n` +
@@ -116,7 +117,7 @@ async function handleExcluirAniversario(sock, msg, jid, author, senderJid) {
     return reply(sock, chatJid, msg, '⚠️ Você não tem nenhum aniversário registrado.');
   }
 
-  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
+  const tagAuthor = author && author !== 'Usuário' ? author : await resolveDisplayName(senderJidNormalizado, sock, {}, { fallback: 'Você' });
   return reply(sock, chatJid, msg,
     `✅ O aniversário de ${tagAuthor} foi removido com sucesso!`,
     { mentions: [senderJidNormalizado] }
@@ -151,7 +152,7 @@ async function handleMeuAniversario(sock, msg, jid, author, senderJid) {
 
   const { day, month, year, dayNum, monthNum, yearNum } = parsed;
   const age       = calcularIdade(dayNum, monthNum, yearNum);
-  const tagAuthor = `@${senderJidNormalizado.split('@')[0]}`;
+  const tagAuthor = author && author !== 'Usuário' ? author : await resolveDisplayName(senderJidNormalizado, sock, {}, { fallback: 'Você' });
 
   return reply(sock, chatJid, msg,
     `🎂 ${tagAuthor}\n📅 Data: *${day}/${month}/${year}*\n📊 Idade atual: *${age} anos*`,
@@ -161,7 +162,7 @@ async function handleMeuAniversario(sock, msg, jid, author, senderJid) {
 
 // ─── !listaniversarios ────────────────────────────────────────────────────────
 
-async function handleListAniversarios(sock, msg, jid) {
+async function handleListAniversarios(sock, msg, jid, contactNames = {}) {
   const chatJid = jidNormalizedUser(jid);
 
   let list;
@@ -175,10 +176,24 @@ async function handleListAniversarios(sock, msg, jid) {
   if (chatJid.endsWith('@g.us')) {
     try {
       const meta = await sock.groupMetadata(chatJid);
-      const membrosSet = new Set(
-        meta.participants.flatMap(p => [p.id, p.lid]).filter(Boolean).map(id => id.toLowerCase())
-      );
-      list = list.filter(entry => entry.idWhatsApp && membrosSet.has(jidNormalizedUser(entry.idWhatsApp).toLowerCase()));
+      const membrosSet = new Set(meta.participants.flatMap(getParticipantJids));
+      const pnsMembros = [...membrosSet].filter(id => id.endsWith('@s.whatsapp.net'));
+      const lidsMembros = [...membrosSet].filter(id => id.endsWith('@lid'));
+      const condicoesMapa = [
+        ...(pnsMembros.length ? [{ pn: { $in: pnsMembros } }] : []),
+        ...(lidsMembros.length ? [{ lid: { $in: lidsMembros } }] : []),
+      ];
+      if (condicoesMapa.length) {
+        const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+        for (const mapa of mapas) {
+          const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+          const lid = normalizarJidComDominio(mapa.lid, 'lid');
+          if (pn) membrosSet.add(pn);
+          if (lid) membrosSet.add(lid);
+        }
+      }
+      const membrosSetLower = new Set([...membrosSet].map(id => id.toLowerCase()));
+      list = list.filter(entry => entry.idWhatsApp && membrosSetLower.has(jidNormalizedUser(entry.idWhatsApp).toLowerCase()));
     } catch (e) {
       console.error('⚠️ Erro ao filtrar aniversários por grupo:', e.message);
     }
@@ -198,22 +213,23 @@ async function handleListAniversarios(sock, msg, jid) {
     return pA.dayNum - pB.dayNum;
   });
 
-  const mentions = [];
-  let texto = `📅 *LISTA DE ANIVERSÁRIOS* 📅\n━━━━━━━━━━━━━━━━\n\n`;
-
-  for (const entry of list) {
+  const linhas = await Promise.all(list.map(async entry => {
     const parsed = validarData(entry.date);
-    if (!parsed) continue;
+    if (!parsed) return null;
     const { day, month, year, dayNum, monthNum, yearNum } = parsed;
-    const age      = calcularIdade(dayNum, monthNum, yearNum);
-    const jidLimpo = jidNormalizedUser(entry.idWhatsApp);
-    mentions.push(jidLimpo);
-    texto += `🎂 @${jidLimpo.split('@')[0]} • *${day}/${month}/${year}* (${age} anos)\n`;
-  }
+    const idade = calcularIdade(dayNum, monthNum, yearNum);
+    const nome = await resolveDisplayName(entry.idWhatsApp, sock, contactNames, {
+      preferredName: entry.nome,
+      fallback: 'Participante',
+    });
+    return '🎂 *' + nome + '* • *' + day + '/' + month + '/' + year + '* (' + idade + ' anos)';
+  }));
+  const linhasValidas = linhas.filter(Boolean);
+  const texto = '📅 *LISTA DE ANIVERSÁRIOS* 📅\n━━━━━━━━━━━━━━━━\n\n' +
+    linhasValidas.join('\n') +
+    '\n\n━━━━━━━━━━━━━━━━\n📊 Total: *' + linhasValidas.length + '* aniversário(s) registrado(s)';
 
-  texto += `\n━━━━━━━━━━━━━━━━\n📊 Total: *${mentions.length}* aniversário(s) registrado(s)`;
-
-  return reply(sock, chatJid, msg, texto, { mentions });
+  return reply(sock, chatJid, msg, texto);
 }
 
 // ─── !sistemaniversario ───────────────────────────────────────────────────────

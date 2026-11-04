@@ -2,7 +2,9 @@
 
 const Usuario      = require('../../models/Usuario');
 const GrupoConfig  = require('../../models/GrupoConfig');
-const { normalizarJid } = require('../../utils/jid');
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio, extrairNumero } = require('../../utils/jid');
+const { resolveDisplayName, getParticipantJids } = require('../../utils/identity');
+const LidMapping = require('../../models/LidMapping');
 
 const {
   somenteGrupo,
@@ -22,7 +24,7 @@ const COOLDOWN_ADMS_MS = 3 * 60 * 1000; // 3 minutos
 // ─── !grupinfo ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-async function handleGrupInfo(sock, msg, jid) {
+async function handleGrupInfo(sock, msg, jid, contactNames = {}) {
   if (!somenteGrupo(jid)) {
     await sock.sendMessage(jid, { text: '⚠️ Apenas em grupos.' }, { quoted: msg }); return;
   }
@@ -63,7 +65,9 @@ async function handleGrupInfo(sock, msg, jid) {
   const fechado = meta.announce ? '🔒 Fechado' : '🔓 Aberto';
 
   const ownerJid = await getGroupOwner(sock, jid);
-  const ownerStr = ownerJid ? `@${normalizeJidBase(ownerJid)}` : 'Desconhecido';
+  const ownerStr = ownerJid
+    ? await resolveDisplayName(ownerJid, sock, contactNames, { fallback: 'Desconhecido' })
+    : 'Desconhecido';
 
   const cfgGrupo = await GrupoConfig.findOne({ idGrupo: jid }).lean();
 
@@ -82,8 +86,6 @@ async function handleGrupInfo(sock, msg, jid) {
     ? `✅ *${mutedCount(jid)} mutado(s)*`
     : '❌ Nenhum';
 
-  const mentions = ownerJid ? [ownerJid] : [];
-
   await sock.sendMessage(jid, {
     text:
       `📋 *INFORMAÇÕES DO GRUPO*\n\n` +
@@ -100,7 +102,6 @@ async function handleGrupInfo(sock, msg, jid) {
       `🔇 *Mutados:* ${muteCfg}\n` +
       `👋 *Boas-vindas:* ${bvCfg}\n\n` +
       `📝 *Descrição:*\n${desc}`,
-    mentions,
   }, { quoted: msg });
 }
 
@@ -132,12 +133,11 @@ async function handleListaAdm(sock, msg, jid, contactNames) {
 
   const mentions = admins.map(p => p.id);
 
-  const linhas = admins.map((p, i) => {
-    const numero = normalizeJidBase(p.id);
-    const nome   = contactNames?.[p.id] || `@${numero}`;
-    const tipo   = p.admin === 'superadmin' ? '👑 Dono' : '🛡️ Admin';
+  const linhas = (await Promise.all(admins.map(async (p, i) => {
+    const nome = await resolveDisplayName(p.id, sock, contactNames, { preferredName: p.notify || p.name, candidateJids: getParticipantJids(p) });
+    const tipo = p.admin === 'superadmin' ? '👑 Dono' : '🛡️ Admin';
     return `${i + 1}. ${nome} — ${tipo}`;
-  }).join('\n');
+  }))).join('\n');
 
   await sock.sendMessage(jid, {
     text: `👑 *ADMINISTRADORES DO GRUPO*\n\n${linhas}\n\n_Total: ${admins.length} admin(s)_`,
@@ -187,13 +187,14 @@ async function handleListaMembros(sock, msg, jid, contactNames) {
     const chunk    = chunks[ci];
     const mentions = chunk.map(p => p.id);
 
-    const linhas = chunk.map((p, i) => {
-      const numero = normalizeJidBase(p.id);
-      const nome   = contactNames?.[p.id] || `@${numero}`;
-      const mutado = isMuted(jid, p.id) ? ' 🔇' : '';
+    const linhas = (await Promise.all(chunk.map(async (p, i) => {
+      const pn = getParticipantJids(p).find(value => value.endsWith('@s.whatsapp.net'));
+      const telefone = pn ? `+${extrairNumero(pn)}` : 'telefone indisponível';
+      const nome = await resolveDisplayName(p.id, sock, contactNames, { preferredName: p.notify || p.name, candidateJids: getParticipantJids(p) });
+      const mutado = isMuted(jid, p.id, getParticipantJids(p)) ? ' 🔇' : '';
       const inicio = ci * MAX + i + 1;
-      return `${inicio}. ${nome} (+${numero})${mutado}`;
-    }).join('\n');
+      return `${inicio}. ${nome} (${telefone})${mutado}`;
+    }))).join('\n');
 
     const de  = ci * MAX + 1;
     const ate = Math.min((ci + 1) * MAX, membros.length);
@@ -219,17 +220,25 @@ async function handleTempo(sock, msg, content, jid, author, contactNames) {
   const mentionedJid = content?.extendedTextMessage?.contextInfo?.mentionedJid || [];
   const senderJid    = msg.key.participant || msg.key.remoteJid;
   const alvoJid      = mentionedJid[0] || senderJid;
-  const alvoBase     = normalizeJidBase(alvoJid);
+  const alvoNorm     = normalizarJidUsuario(alvoJid);
 
   let entradaTexto = '❓ desconhecido';
   let isFallback   = false;
 
   try {
     const meta = await getGroupMetadataCached(sock, jid);
-    const part = meta?.participants?.find(p => {
-      if (!p) return false;
-      return normalizeJidBase(p.id) === alvoBase || (p.lid && normalizeJidBase(p.lid) === alvoBase);
-    });
+    let part = meta?.participants?.find(p =>
+      p && getParticipantJids(p).includes(alvoNorm)
+    );
+    if (!part && alvoNorm?.endsWith('@lid')) {
+      const mapping = await LidMapping.findOne({ lid: alvoNorm }).select('pn').lean();
+      const pn = normalizarJidComDominio(mapping?.pn, 's.whatsapp.net');
+      if (pn?.endsWith('@s.whatsapp.net')) {
+        part = meta?.participants?.find(p =>
+          p && getParticipantJids(p).includes(pn)
+        );
+      }
+    }
 
     const entradaMs = part?.joinedAt
       ? part.joinedAt * 1000
@@ -277,7 +286,7 @@ async function handleAdvertencia(sock, msg, jid) {
   }
 
   const senderJidRaw = msg.key.participant || msg.key.remoteJid;
-  const senderJid    = senderJidRaw ? normalizarJid(senderJidRaw) : null;
+  const senderJid    = senderJidRaw ? normalizarJidUsuario(senderJidRaw) : null;
   if (!senderJid) return;
 
   const groupKey = jid.replace(/\./g, '_');
@@ -370,13 +379,12 @@ async function handleRanking(sock, msg, jid, msgCount = new Map(), contactNames 
     const totalMsgs = entradas.reduce((s, e) => s + e.count, 0);
     const maxCount  = entradas[0].count || 1;
 
-    const linhas = entradas.map((e, i) => {
-      const numero = normalizeJidBase(e.idWhatsApp);
-      const nome   = contactNames?.[e.idWhatsApp] || `@${numero}`;
-      const pct    = ((e.count / totalMsgs) * 100).toFixed(1);
-      const bar    = barraProgresso(e.count, maxCount);
+    const linhas = await Promise.all(entradas.map(async (e, i) => {
+      const nome = await resolveDisplayName(e.idWhatsApp, sock, contactNames);
+      const pct = ((e.count / totalMsgs) * 100).toFixed(1);
+      const bar = barraProgresso(e.count, maxCount);
       return `${MEDALS[i]} *${nome}*\n   ${bar} ${e.count} msgs (${pct}%)`;
-    });
+    }));
 
     const mentions = entradas.map(e => e.idWhatsApp);
 
@@ -537,15 +545,20 @@ async function handleAdms(sock, msg, jid, caption, contactNames) {
   global._admsCooldownMap.set(jid, agora);
 
   const motivo = caption.replace(/^[!.,\/#](adms|marcaradms|chamaradms)\s*/i, '').trim() || 'Chamada urgente dos membros!';
-  const mentions = admins.map(p => p.id);
-  const tags = admins.map(p => `@${normalizeJidBase(p.id)}`).join(' ');
+  const nomesAdmins = await Promise.all(admins.map(p => resolveDisplayName(
+    p.id, sock, contactNames, {
+      candidateJids: getParticipantJids(p),
+      preferredName: p.notify || p.name,
+      fallback: 'Administrador',
+    }
+  )));
 
   await sock.sendMessage(jid, {
     text:
-      `🚨 ═══ *CHAMANDO ADMINISTRADORES* ═══ 🚨\n\n` +
-      `📢 *Motivo:* ${motivo}\n\n` +
-      `🛡️ ${tags}`,
-    mentions,
+      '🚨 ═══ *CHAMANDO ADMINISTRADORES* ═══ 🚨\n\n' +
+      '📢 *Motivo:* ' + motivo + '\n\n' +
+      '🛡️ ' + nomesAdmins.map(nome => '*' + nome + '*').join(' · '),
+    mentions: admins.map(p => p.id).filter(Boolean),
   }, { quoted: msg });
 }
 

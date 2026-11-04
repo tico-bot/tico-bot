@@ -5,7 +5,7 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
 const { getCarteira, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
-const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero, resolveDisplayName } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
 // Safe lazy fallback if pesca config is missing
@@ -42,7 +42,7 @@ async function handleGold(sock, msg, jid, getPrefix, contactNames) {
     const numero    = userId.split('@')[0];
     // msg.pushName é o nome de exibição que o próprio WhatsApp já manda em
     // toda mensagem — funciona mesmo antes do evento contacts.upsert chegar.
-    const userName  = contactNames?.[userIdRaw] || contactNames?.[userId] || msg.pushName || numero;
+    const userName  = await resolveDisplayName(userIdRaw, sock, contactNames, { preferredName: msg.pushName, fallback: numero });
 
     let status = '🪨 Pobre';
     if (gold >= 1000)     status = '💰 Rico';

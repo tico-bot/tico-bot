@@ -1,6 +1,7 @@
 const { createHash } = require('crypto');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
+const { resolveDisplayName } = require('../utils/identity');
 
 const PREMIOS_PRATA = [1000, 500, 350];
 
@@ -84,7 +85,6 @@ async function executarPremiacao(sock, gruposAtivos) {
       let texto = `🏆 *PREMIAÇÃO SEMANAL DE QUIZ!* 🏆\n\n`;
       texto += `Parabéns aos campeões desta semana!\n\n`;
 
-      const mentions = [];
 
       for (let i = 0; i < top3.length; i++) {
         const u = top3[i];
@@ -116,10 +116,10 @@ async function executarPremiacao(sock, gruposAtivos) {
           { upsert: true }
         );
 
+        const nome = await resolveDisplayName(jidNorm, sock, {}, { fallback: 'Participante' });
         texto += pagaPrata
-          ? `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → *+${premioPrata.toLocaleString('pt-BR')} Prata!*\n`
-          : `${MEDALS[i]} *@${jidNorm.split('@')[0]}* — ${u.quizPoints} pts → _sem Prata (conta vinculada ao app)_\n`;
-        mentions.push(jidNorm);
+          ? MEDALS[i] + ' *' + nome + '* — ' + u.quizPoints + ' pts → *+' + premioPrata.toLocaleString('pt-BR') + ' Prata!*\n'
+          : MEDALS[i] + ' *' + nome + '* — ' + u.quizPoints + ' pts → _sem Prata (conta vinculada ao app)_\n';
       }
 
       // Zera todos os outros do grupo também
@@ -131,7 +131,7 @@ async function executarPremiacao(sock, gruposAtivos) {
       texto += `\n_Os pontos foram resetados. Boa sorte na próxima semana!_ 🍀\n`;
       texto += `_Use *!quiz* para acumular pontos!_`;
 
-      await sock.sendMessage(groupJid, { text: texto, mentions });
+      await sock.sendMessage(groupJid, { text: texto });
       console.log(`[QuizRanking] Premiação enviada para ${groupJid}`);
 
     } catch (e) {

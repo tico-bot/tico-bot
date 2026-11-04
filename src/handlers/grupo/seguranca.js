@@ -2,7 +2,7 @@
 
 const GrupoConfig = require('../../models/GrupoConfig');
 const LidMapping = require('../../models/LidMapping');
-const { normalizarJid } = require('../../utils/jid');
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio } = require('../../utils/jid');
 const {
   somenteGrupo,
   checkAdmin,
@@ -13,7 +13,7 @@ const {
   getGroupOwner,
 } = require('./helpers');
 const { normalizarDominio } = require('../../utils/links');
-const { getAlternateSenderJids } = require('../../utils/identity');
+const { getAlternateSenderJids, getParticipantJids, resolveDisplayName } = require('../../utils/identity');
 const { isOwnerIdentity } = require('../extras/_shared');
 
 function obterTexto(msg, content) {
@@ -31,29 +31,35 @@ function normalizarBaseJid(jid) {
 }
 
 function encontrarParticipante(meta, jid) {
-  const base = normalizarBaseJid(jid);
-  if (!base) return null;
-  return meta?.participants?.find(p => p && (
-    normalizarBaseJid(p.id) === base || normalizarBaseJid(p.lid) === base
-  )) || null;
+  const alvo = normalizarJidUsuario(jid);
+  if (!alvo) return null;
+  return meta?.participants?.find(p => getParticipantJids(p).includes(alvo)) || null;
 }
 
 async function encontrarParticipanteDoGrupo(meta, jid) {
-  const encontrado = encontrarParticipante(meta, jid);
+  const jidNorm = normalizarJidUsuario(jid);
+  if (!jidNorm) return null;
+  const encontrado = encontrarParticipante(meta, jidNorm);
   if (encontrado) return encontrado;
-  const mapping = await LidMapping.findOne({ $or: [{ pn: jid }, { lid: jid }] }).lean().catch(() => null);
+  const mapping = await LidMapping.findOne({
+    $or: [{ pn: jidNorm }, { lid: jidNorm }],
+  }).select('pn lid').lean().catch(() => null);
   if (!mapping) return null;
-  const alternateJid = normalizarJid(mapping.pn) === normalizarJid(jid) ? mapping.lid : mapping.pn;
+  const mapPn = normalizarJidComDominio(mapping.pn, 's.whatsapp.net');
+  const mapLid = normalizarJidComDominio(mapping.lid, 'lid');
+  const alternateJid = mapPn === jidNorm ? mapLid : mapPn;
   return alternateJid ? encontrarParticipante(meta, alternateJid) : null;
 }
 
 function idsDoParticipante(participante, fallback) {
-  return [...new Set([participante?.id, participante?.lid, fallback].filter(Boolean))];
+  return [...new Set([...getParticipantJids(participante), normalizarJidUsuario(fallback)]
+    .filter(Boolean))];
 }
 
 function temPermissaoSalva(lista, participante, fallback) {
-  const bases = new Set(idsDoParticipante(participante, fallback).map(normalizarBaseJid).filter(Boolean));
-  return (Array.isArray(lista) ? lista : []).some(id => bases.has(normalizarBaseJid(id)));
+  const identidades = new Set(idsDoParticipante(participante, fallback));
+  return (Array.isArray(lista) ? lista : [])
+    .some(id => identidades.has(normalizarJidUsuario(id)));
 }
 
 function invalidarCacheConfig(jid) {
@@ -67,8 +73,14 @@ async function confirmarDonoDoGrupo(sock, jid, msg) {
   const meta = await getGroupMetadataCached(sock, jid, true).catch(() => null);
   const sender = await encontrarParticipanteDoGrupo(meta, senderJid);
   const owner = await getGroupOwner(sock, jid).catch(() => null);
+  const identidadesRemetente = new Set([
+    senderJid,
+    ...senderAlternateJids,
+    ...getParticipantJids(sender),
+  ].filter(valor => typeof valor === 'string' && valor.includes('@'))
+    .map(valor => normalizarJidUsuario(valor)).filter(Boolean));
   const isOwner = globalOwner || sender?.admin === 'superadmin' || (
-    owner && normalizarBaseJid(owner) === normalizarBaseJid(senderJid)
+    owner && identidadesRemetente.has(normalizarJidUsuario(owner))
   );
   if (!isOwner) {
     await sock.sendMessage(jid, {
@@ -189,7 +201,12 @@ async function handlePermAdm(sock, msg, content, jid) {
   const ids = idsDoParticipante(participante, alvo);
   const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
   if (temPermissaoSalva(cfg?.admsPermissao, participante, alvo)) {
-    await sock.sendMessage(jid, { text: `✅ *${ids[0].split('@')[0]}* já tem permissão especial.` }, { quoted: msg });
+    const nomeAlvo = await resolveDisplayName(alvo, sock, {}, {
+      candidateJids: ids,
+      preferredName: participante.notify || participante.name,
+      fallback: 'Administrador',
+    });
+    await sock.sendMessage(jid, { text: '✅ *' + nomeAlvo + '* já tem permissão especial.' }, { quoted: msg });
     return;
   }
 
@@ -199,9 +216,13 @@ async function handlePermAdm(sock, msg, content, jid) {
     { upsert: true, new: true },
   );
   invalidarCacheConfig(jid);
+  const nomeAlvo = await resolveDisplayName(alvo, sock, {}, {
+    candidateJids: ids,
+    preferredName: participante.notify || participante.name,
+    fallback: 'Administrador',
+  });
   await sock.sendMessage(jid, {
-    text: `👑 Permissão especial concedida a *@${normalizarBaseJid(ids[0])}*. Agora pode promover membros e rebaixar administradores.`,
-    mentions: [participante.id || alvo],
+    text: '👑 Permissão especial concedida a *' + nomeAlvo + '*. Agora pode promover membros e rebaixar administradores.',
   }, { quoted: msg });
 }
 
@@ -226,10 +247,10 @@ async function handleRemovePermAdm(sock, msg, content, jid) {
     return;
   }
 
-  const idsAlvo = new Set(idsDoParticipante(participante, alvo).map(normalizarBaseJid).filter(Boolean));
+  const idsAlvo = new Set(idsDoParticipante(participante, alvo));
   const cfg = await GrupoConfig.findOne({ idGrupo: jid }).lean();
   const lista = Array.isArray(cfg?.admsPermissao) ? cfg.admsPermissao : [];
-  const filtrada = lista.filter(id => !idsAlvo.has(normalizarBaseJid(id)));
+  const filtrada = lista.filter(id => !idsAlvo.has(normalizarJidUsuario(id)));
   if (filtrada.length === lista.length) {
     await sock.sendMessage(jid, { text: 'ℹ️ Esse administrador não tem permissão especial registrada.' }, { quoted: msg });
     return;

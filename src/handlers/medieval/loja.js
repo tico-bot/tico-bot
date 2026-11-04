@@ -6,6 +6,7 @@ const mongoose           = require('mongoose');
 const MedievalPersonagem = require('../../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const { getCarteira, alterarGold, formatarSaldo } = require('../../utils/carteira');
+const { resolveDisplayName } = require('../../utils/identity');
 
 const {
   ARMAS, ARMADURAS, POCOES, getClasse, getElemento, getArma, getArmadura, getPocao,
@@ -568,8 +569,7 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
     const chaveInv = normalizarItemKey(item.nome);
     const chaveMap = `inventarioMedieval.${chaveInv}`;
 
-    const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
     const invMap   = getInventarioMap(p);
     const qtdAtual = invMap.get(chaveInv) || 0;
@@ -695,8 +695,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
     const chaveInv = normalizarItemKey(item.nome);
     const chaveMap = `inventarioMedieval.${chaveInv}`;
 
-    const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
     const invMap   = getInventarioMap(p);
     const qtdAtual = invMap.get(chaveInv) || 0;
@@ -723,7 +722,11 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       }, { quoted: msg });
     }
 
-    await getOuCriarPersonagem(targetJid, jid, (typeof sock.getName === 'function' && sock.getName(targetJid)) || targetJid.split('@')[0]);
+    const nomeAlvo = await resolveDisplayName(targetJid, sock, {}, {
+      preferredName: typeof sock.getName === 'function' ? sock.getName(targetJid) : undefined,
+      fallback: 'Aventureiro',
+    });
+    await getOuCriarPersonagem(targetJid, jid, nomeAlvo);
 
     const session = await mongoose.startSession();
     try {
@@ -762,7 +765,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
       text:
         `🎁 *ITEM ENVIADO!*\n\n` +
         `${item.emoji} *${item.nome}* x${quantidade}\n` +
-        `👤 Para: *@${targetJid.split('@')[0]}*\n\n` +
+        '👤 Para: *' + nomeAlvo + '*\n\n' +
         `━━━━━━━━━━━━━━━━━━━\n` +
         (qtdRestante > 0
           ? `_Restam *${qtdRestante}x ${item.nome}* no seu inventário._`
@@ -796,11 +799,14 @@ async function handleRankMedieval(sock, msg, jid) {
     }
 
     const MEDALHAS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-    const linhas   = personagens.map((p, i) => {
-      const classe    = getClasse(p.classe);
-      const elemento  = getElemento(p.elemento);
-      const nomeRaw   = (p.nome || '').trim();
-      const nomeExib  = nomeRaw && nomeRaw !== '.' ? nomeRaw : `Guerreiro #${i + 1}`;
+    const linhas = await Promise.all(personagens.map(async (p, i) => {
+      const classe = getClasse(p.classe);
+      const elemento = getElemento(p.elemento);
+      const nomeResolvido = await resolveDisplayName(p.idWhatsApp, sock, {}, {
+        preferredName: p.nome,
+        fallback: 'Guerreiro ' + (i + 1),
+      });
+      const nomeExib = nomeResolvido;
       const vitorias  = p.vitorias ?? 0;
       const derrotas  = p.derrotas ?? 0;
       const total     = vitorias + derrotas;
@@ -810,13 +816,14 @@ async function handleRankMedieval(sock, msg, jid) {
         `   ${classe?.emoji || '⚔️'} ${p.classe || '?'} • ${elemento?.emoji || '✨'} ${p.elemento || '?'} • ⭐ Nível ${p.nivel}\n` +
         `   🏆 ${vitorias}V / ${derrotas}D • Taxa: ${winrate}%`
       );
-    }).join('\n\n');
+    }));
+    const linhasTexto = linhas.join('\n\n');
 
     await sock.sendMessage(jid, {
       text:
         `⚔️ *RANKING MEDIEVAL* ⚔️\n` +
         `━━━━━━━━━━━━━━━━━━━\n\n` +
-        `${linhas}\n\n` +
+        `${linhasTexto}\n\n` +
         `━━━━━━━━━━━━━━━━━━━\n` +
         `_Use *!ficha* para ver sua posição!_`,
     }, { quoted: msg });

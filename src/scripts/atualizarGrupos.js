@@ -7,6 +7,8 @@ require('dotenv').config();
 const CarteiraGrupoModel = require(path.join(__dirname, '..', 'models', 'CarteiraGrupo'));
 const GrupoConfigModel   = require(path.join(__dirname, '..', 'models', 'GrupoConfig'));
 const LidMappingModel    = require(path.join(__dirname, '..', 'models', 'LidMapping'));
+const { normalizarJid, normalizarJidComDominio } = require(path.join(__dirname, '..', 'utils', 'jid'));
+const { getParticipantJids } = require(path.join(__dirname, '..', 'utils', 'identity'));
 
 // ─── Utilitário ───────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -124,12 +126,9 @@ async function rodarAtualizacao(sock) {
       const participantesAtuais = metadata?.participants || [];
       if (participantesAtuais.length > 0) {
         const rawJids = [];
-        for (const p of participantesAtuais) {
-          if (!p.id) continue;
-          rawJids.push(p.id);
-          const rawNum = p.id.split(':')[0].split('@')[0];
-          rawJids.push(`${rawNum}@s.whatsapp.net`);
-          rawJids.push(`${rawNum}@lid`);
+        for (const participante of participantesAtuais) {
+          // Campos tipados: PN continua PN e LID continua LID, mesmo sem domínio.
+          rawJids.push(...getParticipantJids(participante));
         }
 
         const lidMaps = await LidMappingModel.find({
@@ -141,15 +140,19 @@ async function rodarAtualizacao(sock) {
 
         const jidsAtivosGrupo = new Set(rawJids);
         for (const m of lidMaps) {
-          if (m.pn)  jidsAtivosGrupo.add(m.pn);
-          if (m.lid) jidsAtivosGrupo.add(m.lid);
-          const digitos = m.pn?.split('@')[0]?.replace(/\D/g, '');
-          if (digitos) {
+          const pnMapeado = normalizarJidComDominio(m.pn, 's.whatsapp.net');
+          const lidMapeado = normalizarJidComDominio(m.lid, 'lid');
+          if (pnMapeado) jidsAtivosGrupo.add(pnMapeado);
+          if (lidMapeado) jidsAtivosGrupo.add(lidMapeado);
+          const pn = normalizarJidComDominio(m.pn, 's.whatsapp.net');
+          const digitos = pn?.endsWith('@s.whatsapp.net') ? pn.split('@')[0].replace(/\D/g, '') : '';
+          if (digitos && digitos.length >= 8 && digitos.length <= 15) {
             gerarVariantesNumero(digitos).forEach(v => jidsAtivosGrupo.add(`${v}@s.whatsapp.net`));
           }
         }
 
         for (const jidRaw of rawJids) {
+          if (!jidRaw.endsWith('@s.whatsapp.net')) continue;
           const num = jidRaw.split('@')[0].replace(/\D/g, '');
           if (num && num.length >= 10 && num.length <= 15) {
             gerarVariantesNumero(num).forEach(v => jidsAtivosGrupo.add(`${v}@s.whatsapp.net`));

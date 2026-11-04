@@ -5,7 +5,7 @@ const crypto = require('crypto');
 
 const Usuario    = require('../../models/Usuario');
 const LidMapping = require('../../models/LidMapping');
-const { normalizarJid } = require('../../utils/jid');
+const { normalizarJid, normalizarJidComDominio } = require('../../utils/jid');
 const { alterarGold, formatarSaldo }          = require('../../utils/carteira');
 
 /**
@@ -20,7 +20,8 @@ async function getUserId(msg) {
   if (!norm.endsWith('@lid')) {
     try {
       const lidMap = await LidMapping.findOne({ pn: norm }).lean();
-      if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) return lidMap.lid;
+      const lid = normalizarJidComDominio(lidMap?.lid, 'lid');
+      if (lid && await Usuario.exists({ idWhatsApp: lid })) return lid;
     } catch { /* segue com o JID normalizado */ }
   }
   return norm;
@@ -59,8 +60,25 @@ function isOwnerJid(jid, ...aliases) {
   const candidates = [jid, ...aliases].flat(Infinity);
   const owners = getOwners();
   return candidates.some(candidate => {
-    const base = String(candidate || '').split(':')[0].split('@')[0].replace(/\D/g, '');
-    if (!base) return false;
+    if (typeof candidate !== 'string') return false;
+    const raw = candidate.trim().toLowerCase();
+    if (!raw) return false;
+
+    // Nunca trate os dígitos de @lid ou de outro domínio como telefone.
+    let base;
+    if (raw.includes('@')) {
+      const [userPart, domain] = raw.split('@');
+      if (domain !== 's.whatsapp.net') return false;
+      base = userPart.split(':')[0];
+      if (!/^\d{7,15}$/.test(base)) return false;
+    } else {
+      // Aceita telefone explicitamente informado em formato legível, mas
+      // nunca extrai dígitos de texto arbitrário ou de um domínio LID.
+      if (!/^\+?[\d\s().-]+$/.test(raw)) return false;
+      base = raw.replace(/\D/g, '');
+      if (!/^\d{7,15}$/.test(base)) return false;
+    }
+
     return owners.some(owner =>
       base === owner ||
       // Alguns payloads/contas brasileiras apresentam o telefone sem o DDI 55.
@@ -71,7 +89,10 @@ function isOwnerJid(jid, ...aliases) {
 
 /** Resolve owner permissions even when WhatsApp provides only the LID JID. */
 async function isOwnerIdentity(jid, ...aliases) {
-  const candidates = [jid, ...aliases].flat(Infinity).filter(Boolean);
+  // Nesta função os argumentos representam identidades, não telefones digitados.
+  // Exigir domínio impede que participant.lid numérico seja lido como PN.
+  const candidates = [jid, ...aliases].flat(Infinity)
+    .filter(value => typeof value === 'string' && value.includes('@'));
   if (isOwnerJid(candidates)) return true;
 
   for (const candidate of candidates) {

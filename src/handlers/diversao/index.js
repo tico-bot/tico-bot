@@ -110,9 +110,9 @@ const {
 // ─── Utilitários ────────────────────────────────────────────────────────────
 
 function getUserId(msg) {
-  return msg.key.remoteJid.split('@')[0] === msg.key.participant?.split('@')[0]
-    ? msg.key.participant
-    : msg.key.remoteJid;
+  // Em grupos, o participante é a identidade do utilizador; em privado, é o remoteJid.
+  // Nunca comparar apenas os dígitos do PN/LID com os do JID da conversa.
+  return msg?.key?.participant || msg?.key?.remoteJid || null;
 }
 
 async function initializePersistedData() {

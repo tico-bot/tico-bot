@@ -3,10 +3,12 @@
 const Aniversario   = require('../../models/Aniversario');
 const GrupoConfig   = require('../../models/GrupoConfig');
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
+const LidMapping = require('../../models/LidMapping');
+const { normalizarJid, normalizarJidComDominio } = require('../../utils/jid');
 const ExtraState    = require('../../models/ExtraState');
 const { agoraLocal } = require('../../utils/tempo');
 const { getGroupMetadataCached, isAdmin, normalizeJidBase } = require('../grupo/helpers');
-const { getAlternateSenderJids } = require('../../utils/identity');
+const { getAlternateSenderJids, getParticipantJids, resolveDisplayName } = require('../../utils/identity');
 const { getSock } = require('./_shared');
 const { entregarLembretesVencidos } = require('./lembretes');
 
@@ -38,26 +40,53 @@ async function anunciarAniversarios(sock, agora) {
       const meta = await getGroupMetadataCached(sock, idGrupo);
       if (!meta?.participants?.length) continue;
 
-      const bases = new Map(); // base numérica -> jid real do participante
+      // Indexa as identidades completas dos participantes. A parte numérica
+      // de um LID nunca é usada como chave PN.
+      const identidades = new Map();
+      const participantesIds = [];
       for (const p of meta.participants) {
-        bases.set(normalizeJidBase(p.id), p.id);
-        if (p.lid) bases.set(normalizeJidBase(p.lid), p.id);
+        const ids = getParticipantJids(p);
+        const participanteJid = ids.find(value => value.endsWith('@s.whatsapp.net')) || ids[0];
+        if (!participanteJid) continue;
+        participantesIds.push(...ids);
+        for (const id of ids) identidades.set(id, participanteJid);
+      }
+      const pnsGrupo = participantesIds.filter(id => id.endsWith('@s.whatsapp.net'));
+      const lidsGrupo = participantesIds.filter(id => id.endsWith('@lid'));
+      const condicoesMapa = [
+        ...(pnsGrupo.length ? [{ pn: { $in: pnsGrupo } }] : []),
+        ...(lidsGrupo.length ? [{ lid: { $in: lidsGrupo } }] : []),
+      ];
+      if (condicoesMapa.length) {
+        const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+        for (const mapa of mapas) {
+          const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+          const lid = normalizarJidComDominio(mapa.lid, 'lid');
+          const jidReal = (lid && identidades.get(lid)) || (pn && identidades.get(pn));
+          if (jidReal) {
+            if (pn?.endsWith('@s.whatsapp.net')) identidades.set(pn, jidReal);
+            if (lid?.endsWith('@lid')) identidades.set(lid, jidReal);
+          }
+        }
       }
 
       const doGrupo = aniversariantes
-        .map(a => ({ a, jid: bases.get(normalizeJidBase(a.idWhatsApp)) }))
+        .map(a => ({ a, jid: identidades.get(normalizarJid(a.idWhatsApp)) }))
         .filter(x => x.jid);
       if (!doGrupo.length) continue;
 
-      const linhas = doGrupo.map(({ a, jid }) => {
+      const linhas = await Promise.all(doGrupo.map(async ({ a, jid }) => {
         const anoNasc = Number(a.date.split('/')[2]);
-        const idade   = agora.ano - anoNasc;
-        return `🎂 @${jid.split('@')[0]}${idade > 0 && idade < 120 ? ` — *${idade} anos*` : ''}`;
-      });
+        const idade = agora.ano - anoNasc;
+        const nome = await resolveDisplayName(jid, sock, {}, {
+          preferredName: a.nome,
+          fallback: 'Participante',
+        });
+        return '🎂 *' + nome + '*' + (idade > 0 && idade < 120 ? ' — *' + idade + ' anos*' : '');
+      }));
 
       await sock.sendMessage(idGrupo, {
-        text: `🎉 *HOJE TEM ANIVERSÁRIO!* 🎉\n\n${linhas.join('\n')}\n\nDeem os parabéns! 🥳🎈`,
-        mentions: doGrupo.map(x => x.jid),
+        text: '🎉 *HOJE TEM ANIVERSÁRIO!* 🎉\n\n' + linhas.join('\n') + '\n\nDeem os parabéns! 🥳🎈',
       });
     } catch (e) {
       console.error(`[aniversário] falha no grupo ${idGrupo}:`, e?.message || e);
@@ -88,15 +117,21 @@ async function postarRankingSemanal(sock) {
       const topMsg = placar.filter(p => p.msg > 0).sort((a, b) => b.msg - a.msg).slice(0, 3);
 
       if (topXp.length) {
-        const mencoes = [...new Set([...topXp, ...topMsg].map(p => p.jid))];
-        const tag = j => `@${j.split(':')[0].split('@')[0]}`;
-        let texto = `🏆 *RANKING SEMANAL* 🏆\n_${temSnap ? 'XP ganho nesta semana' : 'XP total (primeira edição)'}_\n\n`;
-        texto += topXp.map((p, i) => `${MEDALHAS[i]} ${tag(p.jid)} — *${p.xp} XP*`).join('\n');
+        const todosTop = [...topXp, ...topMsg];
+        const nomes = new Map(await Promise.all([...new Set(todosTop.map(p => p.jid))].map(async id => [
+          id,
+          await resolveDisplayName(id, sock, {}, { fallback: 'Participante' }),
+        ])));
+        const nomeDo = id => '*' + (nomes.get(id) || 'Participante') + '*';
+        let texto = '🏆 *RANKING SEMANAL* 🏆\n_' +
+          (temSnap ? 'XP ganho nesta semana' : 'XP total (primeira edição)') + '_\n\n';
+        texto += topXp.map((p, i) => MEDALHAS[i] + ' ' + nomeDo(p.jid) + ' — *' + p.xp + ' XP*').join('\n');
         if (topMsg.length) {
-          texto += `\n\n💬 *Mais ativos da semana*\n` + topMsg.map((p, i) => `${MEDALHAS[i]} ${tag(p.jid)} — *${p.msg}* msgs`).join('\n');
+          texto += '\n\n💬 *Mais ativos da semana*\n' +
+            topMsg.map((p, i) => MEDALHAS[i] + ' ' + nomeDo(p.jid) + ' — *' + p.msg + '* msgs').join('\n');
         }
-        texto += `\n\n_Nova semana começando — bora subir no ranking!_ 🚀`;
-        await sock.sendMessage(idGrupo, { text: texto, mentions: mencoes });
+        texto += '\n\n_Nova semana começando — bora subir no ranking!_ 🚀';
+        await sock.sendMessage(idGrupo, { text: texto });
       }
 
       // Guarda o snapshot (limita o tamanho do documento).

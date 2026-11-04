@@ -3,7 +3,7 @@
 const Usuario       = require('../models/Usuario');
 const LidMapping    = require('../models/LidMapping');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
-const { normalizarJid } = require('./jid');
+const { normalizarJid, normalizarJidComDominio } = require('./jid');
 const { prepareDailyMissionState, incrementMission } = require('../handlers/diversao/missoes');
 
 /**
@@ -86,8 +86,9 @@ async function resolveIdAlvo(userIdNorm) {
   let idAlvo = userIdNorm;
   if (!userIdNorm.endsWith('@lid')) {
     const lidMap = await LidMapping.findOne({ pn: userIdNorm }).lean();
-    if (lidMap?.lid && await Usuario.exists({ idWhatsApp: lidMap.lid })) {
-      idAlvo = lidMap.lid;
+    const lid = normalizarJidComDominio(lidMap?.lid, 'lid');
+    if (lid && await Usuario.exists({ idWhatsApp: lid })) {
+      idAlvo = lid;
     }
   }
 

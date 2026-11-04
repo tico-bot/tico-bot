@@ -72,6 +72,20 @@ test('normaliza o par e mantém nomes associados ao participante correto', () =>
 });
 
 test('recusa registros sem grupo, com tipo inválido ou participantes repetidos', () => {
+  const comIdentificadoresComoNome = normalizarRegistro({
+    idGrupo: grupoA,
+    jidA,
+    jidB,
+    tipo: 'namoro',
+    desde,
+    nomeA: '104535947214891@lid',
+    nomeB: '+55 (11) 99999-9999',
+  });
+  assert.equal(comIdentificadoresComoNome.nomeA, 'Participante');
+  assert.equal(comIdentificadoresComoNome.nomeB, 'Participante');
+});
+
+test('continua recusando grupos e pares inválidos', () => {
   assert.equal(normalizarRegistro({ jidA, jidB, tipo: 'namoro', desde }), null);
   assert.equal(normalizarRegistro({ idGrupo: grupoA, jidA, jidB, tipo: 'noivado', desde }), null);
   assert.equal(normalizarRegistro({ idGrupo: grupoA, jidA, jidB: jidA, tipo: 'namoro', desde }), null);

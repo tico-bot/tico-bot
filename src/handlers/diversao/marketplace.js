@@ -711,9 +711,11 @@ function parseBuyArgs(caption) {
 function buildMensagemComprador({
   oferta, quantidade, totalBruto, taxa, novoSaldoComprador, currencyInfoBuyer, currencyInfoSeller,
 }) {
-  const vendedorExibicao = oferta.sellerName
-    ? `${oferta.sellerName} (${formatarNumero(oferta.sellerId)})`
-    : formatarNumero(oferta.sellerId);
+  const vendedorNome = typeof oferta.sellerName === 'string' ? oferta.sellerName.trim() : '';
+  const vendedorExibicao = vendedorNome && !/^@?\+?[\d\s().-]+$/.test(vendedorNome)
+    && !/^\d+@(s\.whatsapp\.net|lid)$/i.test(vendedorNome)
+    ? vendedorNome
+    : 'Usuário';
 
   return (
     `✅ *COMPRA REALIZADA!*\n\n` +
@@ -732,9 +734,11 @@ function buildMensagemVendedor({
   oferta, quantidade, totalBruto, totalLiquido, taxa, compradorId, compradorNome, novoSaldoVendedor,
   currencyInfoBuyer, currencyInfoSeller,
 }) {
-  const compradorExibicao = compradorNome
-    ? `${compradorNome} (@${formatarNumero(compradorId)})`
-    : `@${formatarNumero(compradorId)}`;
+  const nomeComprador = typeof compradorNome === 'string' ? compradorNome.trim() : '';
+  const compradorExibicao = nomeComprador && !/^@?\+?[\d\s().-]+$/.test(nomeComprador)
+    && !/^\d+@(s\.whatsapp\.net|lid)$/i.test(nomeComprador)
+    ? nomeComprador
+    : 'Usuário';
 
   return {
     text:
@@ -748,7 +752,6 @@ function buildMensagemVendedor({
       (novoSaldoVendedor == null ? '' : `💳 *Seu saldo:* ${formatarSaldo(novoSaldoVendedor, currencyInfoSeller)}\n`) +
       `━━━━━━━━━━━━━━━━\n` +
       `👤 *Comprador:* ${compradorExibicao}`,
-    mentions: [compradorId],
   };
 }
 

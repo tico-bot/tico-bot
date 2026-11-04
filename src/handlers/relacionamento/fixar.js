@@ -1,6 +1,7 @@
 'use strict';
 
 const { jidNormalizedUser, proto } = require('@whiskeysockets/baileys');
+const { resolveDisplayName } = require('../../utils/identity');
 
 /**
  * !fixar (Comando Novo/Aprimorado)
@@ -10,7 +11,7 @@ const { jidNormalizedUser, proto } = require('@whiskeysockets/baileys');
 async function handleFixar(sock, msg, jid, pinnedMessages) {
   const chatJid = jidNormalizedUser(jid);
   const senderJid = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
-  
+
   // Verifica se o usuário está respondendo a alguma mensagem
   const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
   const quotedSign = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
@@ -24,17 +25,17 @@ async function handleFixar(sock, msg, jid, pinnedMessages) {
   }
 
   // Extrai o texto da mensagem marcada de forma segura
-  const msgText = quotedMsg.conversation || 
-                  quotedMsg.extendedTextMessage?.text || 
-                  quotedMsg.imageMessage?.caption || 
-                  quotedMsg.videoMessage?.caption || 
+  const msgText = quotedMsg.conversation ||
+                  quotedMsg.extendedTextMessage?.text ||
+                  quotedMsg.imageMessage?.caption ||
+                  quotedMsg.videoMessage?.caption ||
                   '[_Mensagem de Mídia/Outro Tipo_]';
 
   // Define o tempo de fixação padrão do WhatsApp (em segundos). Padrão: 604800 (7 dias)
   // Opções aceitas pelo WhatsApp: 86400 (24h), 604800 (7 dias), 2592000 (30 dias)
   const args = msg.message?.extendedTextMessage?.text?.split(' ') || [];
   let durationInSeconds = 604800; // 7 dias padrão
-  
+
   if (args[1] === '24h' || args[1] === '1') durationInSeconds = 86400;
   if (args[1] === '30') durationInSeconds = 2592000;
 
@@ -56,11 +57,16 @@ async function handleFixar(sock, msg, jid, pinnedMessages) {
     });
 
     // Salva na memória do bot para consultas do comando !pinned posterior
+    const byName = await resolveDisplayName(senderJid, sock, {}, {
+      preferredName: msg.pushName,
+      fallback: 'Usuário',
+    });
     pinnedMessages.set(chatJid, {
       text: msgText,
       time: Date.now(),
-      by: `@${senderJid.split('@')[0]}`,
+      by: byName,
       byJid: senderJid,
+      byName,
       orig: quotedParticipantNorm,
       messageId: quotedSign
     });
@@ -94,21 +100,15 @@ async function handlePinned(sock, msg, jid, pinnedMessages) {
   }
 
   const when = new Date(pm.time).toLocaleString('pt-BR');
-  const tagFixador = pm.by;
   const jidOrigem = jidNormalizedUser(pm.orig);
-  const tagOrigem = `@${jidOrigem.split('@')[0]}`;
+  const [nomeOrigem, nomeFixador] = await Promise.all([
+    jidOrigem ? resolveDisplayName(jidOrigem, sock, {}, { fallback: 'Desconhecido' }) : 'Desconhecido',
+    resolveDisplayName(pm.byJid || '', sock, {}, { preferredName: pm.byName || pm.by, fallback: 'Usuário' }),
+  ]);
+  const header = '📌 *Mensagem de:* *' + nomeOrigem + '*\n👤 *Fixada por:* *' + nomeFixador + '*\n📅 *Data:* ' + when;
 
-  const header = `📌 *Mensagem de:* ${tagOrigem}\n👤 *Fixada por:* ${tagFixador}\n📅 *Data:* ${when}`;
-
-  const mentions = [jidOrigem];
-
-  const jidFixadorCompleto = pm.byJid?.toLowerCase()
-    || (pm.by.replace('@', '') + '@s.whatsapp.net');
-  mentions.push(jidFixadorCompleto);
-
-  await sock.sendMessage(chatJid, { 
-    text: `${header}\n\n📝 *Conteúdo:*\n${pm.text}`,
-    mentions: mentions
+  await sock.sendMessage(chatJid, {
+    text: header + '\n\n📝 *Conteúdo:*\n' + pm.text,
   }, { quoted: msg });
 }
 

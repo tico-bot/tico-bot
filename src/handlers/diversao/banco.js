@@ -8,6 +8,7 @@ const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carte
 const { incrementMission } = require('./missoes');
 const { BANCO_CONFIG } = require(path.join(__dirname, '..', '..', 'config', 'banco'));
 const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
+const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 
@@ -57,11 +58,10 @@ async function resolverUserId(sock, msg) {
   // isso criava uma CarteiraGrupo "fantasma" (idWhatsApp diferente) só para
   // o banco, separada da carteira real usada por !prata — o gold depositado
   // ficava preso lá, invisível em qualquer outro comando.
-  if (raw.endsWith('@lid')) {
-    const userPart = raw.split('@')[0].split(':')[0];
-    return `${userPart}@lid`.toLowerCase();
-  }
-  return raw.split('@')[0].split(':')[0].replace(/\D/g, '') + '@s.whatsapp.net';
+  const jid = normalizarJid(raw);
+  if (jid?.endsWith('@lid') || jid?.endsWith('@s.whatsapp.net')) return jid;
+  // Não converter JIDs de domínios desconhecidos em telefones.
+  return null;
 }
 
 async function getCarteiraGrupo(userId, idGrupo) {
@@ -85,6 +85,10 @@ function calcularLimiteBanco(level) {
 async function handleBanco(sock, msg, jid, caption) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
+  if (!userId) {
+    await sock.sendMessage(jid, { text: '❌ Não consegui identificar sua conta do WhatsApp. Envie uma mensagem novamente e tente.' }, { quoted: msg });
+    return;
+  }
   const match   = caption.match(/banco\s+(\d+)/i);
   console.log('[banco] userId:', userId, '| idGrupo:', idGrupo);
   
@@ -333,6 +337,10 @@ async function handleBanco(sock, msg, jid, caption) {
 async function handleResgatar(sock, msg, jid) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
+  if (!userId) {
+    await sock.sendMessage(jid, { text: '❌ Não consegui identificar sua conta do WhatsApp. Envie uma mensagem novamente e tente.' }, { quoted: msg });
+    return;
+  }
   console.log('[resgatar] userId:', userId, '| idGrupo:', idGrupo);
   
   if (!idGrupo) {
@@ -485,6 +493,10 @@ async function handleResgatar(sock, msg, jid) {
 async function handleHistoricoBanco(sock, msg, jid) {
   const userId  = await resolverUserId(sock, msg);
   const idGrupo = msg.key.remoteJid?.endsWith('@g.us') ? msg.key.remoteJid : null;
+  if (!userId) {
+    await sock.sendMessage(jid, { text: '❌ Não consegui identificar sua conta do WhatsApp. Envie uma mensagem novamente e tente.' }, { quoted: msg });
+    return;
+  }
 
   if (!idGrupo) {
     await sock.sendMessage(jid, {

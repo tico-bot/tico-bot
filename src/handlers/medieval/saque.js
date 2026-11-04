@@ -8,9 +8,10 @@ const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const {
   ARMADURAS, getArma,
   somenteGrupo, getModoAtivo, verificarRecuperacaoDerrota, JANELA_SAQUE_MS,
-  getInventarioMap, itemKeyParaNome, bloqueadoPorVinculo,
+  getInventarioMap, itemKeyParaNome, bloqueadoPorVinculo, getOuCriarPersonagem,
 } = require('../../utils/medievalUtils');
 const { getCarteira, formatarSaldo, transferirGold } = require('../../utils/carteira');
+const { resolveDisplayName } = require('../../utils/identity');
 
 const RESPOSTA_TIMEOUT_MS = 60 * 1000;
 
@@ -51,16 +52,22 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
     if (targetJid === senderJid) {
       return sock.sendMessage(jid, { text: '😂 Você não pode saquear a si mesmo!' }, { quoted: msg });
     }
-    const perdedor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid });
+    let perdedor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid });
     if (!perdedor) {
       return sock.sendMessage(jid, { text: '❌ Esse jogador não tem personagem medieval.' }, { quoted: msg });
     }
+
+    const nomePerdedor = await resolveDisplayName(targetJid, sock, {}, {
+      preferredName: perdedor.nome,
+      fallback: 'Aventureiro',
+    });
+    perdedor = await getOuCriarPersonagem(targetJid, jid, nomePerdedor);
 
     await verificarRecuperacaoDerrota(perdedor);
 
     if (!perdedor.derrotadoEm) {
       return sock.sendMessage(jid, {
-        text: `❌ *${perdedor.nome || targetJid.split('@')[0]}* não está derrotado no momento (ou a janela já passou).`,
+        text: `❌ *${nomePerdedor || 'Aventureiro'}* não está derrotado no momento (ou a janela já passou).`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -68,7 +75,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
     const passouMs = Date.now() - new Date(perdedor.derrotadoEm).getTime();
     if (passouMs >= JANELA_SAQUE_MS) {
       return sock.sendMessage(jid, {
-        text: `⏳ A janela de *3 minutos* pra saquear *${perdedor.nome || targetJid.split('@')[0]}* já expirou!`,
+        text: `⏳ A janela de *3 minutos* pra saquear *${nomePerdedor || 'Aventureiro'}* já expirou!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -102,7 +109,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     if (!opcoes.length) {
       return sock.sendMessage(jid, {
-        text: `💨 *${perdedor.nome || targetJid.split('@')[0]}* não tem nada pra saquear agora!`,
+        text: `💨 *${nomePerdedor || 'Aventureiro'}* não tem nada pra saquear agora!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -115,7 +122,7 @@ async function handleSaquear(sock, msg, jid, senderJid, targetJid) {
 
     await sock.sendMessage(jid, {
       text:
-        `💰 *SAQUE — ${perdedor.nome || targetJid.split('@')[0]}* 💰\n` +
+        `💰 *SAQUE — ${nomePerdedor || 'Aventureiro'}* 💰\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `${listaTexto}\n` +
         `━━━━━━━━━━━━━━━━\n` +
@@ -320,7 +327,7 @@ async function handleRespostaSaque(sock, msg, jid, senderJid, textoResposta) {
     await sock.sendMessage(jid, {
       text:
         `✅ *SAQUE REALIZADO!* ✅\n\n` +
-        `Você levou de *@${estado.perdedorJid.split('@')[0]}*:\n` +
+        'Você levou os pertences do personagem derrotado:\n' +
         resumo.map(r => `  ${r}`).join('\n'),
       mentions: [senderJid, estado.perdedorJid],
     }, { quoted: msg });

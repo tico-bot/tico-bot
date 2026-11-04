@@ -2,7 +2,7 @@
 
 const Lembrete = require('../../models/Lembrete');
 const { parseDuracao, formatarDuracao, agoraLocal } = require('../../utils/tempo');
-const { menc } = require('./_shared');
+const { resolveDisplayName } = require('../../utils/identity');
 
 const MIN_MS         = 60_000;                 // 1 minuto
 const MAX_MS         = 30 * 24 * 3_600_000;    // 30 dias
@@ -115,9 +115,9 @@ async function entregarLembretesVencidos(sock) {
     if (!marcado) continue;
 
     try {
+      const nome = await resolveDisplayName(l.idWhatsApp, sock, {}, { fallback: 'Usuário' });
       await sock.sendMessage(l.idChat, {
-        text: `⏰ *LEMBRETE* ${menc(l.idWhatsApp)}\n\n${l.texto}`,
-        mentions: [l.idWhatsApp],
+        text: '⏰ *LEMBRETE* — *' + nome + '*\n\n' + l.texto,
       });
     } catch (e) {
       console.error('[lembrete] falha ao enviar:', e?.message || e);

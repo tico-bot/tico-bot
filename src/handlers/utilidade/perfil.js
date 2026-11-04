@@ -8,7 +8,7 @@ const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMappin
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { ACESSORIOS_CASAL } = require('../diversao/acessoriosCasal');
 
-const { resolveUsuarioInfo } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { resolveUsuarioInfo, resolveDisplayName } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { calcularMensagensPerfil, somarContagensIdentidades } = require(path.join(__dirname, '..', '..', 'utils', 'message-count'));
 const { countGroupCounter, listGroupCounters } = require(path.join(__dirname, '..', '..', 'utils', 'group-activity'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
@@ -74,7 +74,12 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
 
   // Resolve informações completas do usuário (LID, PN, Telefone, Nome, Model Usuario)
   const userInfo = await resolveUsuarioInfo(alvoJid, sock, contactNames);
-  const { resolvedJid, number, formattedNumber, nome, userData } = userInfo;
+  const { resolvedJid, number, formattedNumber, userData } = userInfo;
+  const nome = await resolveDisplayName(alvoJid, sock, contactNames, {
+    candidateJids: [userInfo.resolvedJid, userInfo.pnJid, userInfo.lidJid],
+    preferredName: userData?.displayName || userData?.nome || userData?.username,
+    fallback: 'Usuário',
+  });
 
   const mentionsList = [];
   if (resolvedJid && resolvedJid.endsWith('@s.whatsapp.net')) {

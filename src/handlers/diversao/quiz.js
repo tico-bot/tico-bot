@@ -11,6 +11,7 @@ const path = require('path');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { prepareDailyMissionState } = require('./missoes');
+const { resolveDisplayName } = require('../../utils/identity');
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { resolverJidCarteira } = carteiraService;
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
@@ -43,10 +44,6 @@ if (_dailyCleanup.unref) _dailyCleanup.unref();
 
 function somenteGrupo(jid) {
   return jid?.endsWith('@g.us') ?? false;
-}
-
-function resolverNome(idWhatsApp, contactNames) {
-  return contactNames?.[idWhatsApp] || idWhatsApp.split('@')[0];
 }
 
 function normalize(str) {
@@ -814,19 +811,14 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
     const totalPontos = sorted.reduce((s, u) => s + (u.quizPoints || 0), 0);
     const maxPontos   = sorted[0].quizPoints || 1;
 
-    const linhas = sorted.map((u, i) => {
-      const numero = u.idWhatsApp.split('@')[0].split(':')[0];
-      const pts    = u.quizPoints || 0;
-      const pct    = ((pts / totalPontos) * 100).toFixed(1);
+    const linhas = await Promise.all(sorted.map(async (u, i) => {
+      const nome = await resolveDisplayName(u.idWhatsApp, sock, contactNames, { fallback: 'Participante' });
+      const pts = u.quizPoints || 0;
+      const pct = ((pts / totalPontos) * 100).toFixed(1);
       const filled = Math.min(Math.round((pts / maxPontos) * 10), 10);
-      const bar    = '█'.repeat(filled) + '░'.repeat(10 - filled);
-      return (
-        `${MEDALS[i]} *@${numero}*\n` +
-        `   ${bar} ${pts} pts (${pct}%)`
-      );
-    });
-
-    const mentions = sorted.map(u => u.idWhatsApp);
+      const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+      return MEDALS[i] + ' *' + nome + '*\n   ' + bar + ' ' + pts + ' pts (' + pct + '%)';
+    }));
 
     await sock.sendMessage(jid, {
       text:
@@ -835,7 +827,6 @@ async function handleRankJogos(sock, msg, jid, contactNames = {}) {
         `━━━━━━━━━━━━━━━━\n` +
         `🎯 Total de pontos no grupo: *${totalPontos} pts*\n` +
         `_Use *!quiz* para subir no ranking!_`,
-      mentions,
     }, { quoted: msg });
 
   } catch (e) {

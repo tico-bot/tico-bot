@@ -2,6 +2,7 @@
 
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const PinnedMessage = require('../../models/PinnedMessage');
+const { resolveDisplayName } = require('../../utils/identity');
 
 // ── helpers ──────────────────────────────────────────────────
 function getNumeroPuro(jid) {
@@ -122,19 +123,19 @@ async function handlePinned(sock, msg, jid) {
       }, { quoted: msg });
     }
 
-    const quando   = new Date(pm.fixadoEm).toLocaleString('pt-BR');
-    const tagOrig  = pm.orig      ? `@${getNumeroPuro(pm.orig)}`      : 'desconhecido';
-    const tagFixou = pm.fixadoPor ? `@${getNumeroPuro(pm.fixadoPor)}` : 'desconhecido';
-    const mentions = [pm.orig, pm.fixadoPor].filter(Boolean);
+    const quando = new Date(pm.fixadoEm).toLocaleString('pt-BR');
+    const [nomeOrigem, nomeFixador] = await Promise.all([
+      pm.orig ? resolveDisplayName(pm.orig, sock, {}, { fallback: 'Desconhecido' }) : 'Desconhecido',
+      pm.fixadoPor ? resolveDisplayName(pm.fixadoPor, sock, {}, { fallback: 'Desconhecido' }) : 'Desconhecido',
+    ]);
 
     return sock.sendMessage(chatJid, {
       text:
-        `📌 *MENSAGEM FIXADA NO GRUPO*\n\n`  +
-        `👤 *Autor:* ${tagOrig}\n`     +
-        `📌 *Fixada por:* ${tagFixou}\n` +
-        `📅 *Data:* ${quando}\n\n`    +
-        `📝 *Conteúdo:*\n${pm.text}`,
-      mentions,
+        '📌 *MENSAGEM FIXADA NO GRUPO*\n\n' +
+        '👤 *Autor:* *' + nomeOrigem + '*\n' +
+        '📌 *Fixada por:* *' + nomeFixador + '*\n' +
+        '📅 *Data:* ' + quando + '\n\n' +
+        '📝 *Conteúdo:*\n' + pm.text,
     }, { quoted: msg });
 
   } catch (err) {

@@ -87,6 +87,20 @@ if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
 
 let _botSock = null;
 
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio } = require('./utils/jid');
+const { getParticipantJids } = require('./utils/identity');
+
+function obterJidsParticipante(participante) {
+  return getParticipantJids(participante);
+}
+
+function atualizarCacheContato(contato) {
+  const nome = contato?.name || contato?.notify || contato?.verifiedName;
+  if (typeof nome !== 'string' || !nome.trim()) return;
+  const ids = getParticipantJids(contato);
+  for (const id of ids) contactNames[id] = nome.trim();
+}
+
 // ─── Guards de crash ──────────────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
   // Stack completo para identificar a origem das falhas assíncronas do Baileys.
@@ -197,10 +211,10 @@ async function startBot() {
   // Popula contactNames (usado por !gold, !mute, !ban, etc. para mostrar nome
   // em vez do número/LID cru) — sem isso o objeto fica sempre vazio.
   sock.ev.on('contacts.upsert', cs => {
-    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
+    for (const c of cs) atualizarCacheContato(c);
   });
   sock.ev.on('contacts.update', cs => {
-    for (const c of cs) if (c.name || c.notify) contactNames[c.id] = c.name || c.notify;
+    for (const c of cs) atualizarCacheContato(c);
   });
 
   // Votos de enquete
@@ -211,16 +225,21 @@ async function startBot() {
   sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
     if (action === 'add') {
       for (const p of participants) {
-        await processarBemVindo(sock, id, p, p.split('@')[0]);
+        const participantIds = obterJidsParticipante(p);
+        const participantJid = participantIds.find(value => value.endsWith('@s.whatsapp.net'))
+          || participantIds[0];
+        if (!participantJid) continue;
+        const nomeDisplay = typeof p === 'object' ? (p.notify || p.name || p.verifiedName) : undefined;
+        await processarBemVindo(sock, id, participantJid, nomeDisplay, participantIds);
       }
     } else if (action === 'remove' || action === 'leave') {
-      const botNum = sock.user?.id ? sock.user.id.split(':')[0].split('@')[0] : null;
-      const botLid = sock.user?.lid ? sock.user.lid.split(':')[0].split('@')[0] : null;
-
-      const botSaiu = participants.some(p => {
-        const pNum = p.split(':')[0].split('@')[0];
-        return (botNum && pNum === botNum) || (botLid && pNum === botLid);
-      });
+      const botIds = new Set([
+        normalizarJidUsuario(sock.user?.id),
+        normalizarJidComDominio(sock.user?.lid, 'lid'),
+      ].filter(Boolean));
+      const botSaiu = participants.some(p =>
+        obterJidsParticipante(p).some(participantId => botIds.has(participantId))
+      );
 
       if (botSaiu) {
         console.log(`🚪 Bot foi removido ou saiu do grupo ${id}. Limpando dados do ranking e integrantes do grupo...`);
@@ -233,13 +252,9 @@ async function startBot() {
         const CarteiraGrupo = require('./models/CarteiraGrupo');
         const LidMapping    = require('./models/LidMapping');
 
-        const targetJids = [];
-        for (const p of participants) {
-          const rawNum = p.split(':')[0].split('@')[0];
-          targetJids.push(p);
-          targetJids.push(`${rawNum}@s.whatsapp.net`);
-          targetJids.push(`${rawNum}@lid`);
-        }
+        // Nunca fabricar um PN a partir dos dígitos de um LID: são espaços
+        // de identidade diferentes e isso poderia apagar a carteira de outra pessoa.
+        const targetJids = [...new Set(participants.flatMap(obterJidsParticipante))];
 
         const lidMaps = await LidMapping.find({
           $or: [
@@ -255,6 +270,7 @@ async function startBot() {
 
         const setJids = new Set(targetJids);
         for (const jid of targetJids) {
+          if (!jid.endsWith('@s.whatsapp.net')) continue;
           const num = jid.split('@')[0].replace(/\D/g, '');
           if (num && num.length >= 10 && num.length <= 15) {
             const digitos = String(num || '').replace(/\D/g, '');
@@ -355,9 +371,10 @@ async function startBot() {
     }
 
     if (connection === 'open') {
-      const bJid = sock.user?.id ?? null;
-      setBotJid(bJid);
-      console.log(`✅ Bot conectado! JID: ${bJid}\n`);
+      const botIdentidades = getParticipantJids(sock.user);
+      const bJid = botIdentidades[0] || null;
+      setBotJid(botIdentidades);
+      console.log(`✅ Bot conectado! JID: ${bJid || 'indisponível'}\n`);
 
       if (!schedulersIniciados) {
         // Restaura XP dos casais e XP Dobro ativo (estavam só em memória)

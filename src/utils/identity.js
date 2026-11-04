@@ -1,6 +1,6 @@
 'use strict';
 
-const { normalizarJid, extrairNumero } = require('./jid');
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio, extrairNumero } = require('./jid');
 const LidMapping    = require('../models/LidMapping');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
 const Usuario       = require('../models/Usuario');
@@ -113,24 +113,27 @@ function getAlternateSenderJids(msg) {
   // Baileys v2 expõe pares adicionais senderPn/senderLid e participantLid.
   // Em grupos, algumas mensagens trazem o PN somente em senderPn, não em participantPn.
   const candidates = [
-    key.participantPn,
-    key.senderPn,
-    key.senderLid,
-    key.participantLid,
-    key.remoteJidPn,
-    key.participantAlt,
-    key.remoteJidAlt,
-    msg?.participantPn,
-    msg?.senderPn,
-    msg?.senderLid,
-    msg?.participantLid,
-    msg?.participantAlt,
+    { value: key.participantPn, domain: 's.whatsapp.net' },
+    { value: key.senderPn, domain: 's.whatsapp.net' },
+    { value: key.remoteJidPn, domain: 's.whatsapp.net' },
+    { value: key.senderLid, domain: 'lid' },
+    { value: key.participantLid, domain: 'lid' },
+    { value: msg?.participantPn, domain: 's.whatsapp.net' },
+    { value: msg?.senderPn, domain: 's.whatsapp.net' },
+    { value: msg?.senderLid, domain: 'lid' },
+    { value: msg?.participantLid, domain: 'lid' },
+    // Campos Alt não especificam o domínio: só aceitamos quando já vêm como JID completo.
+    { value: key.participantAlt },
+    { value: key.remoteJidAlt },
+    { value: msg?.participantAlt },
   ];
 
-  return [...new Set(candidates
-    .filter(value => typeof value === 'string' && value.trim())
-    .map(value => normalizarJid(value) || (value.replace(/\D/g, '').length >= 7 ? value.replace(/\D/g, '') : null))
-    .filter(Boolean))];
+  return [...new Set(candidates.map(({ value, domain }) => {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const raw = value.trim();
+    if (domain) return normalizarJidComDominio(raw, domain);
+    return raw.includes('@') ? normalizarJidUsuario(raw) : null;
+  }).filter(Boolean))];
 }
 
 /**
@@ -140,15 +143,32 @@ function getAlternateSenderJids(msg) {
  * @param {string} jidRaw
  * @returns {string|null}
  */
+/**
+ * Extrai JIDs PN/LID de um participante do Baileys respeitando a semântica
+ * de cada campo. `id` já vem com domínio; `jid`/`pn` são PN e `lid` é LID.
+ */
+function getParticipantJids(participant) {
+  if (typeof participant === 'string') {
+    return participant.includes('@') ? [normalizarJidUsuario(participant)].filter(Boolean) : [];
+  }
+  if (!participant || typeof participant !== 'object') return [];
+  const values = [
+    normalizarJidUsuario(typeof participant.id === 'string' && participant.id.includes('@') ? participant.id : null),
+    normalizarJidComDominio(participant.jid, 's.whatsapp.net'),
+    normalizarJidComDominio(participant.pn, 's.whatsapp.net'),
+    normalizarJidComDominio(participant.phoneNumber, 's.whatsapp.net'),
+    normalizarJidComDominio(participant.lid, 'lid'),
+  ].filter(Boolean);
+  return [...new Set(values)];
+}
+
 function resolveGlobalId(jidRaw) {
   if (!jidRaw || typeof jidRaw !== 'string') return null;
-
-  if (jidRaw.endsWith('@lid')) {
-    return normalizarJid(jidRaw);
-  }
-
-  const numero = extrairNumero(jidRaw);
-  return numero ? `${numero}@s.whatsapp.net` : null;
+  const jid = normalizarJidUsuario(jidRaw.trim());
+  if (!jid) return null;
+  if (jid.endsWith('@lid')) return jid;
+  const numero = extrairNumero(jid);
+  return numero.length >= 7 && numero.length <= 15 ? jid : null;
 }
 
 /**
@@ -170,13 +190,15 @@ function resolveUserFromMsg(msg) {
  */
 async function resolveJidComLid(idWhatsApp, idGrupo) {
   const idNorm = resolveGlobalId(idWhatsApp);
-  if (!idNorm) return idWhatsApp;
+  if (!idNorm) return null;
 
   if (!idNorm.endsWith('@lid')) {
     const lidMap = await LidMapping.findOne({ pn: idNorm }).lean();
     if (lidMap?.lid) {
-      const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidMap.lid, idGrupo }).lean();
-      if (carteiraLid) return lidMap.lid;
+      const lidValidado = normalizarJidComDominio(lidMap.lid, 'lid');
+      if (!lidValidado?.endsWith('@lid')) return idNorm;
+      const carteiraLid = await CarteiraGrupo.findOne({ idWhatsApp: lidValidado, idGrupo }).lean();
+      if (carteiraLid) return lidValidado;
     }
   }
 
@@ -200,7 +222,15 @@ async function resolvePhoneAndJid(alvoJid, sock) {
     return { resolvedJid: '', pnJid: null, lidJid: null, number: 'N/D', formattedNumber: 'N/D' };
   }
 
-  const normInput = normalizarJid(alvoJid);
+  const valorInput = alvoJid.trim();
+  const jidValidado = normalizarJidUsuario(valorInput);
+  const normInput = jidValidado && (
+    jidValidado.endsWith('@lid') ||
+    (jidValidado.endsWith('@s.whatsapp.net') && extrairNumero(jidValidado).length >= 7 && extrairNumero(jidValidado).length <= 15)
+  ) ? jidValidado : null;
+  if (!normInput) {
+    return { resolvedJid: '', pnJid: null, lidJid: null, number: 'N/D', formattedNumber: 'N/D' };
+  }
   let resolvedJid = normInput;
   let pnJid       = normInput.endsWith('@s.whatsapp.net') ? normInput : null;
   let lidJid      = normInput.endsWith('@lid') ? normInput : null;
@@ -216,9 +246,9 @@ async function resolvePhoneAndJid(alvoJid, sock) {
     lidJid = normInput;
     try {
       const lidMap = await LidMapping.findOne({ lid: normInput }).lean();
-      if (lidMap?.pn) {
-        const pnNorm = normalizarJid(lidMap.pn);
-        pnJid = pnNorm.endsWith('@s.whatsapp.net') ? pnNorm : `${extrairNumero(pnNorm)}@s.whatsapp.net`;
+      const pnNorm = normalizarJidComDominio(lidMap?.pn, 's.whatsapp.net');
+      if (pnNorm?.endsWith('@s.whatsapp.net') && extrairNumero(pnNorm)) {
+        pnJid = pnNorm;
         resolvedJid = pnJid;
         number = extrairNumero(pnJid);
       }
@@ -230,12 +260,9 @@ async function resolvePhoneAndJid(alvoJid, sock) {
           $or: [{ idWhatsApp: normInput }, { lid: normInput }]
         }).lean();
 
-        if (user?.telefone) {
-          number = extrairNumero(user.telefone);
-          pnJid = `${number}@s.whatsapp.net`;
-          resolvedJid = pnJid;
-        } else if (user?.idWhatsApp && user.idWhatsApp.endsWith('@s.whatsapp.net')) {
-          pnJid = user.idWhatsApp;
+        const pnUsuario = normalizarJidComDominio(user?.idWhatsApp, 's.whatsapp.net');
+        if (pnUsuario?.endsWith('@s.whatsapp.net')) {
+          pnJid = pnUsuario;
           resolvedJid = pnJid;
           number = extrairNumero(pnJid);
         }
@@ -251,9 +278,8 @@ async function resolvePhoneAndJid(alvoJid, sock) {
   if (pnJid && !lidJid) {
     try {
       const lidMap = await LidMapping.findOne({ pn: pnJid }).lean();
-      if (lidMap?.lid) {
-        lidJid = normalizarJid(lidMap.lid);
-      }
+      const lidValidado = normalizarJidComDominio(lidMap?.lid, 'lid');
+      if (lidValidado?.endsWith('@lid')) lidJid = lidValidado;
     } catch {}
   }
 
@@ -281,7 +307,8 @@ async function resolveUsuarioInfo(alvoJid, sock, contactNames = {}) {
   const { resolvedJid, pnJid, lidJid, number, formattedNumber } = phoneRes;
 
   const queryConditions = [];
-  if (alvoJid) queryConditions.push({ idWhatsApp: normalizarJid(alvoJid) });
+  const alvoNormalizado = normalizarJidUsuario(alvoJid);
+  if (alvoNormalizado) queryConditions.push({ idWhatsApp: alvoNormalizado });
   if (resolvedJid) queryConditions.push({ idWhatsApp: resolvedJid });
   if (pnJid) queryConditions.push({ idWhatsApp: pnJid });
   if (lidJid) queryConditions.push({ idWhatsApp: lidJid });
@@ -296,28 +323,26 @@ async function resolveUsuarioInfo(alvoJid, sock, contactNames = {}) {
 
   let finalNumber = number;
   let finalFormatted = formattedNumber;
-  if ((!finalNumber || finalNumber === 'N/D') && userData?.telefone) {
-    finalNumber = extrairNumero(userData.telefone);
+  if ((!finalNumber || finalNumber === 'N/D') && userData?.telefone && !(normalizarJidUsuario(alvoJid)?.endsWith('@lid') && extrairNumero(`${String(userData.telefone)}@s.whatsapp.net`) === extrairNumero(alvoJid))) {
+    finalNumber = String(userData.telefone).replace(/\D/g, '');
+    if (finalNumber.length < 8 || finalNumber.length > 15) finalNumber = 'N/D';
     finalFormatted = formatarTelefone(finalNumber);
   }
 
-  let nome =
-    contactNames?.[alvoJid] ||
-    contactNames?.[resolvedJid] ||
-    (pnJid ? contactNames?.[pnJid] : null) ||
-    (lidJid ? contactNames?.[lidJid] : null) ||
-    userData?.nome;
-
-  if (!nome || nome === finalNumber) {
-    if (finalNumber && finalNumber !== 'N/D') {
-      nome = finalFormatted !== 'N/D' ? finalFormatted : `+${finalNumber}`;
-    } else {
-      nome = 'Usuário';
-    }
-  }
+  const idsParaNome = [alvoJid, resolvedJid, pnJid, lidJid].filter(Boolean);
+  const nome = [
+    contactNames?.[alvoJid],
+    contactNames?.[resolvedJid],
+    pnJid ? contactNames?.[pnJid] : null,
+    lidJid ? contactNames?.[lidJid] : null,
+    userData?.displayName,
+    userData?.nome,
+    userData?.username,
+    userData?.pushName,
+  ].map(valor => validarNomeExibicao(valor, idsParaNome)).find(Boolean) || 'Usuário';
 
   return {
-    jid: normalizarJid(alvoJid),
+    jid: normalizarJidUsuario(alvoJid),
     resolvedJid,
     pnJid,
     lidJid,
@@ -326,6 +351,132 @@ async function resolveUsuarioInfo(alvoJid, sock, contactNames = {}) {
     nome,
     userData,
   };
+}
+
+/**
+ * Compara duas identidades considerando aliases PN/LID do WhatsApp e do Mongo.
+ * Os números de um LID nunca são tratados como se fossem um telefone PN.
+ */
+async function sameWhatsAppIdentity(jidA, jidB, sock, aliasesA = [], aliasesB = []) {
+  const normalizarJidCompleto = valor => {
+    if (typeof valor !== 'string' || !valor.trim() || !valor.includes('@')) return null;
+    return normalizarJidUsuario(valor.trim());
+  };
+  const normalizarIdentidade = (principal, aliases, info) => [
+    normalizarJidUsuario(principal),
+    ...(Array.isArray(aliases) ? aliases : [aliases]).map(normalizarJidCompleto),
+    normalizarJidCompleto(info?.resolvedJid),
+    normalizarJidCompleto(info?.pnJid),
+    normalizarJidCompleto(info?.lidJid),
+  ].filter(Boolean);
+
+  const [infoA, infoB] = await Promise.all([
+    resolvePhoneAndJid(jidA, sock).catch(() => null),
+    resolvePhoneAndJid(jidB, sock).catch(() => null),
+  ]);
+  const idsA = new Set(normalizarIdentidade(jidA, aliasesA, infoA));
+  const idsB = normalizarIdentidade(jidB, aliasesB, infoB);
+  return idsB.some(id => idsA.has(id));
+}
+
+/**
+ * Retorna o nome utilizável de um contacto, sem deixar identificadores
+ * numéricos/JIDs passarem como se fossem nomes.
+ */
+function validarNomeExibicao(valor, jids = []) {
+  if (typeof valor !== 'string') return null;
+  const nome = valor.trim().replace(/[\r\n]+/g, ' ');
+  if (!nome || nome.length > 80) return null;
+  if (jids.some(jid => nome.toLowerCase() === String(jid).toLowerCase())) return null;
+  if (/^@?\+?[\d\s().-]+$/.test(nome)) return null;
+  if (/^\d+@(s\.whatsapp\.net|lid)$/i.test(nome)) return null;
+  return nome;
+}
+
+function obterNomeDoCache(contactNames, jid) {
+  if (contactNames instanceof Map) return contactNames.get(jid);
+  return contactNames && typeof contactNames === 'object' ? contactNames[jid] : null;
+}
+
+/**
+ * Resolve o nome de exibição de um contacto usando a identidade PN/LID,
+ * o cache de contactos do Baileys e o perfil persistido no MongoDB.
+ *
+ * @param {string} alvoJid
+ * @param {object} [sock]
+ * @param {object|Map} [contactNames]
+ * @param {{ fallback?: string, preferredName?: string, candidateJids?: string[] }} [options]
+ * @returns {Promise<string>}
+ */
+async function resolveDisplayName(alvoJid, sock, contactNames = {}, options = {}) {
+  const input = typeof alvoJid === 'string' ? normalizarJidUsuario(alvoJid.trim()) || '' : '';
+  const idsIniciais = [...new Set([
+    input,
+    ...(Array.isArray(options.candidateJids) ? options.candidateJids.filter(value => typeof value === 'string' && value.includes('@')) : []),
+  ].map(valor => normalizarJidUsuario(valor)).filter(Boolean))];
+
+  // Não consulta o Mongo quando o cache já contém o nome exacto ou quando
+  // o chamador fornece um pushName/notify válido.
+  for (const id of idsIniciais) {
+    const nome = validarNomeExibicao(obterNomeDoCache(contactNames, id), idsIniciais);
+    if (nome) return nome;
+  }
+  const nomePreferido = validarNomeExibicao(options.preferredName, idsIniciais);
+  if (nomePreferido) return nomePreferido;
+
+  // Baileys pode ter um nome resolvido em seu próprio cache de contactos,
+  // mesmo quando contactNames ainda não recebeu contacts.upsert/update.
+  if (typeof sock?.getName === 'function' && input) {
+    try {
+      const nomeSocket = validarNomeExibicao(sock.getName(input), idsIniciais);
+      if (nomeSocket) return nomeSocket;
+    } catch {}
+  }
+
+  let info = null;
+  if (input) {
+    try {
+      info = await resolveUsuarioInfo(input, sock, contactNames);
+    } catch {}
+  }
+
+  const ids = [...new Set([
+    ...idsIniciais,
+    info?.resolvedJid,
+    info?.pnJid,
+    info?.lidJid,
+  ].map(valor => normalizarJidUsuario(valor)).filter(Boolean))];
+
+  for (const id of ids) {
+    const nome = validarNomeExibicao(obterNomeDoCache(contactNames, id), ids);
+    if (nome) return nome;
+  }
+
+  // O PN equivalente pode ter nome no cache interno do Baileys mesmo quando
+  // a mensagem original chegou identificada apenas pelo LID.
+  if (typeof sock?.getName === 'function') {
+    for (const id of ids) {
+      if (id === input) continue;
+      try {
+        const nomeSocket = validarNomeExibicao(sock.getName(id), ids);
+        if (nomeSocket) return nomeSocket;
+      } catch {}
+    }
+  }
+
+  const perfil = info?.userData;
+  for (const campo of ['displayName', 'nome', 'username', 'pushName', 'notify', 'name', 'verifiedName']) {
+    const nome = validarNomeExibicao(perfil?.[campo], ids);
+    if (nome) return nome;
+  }
+
+  const nomeResolvido = validarNomeExibicao(info?.nome, ids);
+  if (nomeResolvido && nomeResolvido.toLowerCase() !== 'usuário') return nomeResolvido;
+
+  // Resolver nomes nunca deve expor o identificador como fallback. Menções
+  // devem ser montadas separadamente pelo chamador, com o JID correspondente.
+  const fallback = options.fallback !== undefined ? options.fallback : 'Usuário';
+  return validarNomeExibicao(fallback, ids) || 'Usuário';
 }
 
 /**
@@ -341,11 +492,10 @@ async function registrarLidEMapping(msg, pushName) {
   const senderJid = msg.key.participant || msg.key.remoteJid;
   if (!senderJid) return;
 
-  const senderNorm = normalizarJid(senderJid);
-  const keyObj = msg.key || {};
-
+  const senderNorm = normalizarJidUsuario(senderJid);
+  if (!senderNorm) return;
   const alternateNorms = getAlternateSenderJids(msg)
-    .map(value => normalizarJid(value))
+    .map(value => normalizarJidUsuario(value))
     .filter(Boolean);
 
   let lid = senderNorm.endsWith('@lid')
@@ -370,7 +520,8 @@ async function registrarLidEMapping(msg, pushName) {
     try {
       const updates = {};
       if (phoneDigits) updates.telefone = phoneDigits;
-      if (pushName && pushName !== 'Usuário') updates.nome = pushName;
+      const nomePush = validarNomeExibicao(pushName, [senderNorm, ...alternateNorms]);
+      if (nomePush && nomePush !== 'Usuário') updates.nome = nomePush;
 
       if (Object.keys(updates).length > 0) {
         await Usuario.updateOne(
@@ -393,11 +544,15 @@ async function registrarLidEMapping(msg, pushName) {
 module.exports = {
   getSenderJid,
   getAlternateSenderJids,
+  getParticipantJids,
   resolveGlobalId,
   resolveUserFromMsg,
   resolveJidComLid,
   resolvePhoneAndJid,
   resolveUsuarioInfo,
+  resolveDisplayName,
+  sameWhatsAppIdentity,
+  validarNomeExibicao,
   registrarLidEMapping,
   formatarTelefone,
   normalizarJid,

@@ -1,6 +1,8 @@
 'use strict';
 
 const { getAggregateVotesInPollMessage } = require('@whiskeysockets/baileys');
+const { resolveDisplayName, getParticipantJids } = require('../../utils/identity');
+const { normalizarJidUsuario } = require('../../utils/jid');
 
 const {
   somenteGrupo,
@@ -22,7 +24,7 @@ async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
 
   const seen = new Set();
   let participantes = mentions.filter(p => {
-    const base = normalizeJidBase(p);
+    const base = normalizarJidUsuario(p) || p;
     if (seen.has(base)) return false;
     seen.add(base);
     return true;
@@ -33,8 +35,9 @@ async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
       const meta = await getGroupMetadataCached(sock, jid);
       if (meta?.participants) {
         participantes = meta.participants
-          .map(p => p.id)
-          .filter(id => !isBotJid(id, botJid));
+          .filter(p => p && !isBotJid(getParticipantJids(p)[0], botJid, getParticipantJids(p)))
+          .map(p => getParticipantJids(p)[0])
+          .filter(Boolean);
       }
     } catch (err) {
       console.error('[handleSorteio] Erro ao buscar metadata:', err.message);
@@ -54,15 +57,14 @@ async function handleSorteio(sock, msg, content, jid, botJid, contactNames) {
   await new Promise(r => setTimeout(r, 1500));
 
   const vencedor = participantes[Math.floor(Math.random() * participantes.length)];
-  const nome     = contactNames[vencedor] || `@${normalizeJidBase(vencedor)}`;
+  const nome     = await resolveDisplayName(vencedor, sock, contactNames);
 
   await sock.sendMessage(jid, {
     text:
       `🎉🏆 *RESULTADO DO SORTEIO* 🏆🎉\n\n` +
-      `👑 Vencedor: *@${normalizeJidBase(vencedor)}*\n\n` +
+      `👑 Vencedor: *${nome}*\n\n` +
       `🎊 Parabéns, *${nome}*! Você foi sorteado(a) entre *${participantes.length}* participante(s)!\n\n` +
       `_Boa sorte foi você que teve!_ 🍀`,
-    mentions: [vencedor],
   }, { quoted: msg });
 }
 

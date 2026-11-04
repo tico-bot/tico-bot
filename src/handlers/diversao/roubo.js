@@ -20,7 +20,8 @@ const {
   formatarSaldo,
 } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { incrementMission } = require('./missoes');
-const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const { normalizarJid, normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
 
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
@@ -861,10 +862,12 @@ async function resolverVariantesJid(jid) {
   try {
     if (jid.endsWith('@lid')) {
       const map = await LidMapping.findOne({ lid: jid }).lean();
-      if (map?.pn) variantes.add(map.pn);
+      const pn = normalizarJidComDominio(map?.pn, 's.whatsapp.net');
+      if (pn) variantes.add(pn);
     } else {
       const map = await LidMapping.findOne({ pn: jid }).lean();
-      if (map?.lid) variantes.add(map.lid);
+      const lid = normalizarJidComDominio(map?.lid, 'lid');
+      if (lid) variantes.add(lid);
     }
   } catch (e) {
     console.error('⚠️ Erro ao resolver variantes de JID (roubo):', e.message);
@@ -872,10 +875,10 @@ async function resolverVariantesJid(jid) {
   return [...variantes];
 }
 
-function _buildTextoCaptura(numeroLadrao, debitavel = 0) {
+function _buildTextoCaptura(nomeLadrao, debitavel = 0) {
   const cabecalho =
     `✅ *LADRÃO PRESO!*\n\n` +
-    `🚔 @${numeroLadrao} foi capturado!\n` +
+    `🚔 *${nomeLadrao}* foi capturado!\n` +
     `🔒 *Ficará preso por mais:* ${formatarTempo(COOLDOWN_PRESO_MS)}\n`;
 
   if (debitavel > 0) {
@@ -909,7 +912,7 @@ async function handlePolicia(sock, msg, jid) {
     return;
   }
 
-  if (vitimaId === ladrao) {
+  if (await sameWhatsAppIdentity(vitimaId, ladrao, sock, getAlternateSenderJids(msg), [])) {
     await sock.sendMessage(jid, {
       text: '❌ Você não pode chamar a polícia em si mesmo!',
     }, { quoted: msg });
@@ -958,7 +961,7 @@ async function handlePolicia(sock, msg, jid) {
   // ── Rolagem ───────────────────────────────────────────────────────────────
   const rolagem      = Math.random() * 100;
   const prendeu      = rolagem < CHANCE_POLICIA;
-  const numeroLadrao = ladrao.split('@')[0].replace(/\D/g, '');
+  const nomeLadrao = await resolveDisplayName(ladrao, sock, {}, { fallback: 'Ladrão' });
 
   let textoResultado;
 
@@ -989,11 +992,11 @@ async function handlePolicia(sock, msg, jid) {
 
     await Promise.all(ops);
 
-    textoResultado = _buildTextoCaptura(numeroLadrao, debitavel);
+    textoResultado = _buildTextoCaptura(nomeLadrao, debitavel);
   } else {
     textoResultado =
       `❌ *LADRÃO ESCAPOU!*\n\n` +
-      `🏃 @${numeroLadrao} conseguiu fugir da polícia!\n` +
+      `🏃 *${nomeLadrao}* conseguiu fugir da polícia!\n` +
       `😔 Nenhum saldo foi recuperado.`;
   }
 
@@ -1003,7 +1006,7 @@ async function handlePolicia(sock, msg, jid) {
     `━━━━━━━━━━━━━━━━\n` +
     textoResultado;
 
-  await sock.sendMessage(jid, { text: texto, mentions: [ladrao] }, { quoted: msg });
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
 // ─── Configuração !roubarbanco ────────────────────────────────────────────────

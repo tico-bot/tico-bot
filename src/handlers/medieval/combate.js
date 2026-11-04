@@ -6,6 +6,7 @@ const MedievalPersonagem = require('../../models/MedievalPersonagem');
 const CarteiraGrupo      = require('../../models/CarteiraGrupo');
 const GrupoConfig        = require('../../models/GrupoConfig');
 const { alterarGold, formatarSaldo } = require('../../utils/carteira');
+const { resolveDisplayName } = require('../../utils/identity');
 
 const {
   CLASSES, ELEMENTOS, MISSOES,
@@ -134,8 +135,7 @@ async function handleFicha(sock, msg, jid, senderJid, nomeDisplay) {
       return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo! Use *!medieval on*.' }, { quoted: msg });
     }
 
-    const p        = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(p);
 
     const classe   = getClasse(p.classe);
@@ -190,8 +190,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       return sock.sendMessage(jid, { text: '⚔️ Marque um inimigo para atacar!\nExemplo: *!atacar @fulano*' }, { quoted: msg });
     }
 
-    const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const atacante = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(atacante);
 
     const { pode, tempoRestante } = verificarCooldown(atacante.ultimoAtaque, CD_ATAQUE);
@@ -207,13 +206,17 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       }, { quoted: msg });
     }
 
-    const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(targetJid, jid, (typeof sock.getName === 'function' && sock.getName(targetJid)) || targetJid.split('@')[0]);
+    const nomeDefensor = await resolveDisplayName(targetJid, sock, {}, {
+      preferredName: typeof sock.getName === 'function' ? sock.getName(targetJid) : undefined,
+      fallback: 'Aventureiro',
+    });
+    // Sempre passa pelo helper para corrigir também personagens antigos com nome numérico.
+    const defensor = await getOuCriarPersonagem(targetJid, jid, nomeDefensor);
     await verificarRecuperacaoDerrota(defensor);
 
     if (defensor.hp <= 0) {
       return sock.sendMessage(jid, {
-        text: `💀 *${defensor.nome || targetJid.split('@')[0]}* já está derrotado!`,
+        text: `💀 *${defensor.nome || 'Aventureiro'}* já está derrotado!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -225,7 +228,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
     if (farmBloqueado) {
       return sock.sendMessage(jid, {
-        text: `⚠️ Você atacou *${defensor.nome || targetJid.split('@')[0]}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
+        text: `⚠️ Você atacou *${defensor.nome || 'Aventureiro'}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -241,7 +244,7 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     );
     if (!defensorAtualizado) {
       return sock.sendMessage(jid, {
-        text: `💀 *${defensor.nome || targetJid.split('@')[0]}* já foi derrotado por outro ataque.`,
+        text: `💀 *${defensor.nome || 'Aventureiro'}* já foi derrotado por outro ataque.`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -270,14 +273,14 @@ async function handleAtacar(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
         ? '\n💧 *Desvantagem elemental.* -30% de dano.'
         : '';
     const critTexto = critico ? '\n💥 *CRÍTICO!*' : '';
-    const hpTexto   = `\n\n❤️ HP de *${defensor.nome || targetJid.split('@')[0]}*: ${novoHp}/${defensor.hpMax}`;
+    const hpTexto   = `\n\n❤️ HP de *${defensor.nome || 'Aventureiro'}*: ${novoHp}/${defensor.hpMax}`;
 
     let textoFinal = `${narr}${multTexto}${critTexto}${hpTexto}\n+${xpGanho} XP ⭐`;
 
     if (vitoria) {
       textoFinal +=
-        `\n\n💀 *${defensor.nome || targetJid.split('@')[0]} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!` +
-        `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear @${targetJid.split('@')[0].split(':')[0]}*._`;
+        `\n\n💀 *${defensor.nome || 'Aventureiro'} foi derrotado!*\n🏆 *${atacante.nome}* ganhou +30 XP de vitória!` +
+        `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear* respondendo a esta mensagem ou marcando o jogador novamente._`;
     }
 
     await sock.sendMessage(jid, {
@@ -319,8 +322,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       return sock.sendMessage(jid, { text: '🔮 Marque um alvo para usar sua magia!\nExemplo: *!magia @fulano*' }, { quoted: msg });
     }
 
-    const atacante = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const atacante = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     await verificarRecuperacaoDerrota(atacante);
 
     if (atacante.hp <= 0) {
@@ -343,12 +345,16 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
       }, { quoted: msg });
     }
 
-    const defensor = await MedievalPersonagem.findOne({ idWhatsApp: targetJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(targetJid, jid, (typeof sock.getName === 'function' && sock.getName(targetJid)) || targetJid.split('@')[0]);
+    const nomeDefensor = await resolveDisplayName(targetJid, sock, {}, {
+      preferredName: typeof sock.getName === 'function' ? sock.getName(targetJid) : undefined,
+      fallback: 'Aventureiro',
+    });
+    // Sempre passa pelo helper para corrigir também personagens antigos com nome numérico.
+    const defensor = await getOuCriarPersonagem(targetJid, jid, nomeDefensor);
     await verificarRecuperacaoDerrota(defensor);
     if (defensor.hp <= 0) {
       return sock.sendMessage(jid, {
-        text: `💀 *${defensor.nome || targetJid.split('@')[0]}* já está derrotado!`,
+        text: `💀 *${defensor.nome || 'Aventureiro'}* já está derrotado!`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -360,7 +366,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
 
     if (farmBloqueado) {
       return sock.sendMessage(jid, {
-        text: `⚠️ Você usou magia em *${defensor.nome || targetJid.split('@')[0]}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
+        text: `⚠️ Você usou magia em *${defensor.nome || 'Aventureiro'}* recentemente!\n_Aguarde antes de atacar o mesmo alvo novamente._`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -378,7 +384,7 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     );
     if (!defensorAtualizado) {
       return sock.sendMessage(jid, {
-        text: `💀 *${defensor.nome || targetJid.split('@')[0]}* já foi derrotado por outro ataque.`,
+        text: `💀 *${defensor.nome || 'Aventureiro'}* já foi derrotado por outro ataque.`,
         mentions: [targetJid],
       }, { quoted: msg });
     }
@@ -405,14 +411,14 @@ async function handleMagia(sock, msg, jid, senderJid, nomeDisplay, targetJid) {
     let textoFinal =
       `${elemento?.emoji || '✨'} *HABILIDADE ESPECIAL!*\n\n` +
       `${narr}\n\n` +
-      `❤️ HP de *${defensor.nome || targetJid.split('@')[0]}*: ${novoHp}/${defensor.hpMax}\n` +
+      `❤️ HP de *${defensor.nome || 'Aventureiro'}*: ${novoHp}/${defensor.hpMax}\n` +
       `💧 Sua mana: ${novaMana}/${atacante.manaMax}\n` +
       `+20 XP ⭐`;
 
     if (vitoria) {
       textoFinal +=
-        `\n\n💀 *${defensor.nome || targetJid.split('@')[0]} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!` +
-        `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear @${targetJid.split('@')[0].split(':')[0]}*._`;
+        `\n\n💀 *${defensor.nome || 'Aventureiro'} foi aniquilado pela magia!*\n🏆 +40 XP de vitória!` +
+        `\n\n💰 Você tem *3 minutos* para saquear os pertences dele!\n_Use *!saquear* respondendo a esta mensagem ou marcando o jogador novamente._`;
     }
 
     await sock.sendMessage(jid, {
@@ -450,8 +456,7 @@ async function handleMissao(sock, msg, jid, senderJid, nomeDisplay) {
     if (!await getModoAtivo(jid)) {
       return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
     }
-    const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     const { pode, tempoRestante } = verificarCooldown(p.ultimaMissao, CD_MISSAO);
     if (!pode) {
       return sock.sendMessage(jid, {
@@ -563,8 +568,7 @@ async function handleRecargaMana(sock, msg, jid, senderJid, nomeDisplay) {
       return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
     }
 
-    const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
     const { pode, tempoRestante } = verificarCooldown(p.ultimaRecarga, CD_RECARGA);
     if (!pode) {
       return sock.sendMessage(jid, {
@@ -623,8 +627,7 @@ async function handleHistorico(sock, msg, jid, senderJid, nomeDisplay) {
       return sock.sendMessage(jid, { text: '⚔️ O modo medieval não está ativo!' }, { quoted: msg });
     }
 
-    const p = await MedievalPersonagem.findOne({ idWhatsApp: senderJid, idGrupo: jid })
-      ?? await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
+    const p = await getOuCriarPersonagem(senderJid, jid, nomeDisplay);
 
     if (!p.historicoBatalhas || p.historicoBatalhas.length === 0) {
       return sock.sendMessage(jid, {

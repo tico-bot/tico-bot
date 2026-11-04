@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Handler de Relacionamentos — Tico Bot
  * Comandos: !casar, !namorar, !euaceito, !eurecuso, !cancelarpedido,
  *           !cancelarcasamento, !terminar, !flores, !doces, !carta,
@@ -19,6 +19,8 @@ const {
   normalizarRegistro,
   podeConverterNamoroEmCasamento,
 } = require(path.join(__dirname, '..', '..', 'utils', 'relacionamentos'));
+const { resolveDisplayName, resolvePhoneAndJid, sameWhatsAppIdentity, getAlternateSenderJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { normalizarJidUsuario } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { getGroupPrefix } = require(path.join(__dirname, '..', '..', 'utils', 'prefixos'));
 
 // ═══════════════════════════════════════════════════════════════
@@ -26,6 +28,33 @@ const { getGroupPrefix } = require(path.join(__dirname, '..', '..', 'utils', 'pr
 // ═══════════════════════════════════════════════════════════════
 
 function relKey(jid, a, b) { return [jid, ...[a, b].sort()].join('|'); }
+
+async function resolverIdentidadesRel(jid, aliases = []) {
+  const info = await resolvePhoneAndJid(jid).catch(() => null);
+  return new Set([
+    jid,
+    ...(Array.isArray(aliases) ? aliases : [aliases]),
+    info?.resolvedJid,
+    info?.pnJid,
+    info?.lidJid,
+  ].map(valor => normalizarJidUsuario(valor)).filter(Boolean));
+}
+
+async function findPendingRequest(jid, msg, pedidosPendentes) {
+  const identidades = await resolverIdentidadesRel(jid, getAlternateSenderJids(msg));
+  for (const [key, pedido] of pedidosPendentes) {
+    const identidade = normalizarJidUsuario(key);
+    if (identidade && identidades.has(identidade)) return { key, pedido };
+  }
+  return null;
+}
+
+function removePendingRequest(pedidosPendentes, pedido, key) {
+  for (const [pendingKey, current] of pedidosPendentes) {
+    if (current === pedido) pedidosPendentes.delete(pendingKey);
+  }
+  if (key && pedidosPendentes.get(key) === pedido) pedidosPendentes.delete(key);
+}
 
 const xpCasais      = new Map(); // relKey → number
 const bloqueados    = new Map(); // jid → timestamp_expiry
@@ -39,10 +68,6 @@ const xpBonus       = new Map(); // relKey → { ativo: bool, expiry: number }
 
 const FUSO = 'America/Cuiaba';
 
-/** Número puro de um JID (sem sufixo de dispositivo nem domínio). */
-function numeroDe(jid) {
-  return String(jid || '').split(':')[0].split('@')[0];
-}
 
 /** Data de hoje (YYYY-MM-DD) no fuso de Brasília, independente do fuso do servidor. */
 function hoje() {
@@ -199,13 +224,19 @@ async function clearCasamentoDb(jidA, jidB, idGrupo) {
   }
 }
 
-function findRelByJid(jid, userJid, relacionamentos) {
-  const num = numeroDe(userJid);
-  if (!num) return null;
+async function findRelByJid(jid, userJid, relacionamentos, alternateJids = []) {
+  // Resolve apenas aliases PN/LID confirmados; o domínio faz parte da identidade.
+  const identidades = await resolverIdentidadesRel(userJid, alternateJids);
+  if (!identidades.size) return null;
+
   for (const [key, rel] of relacionamentos) {
     if (!key.startsWith(jid + '|')) continue;
-    const [, a, b] = key.split('|'); // chave = grupo|jidA|jidB
-    if (numeroDe(a) === num || numeroDe(b) === num) return { key, rel };
+    const [, chaveA, chaveB] = key.split('|'); // chave = grupo|jidA|jidB
+    const idA = normalizarJidUsuario(rel?.jidA || chaveA);
+    const idB = normalizarJidUsuario(rel?.jidB || chaveB);
+    if ((idA && identidades.has(idA)) || (idB && identidades.has(idB))) {
+      return { key, rel };
+    }
   }
   return null;
 }
@@ -296,7 +327,7 @@ const CARINHOS_SEM_RELACIONAMENTO = new Set(['abraco']);
 
 async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, cmd, emoji, verbo, xpValor = 5) {
   const senderJidNormalizado = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderJidNormalizado, relacionamentos);
+  const found = await findRelByJid(jid, senderJidNormalizado, relacionamentos, getAlternateSenderJids(msg));
   const P = prefixo(jid); // prefixo configurado no grupo
 
   let key, rel;
@@ -309,8 +340,8 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
     ({ key, rel } = found);
     jidANormalizado = rel.jidA ? jidNormalizedUser(rel.jidA) : null;
     jidBNormalizado = rel.jidB ? jidNormalizedUser(rel.jidB) : null;
-    // Compara pelo número: tolera diferenças de domínio/dispositivo no JID.
-    parcJid = numeroDe(jidANormalizado) === numeroDe(senderJidNormalizado) ? jidBNormalizado : jidANormalizado;
+    const remetenteEhA = await sameWhatsAppIdentity(jidANormalizado, senderJidNormalizado, sock, getAlternateSenderJids(msg));
+    parcJid = remetenteEhA ? jidBNormalizado : jidANormalizado;
   } else {
     if (!CARINHOS_SEM_RELACIONAMENTO.has(cmd)) {
       await sock.sendMessage(jid, {
@@ -333,7 +364,7 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
 
     parcJid = jidNormalizedUser(mentionedJid);
 
-    if (numeroDe(parcJid) === numeroDe(senderJidNormalizado)) {
+    if (await sameWhatsAppIdentity(parcJid, senderJidNormalizado, sock, getAlternateSenderJids(msg))) {
       await sock.sendMessage(jid, {
         text: `🤔 Você não pode dar *${P}${cmd}* em você mesmo(a)!`,
       }, { quoted: msg });
@@ -456,26 +487,24 @@ async function handleCarinh(sock, msg, jid, author, senderJid, relacionamentos, 
   Promise.all(persistirXp).catch(e => console.error(`[handleCarinh:${cmd}] Erro ao persistir XP no DB:`, e.message));
 
   // ── 4. Formatação da Resposta ──
-  const tagRemetente = `@${numeroDe(senderJidNormalizado)}`;
-  const tagParceiro  = parcJid
-    ? `@${numeroDe(parcJid)}`
-    : (rel?.nomeA === author ? rel?.nomeB : rel?.nomeA);
+  const [nomeRemetente, nomeParceiro] = await Promise.all([
+    resolveDisplayName(senderJidNormalizado, sock, {}, { preferredName: author || msg.pushName, fallback: 'Participante' }),
+    parcJid
+      ? resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' })
+      : Promise.resolve(rel?.nomeA === author ? rel?.nomeB : rel?.nomeA || 'Parceiro(a)'),
+  ]);
 
   const bonusStr = temBonus ? ` _(XP Duplo ativo! +${xpValor} bônus)_` : '';
   const inventarioStr = exigeItem
     ? `\n🎒 *${itemNome}* restantes no seu inventário: *${consumo.inventory?.[itemKey] ?? 0}*`
     : '';
-
   const xpLabel = temRelacionamento ? 'Total do casal' : 'Seu total';
-  const listaMentions = [senderJidNormalizado];
-  if (parcJid) listaMentions.push(parcJid);
 
   await sock.sendMessage(jid, {
     text:
-      `${emoji} ${tagRemetente} ${verbo} para ${tagParceiro}! 💕\n\n` +
+      `💞 *${nomeRemetente}* ${verbo} para *${nomeParceiro}*! 💕\n\n` +
       `💰 *+${ganho} XP*${bonusStr} | ${xpLabel}: *${xpAtual} XP*` +
       inventarioStr,
-    mentions: listaMentions,
   }, { quoted: msg });
 }
 
@@ -505,10 +534,10 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const alvoJid  = jidNormalizedUser(mentionedJid[0]);
-  const nomeAlvo = contactNames[alvoJid] || alvoJid.split('@')[0];
+  const alvoJid = jidNormalizedUser(mentionedJid[0]);
+  const nomeAlvo = await resolveDisplayName(alvoJid, sock, contactNames);
 
-  if (alvoJid.split('@')[0] === senderJid.split('@')[0]) {
+  if (await sameWhatsAppIdentity(alvoJid, senderJid, sock, [], getAlternateSenderJids(msg))) {
     const frases = [
       '😅 Narcisista demais! Procura alguém de verdade!',
       '🤡 Casamento consigo mesmo? Tá ouvindo voz?',
@@ -553,7 +582,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     if (!relacionamentoAtual || relacionamentoAtual.tipo !== 'namoro') {
       const mensagem = relacionamentoAtual?.tipo === 'casamento'
         ? '💍 Vocês já estão casados! Renovação de votos fica para outra ocasião. ❤️'
-        : `💍 Calma lá! Antes de casar, vocês precisam estar namorando há pelo menos *3 dias*. Use *${prefixo(jid)}namorar @${alvoJid.split('@')[0]}* primeiro.`;
+        : `💍 Calma lá! Antes de casar, vocês precisam estar namorando há pelo menos *3 dias*. Use *${prefixo(jid)}namorar* com *${nomeAlvo}* primeiro.`;
       await sock.sendMessage(jid, { text: mensagem, mentions: [alvoJid] }, { quoted: msg });
       return;
     }
@@ -584,8 +613,8 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaSender = findRelByJid(jid, senderJid, relacionamentos);
-  const jaAlvoAtual = findRelByJid(jid, alvoJid, relacionamentos);
+  const jaSender = await findRelByJid(jid, senderJid, relacionamentos, getAlternateSenderJids(msg));
+  const jaAlvoAtual = await findRelByJid(jid, alvoJid, relacionamentos);
   const mesmoCasal = atualizandoNamoro && podeConverterNamoroEmCasamento({
     tipoPedido: tipo,
     chave: chaveDoPar,
@@ -606,7 +635,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  const jaAlvo = findRelByJid(jid, alvoJid, relacionamentos);
+  const jaAlvo = await findRelByJid(jid, alvoJid, relacionamentos);
   if (jaAlvo && !mesmoCasal) {
     const frases = [
       `😂 *${nomeAlvo}* JÁ tá comprometido(a)! Vai afastar esse lobisomem aí!`,
@@ -620,15 +649,20 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     return;
   }
 
-  if (pedidosPendentes.has(alvoJid)) {
+  const identidadesAlvo = await resolverIdentidadesRel(alvoJid);
+  const pedidoExistente = [...pedidosPendentes.keys()].some(key => {
+    const identidade = normalizarJidUsuario(key);
+    return identidade && identidadesAlvo.has(identidade);
+  });
+  if (pedidoExistente) {
     await sock.sendMessage(jid, {
-      text: `⏳ @${alvoJid.split('@')[0]} já tem um pedido pendente aguardando resposta.`,
+      text: '⏳ *' + nomeAlvo + '* já tem um pedido pendente aguardando resposta.',
       mentions: [alvoJid],
     }, { quoted: msg });
     return;
   }
 
-  const pedido = { tipo, jidPedinte: senderJid, nomePedinte: author, jid };
+  const pedido = { tipo, jidPedinte: senderJid, jidPedinteAliases: getAlternateSenderJids(msg), nomePedinte: author, jid };
   pedidosPendentes.set(alvoJid, pedido);
 
   // O timer fica guardado no próprio pedido (pedido.timer): aceitar, recusar e cancelar
@@ -637,7 +671,7 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
     if (pedidosPendentes.get(alvoJid) !== pedido) return;
     pedidosPendentes.delete(alvoJid);
     sock.sendMessage(jid, {
-      text: `⌛ O pedido de *${author}* para @${alvoJid.split('@')[0]} expirou sem resposta. Que falta de respeito!`,
+      text: '⌛ O pedido de *' + author + '* para *' + nomeAlvo + '* expirou sem resposta. Que falta de respeito!',
       mentions: [alvoJid],
     }).catch(() => {});
   }, 5 * 60 * 1000);
@@ -645,8 +679,8 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
   const tipoEmoji = tipo === 'casamento' ? '💍' : '💝';
   const tipoVerbo = tipo === 'casamento' ? 'casar' : 'namorar';
   const caption =
-    `${tipoEmoji} *${author}* está pedindo @${alvoJid.split('@')[0]} em ${tipo}!\n\n` +
-    `@${alvoJid.split('@')[0]}, você aceita ${tipoVerbo} com *${author}*? 🥺\n\n` +
+    tipoEmoji + ' *' + author + '* está pedindo *' + nomeAlvo + '* em ' + tipo + '!\n\n' +
+    '*' + nomeAlvo + '*, você aceita ' + tipoVerbo + ' com *' + author + '*? 🥺\n\n' +
     `Use *${prefixo(jid)}euaceito* ou *${prefixo(jid)}eurecuso*\n_⏰ Expira em 5 minutos_`;
 
   const imagemNome = tipo === 'casamento'
@@ -675,20 +709,23 @@ async function handleRelacionamento(sock, msg, content, jid, author, tipo, relac
 
 async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedidosPendentes, contactNames) {
   const senderNorm = jidNormalizedUser(senderJid);
-  const pedido = pedidosPendentes.get(senderNorm) || pedidosPendentes.get(senderJid);
+  const pendingEntry = await findPendingRequest(senderNorm, msg, pedidosPendentes);
+  const pedido = pendingEntry?.pedido;
   if (!pedido) {
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
 
-  const nomeAlvo = msg.pushName || contactNames[senderNorm] || senderNorm.split('@')[0];
+  const nomeAlvo = await resolveDisplayName(senderNorm, sock, contactNames, {
+    preferredName: msg.pushName,
+  });
   const { jidPedinte, nomePedinte, jid: jidOrigem, tipo } = pedido;
   const pedinteNorm = jidNormalizedUser(jidPedinte);
   const grupoOrigem = jidOrigem || jid;
   const key = relKey(grupoOrigem, senderNorm, pedinteNorm);
   const relacionamentoAnterior = relacionamentos.get(key) || null;
-  const relSender = findRelByJid(grupoOrigem, senderNorm, relacionamentos);
-  const relPedinte = findRelByJid(grupoOrigem, pedinteNorm, relacionamentos);
+  const relSender = await findRelByJid(grupoOrigem, senderNorm, relacionamentos, getAlternateSenderJids(msg));
+  const relPedinte = await findRelByJid(grupoOrigem, pedinteNorm, relacionamentos);
 
   const atualizandoNamoro = podeConverterNamoroEmCasamento({
     tipoPedido: tipo,
@@ -702,8 +739,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   // existente: o mesmo casal pode converter namoro em casamento após 3 dias.
   if ((relSender || relPedinte) && !atualizandoNamoro) {
     if (pedido.timer) clearTimeout(pedido.timer);
-    pedidosPendentes.delete(senderNorm);
-    pedidosPendentes.delete(senderJid);
+    removePendingRequest(pedidosPendentes, pedido, pendingEntry?.key);
     await sock.sendMessage(jid, {
       text: '⚠️ Um de vocês já está em outro relacionamento. O pedido foi cancelado.',
     }, { quoted: msg });
@@ -712,8 +748,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
 
   if (tipo === 'casamento' && !atualizandoNamoro) {
     if (pedido.timer) clearTimeout(pedido.timer);
-    pedidosPendentes.delete(senderNorm);
-    pedidosPendentes.delete(senderJid);
+    removePendingRequest(pedidosPendentes, pedido, pendingEntry?.key);
     await sock.sendMessage(jid, {
       text: '⚠️ O namoro não está mais elegível para casamento. O pedido foi cancelado.',
     }, { quoted: msg });
@@ -743,8 +778,7 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
   }
 
   if (pedido.timer) clearTimeout(pedido.timer);
-  pedidosPendentes.delete(senderNorm);
-  pedidosPendentes.delete(senderJid);
+  removePendingRequest(pedidosPendentes, pedido, pendingEntry?.key);
 
   const xpAnterior = xpCasais.get(key) || 0;
   relacionamentos.set(key, {
@@ -778,35 +812,37 @@ async function handleEuAceito(sock, msg, jid, senderJid, relacionamentos, pedido
     await sock.sendMessage(grupoOrigem, {
       image: imageBuffer,
       caption,
-      mentions: [senderNorm, pedinteNorm],
     });
   } catch {
     await sock.sendMessage(grupoOrigem, {
       text: caption,
-      mentions: [senderNorm, pedinteNorm],
     });
   }
 }
 
 async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, contactNames) {
   const senderNorm = jidNormalizedUser(senderJid);
-  const pedido = pedidosPendentes.get(senderNorm) || pedidosPendentes.get(senderJid);
+  const pendingEntry = await findPendingRequest(senderNorm, msg, pedidosPendentes);
+  const pedido = pendingEntry?.pedido;
   if (!pedido) {
     await sock.sendMessage(jid, { text: '⚠️ Você não tem nenhum pedido pendente.' }, { quoted: msg });
     return;
   }
   if (pedido.timer) clearTimeout(pedido.timer);
-  pedidosPendentes.delete(senderNorm);
-  pedidosPendentes.delete(senderJid);
+  removePendingRequest(pedidosPendentes, pedido, pendingEntry?.key);
 
   const { jidPedinte, jid: jidOrigem } = pedido;
   const pedinteNorm = jidNormalizedUser(jidPedinte);
 
+  const [nomeRecusante, nomePedinte] = await Promise.all([
+    resolveDisplayName(senderNorm, sock, contactNames, { preferredName: msg.pushName, fallback: 'Participante' }),
+    resolveDisplayName(pedinteNorm, sock, contactNames, { preferredName: pedido.nomePedinte, fallback: 'Participante' }),
+  ]);
   const frases = [
-    `💔 @${senderNorm.split('@')[0]} COM TODA FORÇA recusou @${pedinteNorm.split('@')[0]}! DESTRUÍDO(A)! 😭😭😭`,
-    `🚫 @${senderNorm.split('@')[0]} não quer nem saber! @${pedinteNorm.split('@')[0]} saiu de ré levando o balde d'agua! 🪣`,
-    `😒 Que MANCADA! @${pedinteNorm.split('@')[0]} tomou um fora espetacular de @${senderNorm.split('@')[0]}! AHAHAHA! 😂`,
-    `🤡 CANCELAMENTO! @${pedinteNorm.split('@')[0]} é PERSONA NON GRATA na vida de @${senderNorm.split('@')[0]}! 🚷`,
+    '💔 *' + nomeRecusante + '* COM TODA FORÇA recusou *' + nomePedinte + '*! DESTRUÍDO(A)! 😭😭😭',
+    '🚫 *' + nomeRecusante + '* não quer nem saber! *' + nomePedinte + '* saiu de ré levando o balde de água! 🪣',
+    '😒 Que MANCADA! *' + nomePedinte + '* tomou um fora espetacular de *' + nomeRecusante + '*! AHAHAHA! 😂',
+    '🤡 CANCELAMENTO! *' + nomePedinte + '* é PERSONA NON GRATA na vida de *' + nomeRecusante + '*! 🚷',
   ];
 
   const caption = frases[Math.floor(Math.random() * frases.length)];
@@ -829,7 +865,7 @@ async function handleEuRecuso(sock, msg, jid, senderJid, pedidosPendentes, conta
 
 async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamentos) {
   const senderNorm = jidNormalizedUser(senderJid);
-  const found = findRelByJid(jid, senderNorm, relacionamentos);
+  const found = await findRelByJid(jid, senderNorm, relacionamentos, getAlternateSenderJids(msg));
   if (!found) {
     await sock.sendMessage(jid, {
       text: '💔 Você não está em nenhum relacionamento para terminar.',
@@ -838,9 +874,12 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   }
 
   const { key, rel } = found;
-  const parcJid = jidNormalizedUser(numeroDe(rel.jidA) === numeroDe(senderNorm) ? rel.jidB : rel.jidA);
-  const tagSelf = `@${numeroDe(senderNorm)}`;
-  const tagParc = `@${numeroDe(parcJid)}`;
+  const remetenteEhA = await sameWhatsAppIdentity(rel.jidA, senderNorm, sock, getAlternateSenderJids(msg));
+  const parcJid = jidNormalizedUser(remetenteEhA ? rel.jidB : rel.jidA);
+  const [nomeSelf, nomeParc] = await Promise.all([
+    resolveDisplayName(senderNorm, sock, {}, { preferredName: msg.pushName, fallback: 'Participante' }),
+    resolveDisplayName(parcJid, sock, {}, { fallback: 'Parceiro(a)' }),
+  ]);
 
   try {
     // Só remove da memória depois que o término foi confirmado no MongoDB.
@@ -861,10 +900,10 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
   bloqueados.set(parcJid,   expiry);
 
   const frases = [
-    `💔 ${tagSelf} TERMINOU com ${tagParc}! Drama total! 🎭`,
-    `🚪 ${tagSelf} bateu a porta na cara de ${tagParc}! Sem volta! 😤`,
-    `💀 Fim de linha! ${tagSelf} e ${tagParc} se separaram. RIP ao casal! 🪦`,
-    `😭 ${tagParc} acabou de tomar um pé na bunda de ${tagSelf}! Que vexame! 🤡`,
+    '💔 *' + nomeSelf + '* TERMINOU com *' + nomeParc + '*! Drama total! 🎭',
+    '🚪 *' + nomeSelf + '* bateu a porta na cara de *' + nomeParc + '*! Sem volta! 😤',
+    '💀 Fim de linha! *' + nomeSelf + '* e *' + nomeParc + '* se separaram. RIP ao casal! 🪦',
+    '😭 *' + nomeParc + '* acabou de tomar um pé na bunda de *' + nomeSelf + '*! Que vexame! 🤡',
   ];
 
   const caption = frases[Math.floor(Math.random() * frases.length)] +
@@ -876,10 +915,9 @@ async function handleCancelarCasamento(sock, msg, jid, senderJid, relacionamento
     await sock.sendMessage(jid, {
       image: imageBuffer,
       caption,
-      mentions: [senderNorm, parcJid],
     }, { quoted: msg });
   } catch {
-    await sock.sendMessage(jid, { text: caption, mentions: [senderNorm, parcJid] }, { quoted: msg });
+    await sock.sendMessage(jid, { text: caption }, { quoted: msg });
   }
 }
 

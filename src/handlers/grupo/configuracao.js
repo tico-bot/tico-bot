@@ -5,6 +5,8 @@ const path = require('path');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const sharp = require('sharp');
 const GrupoConfig = require('../../models/GrupoConfig');
+const { resolveDisplayName, resolvePhoneAndJid } = require('../../utils/identity');
+const { normalizarJid, normalizarJidUsuario, extrairNumero } = require('../../utils/jid');
 
 const {
   somenteGrupo,
@@ -189,7 +191,7 @@ async function verificarSlowMode(jid, userJid) {
   if (!cfgCache.ativo) return true;
 
   if (!global._slowModeLastMsg) global._slowModeLastMsg = new Map();
-  const chave  = `${jid}:${String(userJid || '').split('@')[0].split(':')[0]}`;
+  const chave  = `${jid}:${normalizarJidUsuario(userJid) || String(userJid || '')}`;
   const ultimo = global._slowModeLastMsg.get(chave) || 0;
 
   if (agora - ultimo < cfgCache.segundos * 1000) return false;
@@ -278,7 +280,7 @@ async function handleAntiFlood(sock, msg, jid, caption) {
 }
 
 async function verificarAntiFlood(sock, jid, userJid, botJid, alternateJids = []) {
-  if (isBotJid(userJid, botJid)) return false;
+  if (isBotJid(userJid, botJid, alternateJids)) return false;
   if (await isAdmin(sock, jid, userJid, alternateJids).catch(() => false)) return false;
 
   const agora = Date.now();
@@ -317,7 +319,7 @@ async function verificarAntiFlood(sock, jid, userJid, botJid, alternateJids = []
   const msgsGrupo = global._antiFloodMsgs.get(jid);
   // Usa a identidade base para que sufixos de dispositivo não permitam
   // contornar o limite com outra representação do mesmo JID.
-  const userKey = String(userJid || '').split('@')[0].split(':')[0];
+  const userKey = normalizarJidUsuario(userJid) || String(userJid || '');
   const lista = (msgsGrupo.get(userKey) || []).filter(t => agora - t < cfgCache.janelaMs);
   lista.push(agora);
   msgsGrupo.set(userKey, lista);
@@ -349,13 +351,13 @@ function extrairArgumentosBoasVindas(caption, comando) {
   return texto.trim();
 }
 
-function substituirMarcadoresBoasVindas(template, numero, nomeGrupo, descricao) {
+function substituirMarcadoresBoasVindas(template, numero, nomeGrupo, descricao, nomeDisplay = '') {
   const mencao = numero ? '@' + numero : 'novo membro';
   return String(template || '')
     .replace(/#numerodele#/gi, mencao)
     .replace(/#nomedogp#/gi, nomeGrupo || 'este grupo')
     .replace(/#descri(?:ç|c)(?:ã|a)o#/gi, descricao || 'Descrição não definida.')
-    .replace(/\{nome\}/gi, mencao);
+    .replace(/\{nome\}/gi, nomeDisplay || mencao);
 }
 
 async function handleToggleBoasVindas(sock, msg, jid, caption, tipo) {
@@ -566,7 +568,7 @@ async function handleFundoBoasVindas(sock, msg, jid) {
   }
 }
 
-async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
+async function processarBemVindo(sock, jid, novoMembro, nomeDisplay, participantAliases = []) {
   try {
     const cfg = await GrupoConfig.findOne({ idGrupo: jid })
       .select('+boasVindasFotoFundo')
@@ -578,13 +580,27 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
     if (!modoFoto && !modoTexto && !modoLegado) return;
 
     const meta = await sock.groupMetadata(jid).catch(() => null);
-    const numero = String(novoMembro || '').split('@')[0].split(':')[0];
+    const idsParticipante = [...new Set([novoMembro, ...participantAliases]
+      .map(value => normalizarJidUsuario(value))
+      .filter(Boolean))];
+    const phoneInfo = await resolvePhoneAndJid(novoMembro, sock);
+    const pnJid = idsParticipante.find(value => value.endsWith('@s.whatsapp.net'))
+      || phoneInfo.pnJid
+      || (normalizarJidUsuario(novoMembro)?.endsWith('@s.whatsapp.net') ? normalizarJidUsuario(novoMembro) : null);
+    // Dígitos de LID não são telefone. Só usamos @número quando há PN confirmado.
+    const numero = pnJid ? extrairNumero(pnJid) : '';
+    const mencoes = numero ? [pnJid] : [];
+    const nomeResolvido = await resolveDisplayName(novoMembro, sock, {}, {
+      candidateJids: idsParticipante,
+      preferredName: nomeDisplay,
+      fallback: 'novo membro',
+    });
     const nomeGrupo = meta?.subject || 'este grupo';
     const descricao = meta?.desc || 'Descrição não definida.';
 
     if (modoLegado) {
       const mensagemBase = cfg?.bemVindoMensagem || '👋 Bem-vindo(a) ao grupo, {nome}!';
-      const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao);
+      const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao, nomeResolvido);
       const audioImageDir = path.join(__dirname, '..', '..', '..', 'Audio-Image');
       const nomeImagem = IMAGENS_BOAS_VINDAS_PADRAO[Math.floor(Math.random() * IMAGENS_BOAS_VINDAS_PADRAO.length)];
       const caminhoImagem = path.join(audioImageDir, nomeImagem);
@@ -592,10 +608,10 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
         await sock.sendMessage(jid, {
           image: fs.readFileSync(caminhoImagem),
           caption: mensagem,
-          mentions: [novoMembro],
+          ...(mencoes.length ? { mentions: mencoes } : {}),
         });
       } else {
-        await sock.sendMessage(jid, { text: mensagem, mentions: [novoMembro] });
+        await sock.sendMessage(jid, { text: mensagem, ...(mencoes.length ? { mentions: mencoes } : {}) });
       }
       return;
     }
@@ -605,7 +621,7 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
       console.warn('[processarBemVindo] Boas-vindas ativas sem mensagem configurada para ' + jid + '.');
       return;
     }
-    const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao);
+    const mensagem = substituirMarcadoresBoasVindas(mensagemBase, numero, nomeGrupo, descricao, nomeResolvido);
 
     if (modoFoto) {
       let imagemBuffer = null;
@@ -622,7 +638,7 @@ async function processarBemVindo(sock, jid, novoMembro, nomeDisplay) {
         await sock.sendMessage(jid, {
           image: imagemBuffer,
           caption: mensagem,
-          mentions: [novoMembro],
+          ...(mencoes.length ? { mentions: mencoes } : {}),
         });
         return;
       }

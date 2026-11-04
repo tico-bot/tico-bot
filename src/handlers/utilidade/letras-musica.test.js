@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   API_BASE,
-  MAX_EXCERPT_CHARS,
+  MAX_EXCERPT_WORDS,
   makeShortExcerpt,
   searchLyrics,
   handleLetraMusica,
@@ -33,9 +33,10 @@ test('searchLyrics queries LRCLIB with encoded terms and identifies the client',
   assert.equal(result.trackName, 'Águas de Março');
 });
 
-test('makeShortExcerpt never returns more than 90 characters and strips LRC timestamps', () => {
-  const excerpt = makeShortExcerpt({ plainLyrics: '[00:12.50] ' + 'á'.repeat(200) });
-  assert.equal(Array.from(excerpt).length, MAX_EXCERPT_CHARS);
+test('makeShortExcerpt never returns more than ten words and strips LRC timestamps', () => {
+  const lyrics = '[00:12.50] ' + 'palavra '.repeat(30);
+  const excerpt = makeShortExcerpt({ plainLyrics: lyrics });
+  assert.equal(excerpt.split(/\s+/).filter(Boolean).length, MAX_EXCERPT_WORDS);
   assert.equal(excerpt.includes('[00:12.50]'), false);
   assert.ok(excerpt.endsWith('…'));
 });
@@ -70,8 +71,8 @@ test('handleLetraMusica sends track details, a short excerpt and a search link',
     assert.match(sent[0].text, /Canção de teste/);
     assert.match(sent[0].text, /Artista Teste/);
     assert.match(sent[0].text, /https:\/\/genius\.com\/search\?q=/);
-    const excerpt = sent[0].text.split('*Prévia curta:*\n')[1].split('\n\n')[0];
-    assert.ok(Array.from(excerpt).length <= MAX_EXCERPT_CHARS);
+    const excerpt = sent[0].text.split('*Prévia da letra:*\n')[1].split('\n\n')[0];
+    assert.ok(excerpt.split(/\s+/).filter(Boolean).length <= MAX_EXCERPT_WORDS);
     assert.doesNotMatch(sent[0].text, /segunda linha segunda linha segunda linha segunda linha segunda linha/);
   } finally {
     globalThis.fetch = originalFetch;
@@ -117,7 +118,7 @@ test('searchLyrics uses Lyrics.ovh when LRCLIB is unavailable', async () => {
   assert.equal(calls.length, 3);
   assert.match(calls[1], /^https:\/\/api\.lyrics\.ovh\/suggest\//);
   assert.match(calls[2], /\/v1\/Coldplay\/Yellow$/);
-  assert.ok(Array.from(makeShortExcerpt(result)).length <= MAX_EXCERPT_CHARS);
+  assert.ok(makeShortExcerpt(result).split(/\s+/).filter(Boolean).length <= MAX_EXCERPT_WORDS);
 });
 
 test('handleLetraMusica includes the search link when both providers fail', async () => {

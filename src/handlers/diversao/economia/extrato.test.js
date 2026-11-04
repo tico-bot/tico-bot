@@ -42,11 +42,21 @@ test('extrato resolve nomes de registros antigos que guardaram somente o número
   const consultas = [];
   t.mock.method(identidade, 'resolveUsuarioInfo', async jid => {
     consultas.push(jid);
+    if (jid === '123456789012345@s.whatsapp.net') {
+      return {
+        resolvedJid: jid,
+        pnJid: jid,
+        lidJid: null,
+        nome: 'Pessoa PN',
+        userData: { idWhatsApp: jid, nome: 'Pessoa PN' },
+      };
+    }
     if (jid === '123456789012345@lid') {
       return {
         resolvedJid: '5511888888888@s.whatsapp.net',
         pnJid: '5511888888888@s.whatsapp.net',
         lidJid: '123456789012345@lid',
+        nome: 'Mariana',
         userData: { idWhatsApp: '123456789012345@lid', nome: 'Mariana' },
       };
     }
@@ -55,13 +65,14 @@ test('extrato resolve nomes de registros antigos que guardaram somente o número
 
   const nomes = await carregarNomesHistorico([
     { item: 'PIX para @123456789012345' },
+    { item: 'PIX separado para @123456789012345@lid' },
   ], {}, {});
 
   assert.ok(consultas.includes('123456789012345@s.whatsapp.net'));
   assert.ok(consultas.includes('123456789012345@lid'));
-  assert.equal(resolverNomesNoItem('PIX para @123456789012345', nomes), 'PIX para *Mariana*');
+  assert.equal(resolverNomesNoItem('PIX para @123456789012345', nomes), 'PIX para *Pessoa PN*');
   assert.equal(resolverNomesNoItem('PIX de @123456789012345@lid', nomes), 'PIX de *Mariana*');
-  assert.equal(resolverNomesNoItem('PIX para @123456789012345@s.whatsapp.net', nomes), 'PIX para *Mariana*');
+  assert.equal(resolverNomesNoItem('PIX para @123456789012345@s.whatsapp.net', nomes), 'PIX para *Pessoa PN*');
 });
 
 test('extrato também resolve JIDs crus gravados por roubo, assalto e polícia', async t => {
@@ -105,11 +116,19 @@ test('extrato também resolve JIDs crus gravados por roubo, assalto e polícia',
   assert.equal(resolverNomesNoItem(historico[4].item, nomes), 'Assaltou banco de *Rafael*');
 });
 
-test('usa o cache de contactos quando o nome já está disponível em um alias PN/LID', async t => {
+test('usa o cache de contactos no alias PN/LID após resolver o vínculo da conta', async t => {
   let consultas = 0;
-  t.mock.method(identidade, 'resolveUsuarioInfo', async () => {
+  t.mock.method(identidade, 'resolveUsuarioInfo', async (jid, sock, contactNames) => {
     consultas++;
-    return { userData: null };
+    const alias = '5511999999999@lid';
+    const nome = contactNames instanceof Map ? contactNames.get(alias) : contactNames?.[alias];
+    return {
+      resolvedJid: jid,
+      pnJid: jid,
+      lidJid: alias,
+      nome: nome || 'Usuário',
+      userData: null,
+    };
   });
 
   const nomes = await carregarNomesHistorico(
@@ -119,5 +138,5 @@ test('usa o cache de contactos quando o nome já está disponível em um alias P
   );
 
   assert.equal(resolverNomesNoItem('PIX para @5511999999999@s.whatsapp.net', nomes), 'PIX para *Carlos*');
-  assert.equal(consultas, 0, 'não consulta o banco quando o cache já tem o nome');
+  assert.equal(consultas, 1, 'consulta a identidade para confirmar o alias antes de usar o nome do contacto');
 });

@@ -45,22 +45,28 @@ function getInventarioMap(personagem) {
   return new Map(Object.entries(personagem.inventarioMedieval || {}));
 }
 
-function nomeFallbackDoJid(idWhatsApp) {
-  return String(idWhatsApp || '').split('@')[0].split(':')[0].replace(/\D/g, '') || 'Usuário';
+function nomeFallbackDoJid() {
+  // Um LID não é telefone nem nome. Nunca persista seus dígitos como nome.
+  return 'Aventureiro';
+}
+
+function nomePersonagemUtil(nome) {
+  const valor = String(nome || '').trim();
+  if (!valor || valor.length > 30) return false;
+  if (/^@?\+?[\d\s().-]+$/.test(valor)) return false;
+  if (/^\d+@(s\.whatsapp\.net|lid)$/i.test(valor)) return false;
+  if (['usuário', 'usuario', 'aventureiro', 'guerreiro'].includes(valor.toLowerCase())) return false;
+  return true;
 }
 
 async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
   const nomeLimpo = sanitizarNome(nome, nomeFallbackDoJid(idWhatsApp));
   const existente = await MedievalPersonagem.findOne({ idWhatsApp, idGrupo });
   if (existente) {
-    // Personagens antigos podiam guardar apenas o número, porque eram criados
-    // quando o alvo era mencionado. Atualiza o nome assim que o WhatsApp
-    // fornecer um nome de exibição válido numa interação posterior.
+    // Migra nomes antigos que eram números, LIDs, JIDs ou placeholders.
     const nomeAtual = String(existente.nome || '').trim();
-    const pareceNumero = /^[+\d\s().-]+$/.test(nomeAtual);
-    const nomeRecebidoEhUtil = nomeLimpo && !/^[+\d\s().-]+$/.test(nomeLimpo);
-    if (nomeRecebidoEhUtil && pareceNumero) {
-      existente.nome = nomeLimpo;
+    if (!nomePersonagemUtil(nomeAtual)) {
+      existente.nome = nomePersonagemUtil(nomeLimpo) ? nomeLimpo : 'Aventureiro';
       await existente.save();
     }
     return existente;
@@ -77,7 +83,7 @@ async function getOuCriarPersonagem(idWhatsApp, idGrupo, nome) {
     return await MedievalPersonagem.create({
       idWhatsApp,
       idGrupo,
-      nome:     nomeLimpo,
+      nome:     nomePersonagemUtil(nomeLimpo) ? nomeLimpo : 'Aventureiro',
       classe:   classe.nome,
       elemento: elemento.nome,
       nivel:    1,

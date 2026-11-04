@@ -53,11 +53,11 @@ function resolverNomesNoItem(item = '', contactNames = {}) {
   return texto.replace(JID_REFERENCE_REGEX, (match, numeroMenção, dominioMenção, numeroCru, dominioCru) => {
     const numero = numeroMenção || numeroCru;
     const dominio = dominioMenção || dominioCru;
+    // Sem domínio, o formato legado representa PN; com @lid, não adivinhar o PN.
     const jidCompleto = `${numero}@${dominio || 's.whatsapp.net'}`;
-    const nome = obterNomeContato(contactNames, jidCompleto)
-      || obterNomeContato(contactNames, `${numero}@lid`)
-      || obterNomeContato(contactNames, numero);
-    return nome ? `*${nome.replace(/\*/g, '')}*` : `@${numero}`;
+    const nome = nomeExibicaoValido(obterNomeContato(contactNames, jidCompleto))
+      || (!dominio ? nomeExibicaoValido(obterNomeContato(contactNames, numero)) : null);
+    return nome ? `*${nome.replace(/\*/g, '')}*` : '*Usuário*';
   });
 }
 
@@ -65,6 +65,7 @@ function nomeExibicaoValido(value) {
   if (typeof value !== 'string') return null;
   const nome = value.trim().replace(/[\r\n]/g, ' ');
   if (!nome || /^\+?[\d\s().-]+$/.test(nome)) return null;
+  if (/@(?:s\.whatsapp\.net|lid)$/i.test(nome)) return null;
   return nome;
 }
 
@@ -96,34 +97,24 @@ async function carregarNomesHistorico(transacoes, sock, contactNames = {}) {
 
   const referencias = extrairReferenciasDeTransacoes(transacoes);
   await Promise.all(referencias.map(async ({ numero, dominio }) => {
-    const pnJid = `${numero}@s.whatsapp.net`;
-    const lidJid = `${numero}@lid`;
-    const candidatos = dominio === '@lid'
-      ? [lidJid, pnJid]
-      : dominio === '@s.whatsapp.net'
-        ? [pnJid, lidJid]
-        : [pnJid, lidJid];
-
-    let nome = candidatos.map(jid => obterNomeContato(nomes, jid)).find(Boolean) || null;
-    const infos = nome ? [] : await Promise.all(candidatos.map(jid =>
-      identidade.resolveUsuarioInfo(jid, sock, nomes).catch(() => null)
-    ));
+    // Número legado sem domínio é tratado como PN. Uma referência @lid
+    // permanece LID até que LidMapping confirme o respetivo PN.
+    const jidReferencia = `${numero}${dominio || '@s.whatsapp.net'}`;
+    let nome = nomeExibicaoValido(obterNomeContato(nomes, jidReferencia))
+      || (!dominio ? nomeExibicaoValido(obterNomeContato(nomes, numero)) : null);
+    const info = nome ? null : await identidade.resolveUsuarioInfo(jidReferencia, sock, nomes).catch(() => null);
 
     if (!nome) {
-      for (const info of infos) {
-        nome = nomeExibicaoValido(info?.userData?.nome)
-          || nomeExibicaoValido(info?.userData?.displayName);
-        if (nome) break;
-      }
+      nome = nomeExibicaoValido(info?.nome)
+        || nomeExibicaoValido(info?.userData?.displayName)
+        || nomeExibicaoValido(info?.userData?.nome)
+        || nomeExibicaoValido(info?.userData?.username);
     }
+    if (!nome || nome.toLowerCase() === 'usuário') return;
 
-    if (!nome) return;
-
-    const aliases = new Set([pnJid, lidJid, `${numero}`]);
-    for (const info of infos) {
-      for (const alias of [info?.resolvedJid, info?.pnJid, info?.lidJid, info?.userData?.idWhatsApp]) {
-        if (typeof alias === 'string' && alias.includes('@')) aliases.add(alias);
-      }
+    const aliases = new Set([jidReferencia]);
+    for (const alias of [info?.resolvedJid, info?.pnJid, info?.lidJid, info?.userData?.idWhatsApp]) {
+      if (typeof alias === 'string' && alias.includes('@')) aliases.add(alias);
     }
     for (const alias of aliases) nomes[alias] = nome;
   }));

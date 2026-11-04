@@ -6,9 +6,10 @@ const {
   somenteGrupo,
   checkAdmin,
   getGroupMetadataCached,
-  normalizeJidBase,
 } = require('./helpers');
-const { getAlternateSenderJids } = require('../../utils/identity');
+const { getAlternateSenderJids, getParticipantJids } = require('../../utils/identity');
+const { normalizarJidUsuario, normalizarJidComDominio } = require('../../utils/jid');
+const LidMapping = require('../../models/LidMapping');
 const { isOwnerIdentity } = require('../extras/_shared');
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -77,11 +78,26 @@ async function handleFotoGrupo(sock, msg, content, jid) {
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderAlternateJids = getAlternateSenderJids(msg);
-  const senderBases = new Set([senderJid, ...senderAlternateJids].map(normalizeJidBase).filter(Boolean));
+  const senderIds = new Set([senderJid, ...senderAlternateJids].map(normalizarJidUsuario).filter(Boolean));
+  const senderPns = [...senderIds].filter(value => value.endsWith('@s.whatsapp.net'));
+  const senderLids = [...senderIds].filter(value => value.endsWith('@lid'));
+  const condicoesMapa = [
+    ...(senderPns.length ? [{ pn: { $in: senderPns } }] : []),
+    ...(senderLids.length ? [{ lid: { $in: senderLids } }] : []),
+  ];
+  if (condicoesMapa.length) {
+    const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+    for (const mapa of mapas) {
+      const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+      const lid = normalizarJidComDominio(mapa.lid, 'lid');
+      if (pn?.endsWith('@s.whatsapp.net')) senderIds.add(pn);
+      if (lid?.endsWith('@lid')) senderIds.add(lid);
+    }
+  }
   const globalOwner = await isOwnerIdentity(senderJid, senderAlternateJids);
-  const senderParticipant = metadata?.participants?.find(p => p && (
-    senderBases.has(normalizeJidBase(p.id)) || senderBases.has(normalizeJidBase(p.lid))
-  ));
+  const senderParticipant = metadata?.participants?.find(p =>
+    getParticipantJids(p).some(value => senderIds.has(value))
+  );
   if (!senderParticipant?.admin && !globalOwner) {
     await sock.sendMessage(jid, {
       text: '❌ Apenas administradores do próprio grupo podem alterar a foto.',
@@ -89,11 +105,10 @@ async function handleFotoGrupo(sock, msg, content, jid) {
     return;
   }
 
-  const botJid = sock.user?.id || sock.user?.jid;
-  const botBase = normalizeJidBase(botJid);
-  const botParticipant = metadata?.participants?.find(p => p && (
-    normalizeJidBase(p.id) === botBase || normalizeJidBase(p.lid) === botBase
-  ));
+  const botIds = new Set(getParticipantJids(sock.user));
+  const botParticipant = metadata?.participants?.find(p =>
+    getParticipantJids(p).some(value => botIds.has(value))
+  );
   if (!botParticipant?.admin) {
     await sock.sendMessage(jid, {
       text: '⚠️ Preciso ser administrador do grupo para alterar a foto. Promova o Tico Bot e tente novamente.',

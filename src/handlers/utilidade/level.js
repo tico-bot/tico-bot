@@ -1,10 +1,12 @@
 'use strict';
 
 const path                  = require('path');
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo         = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const GrupoConfig           = require(path.join(__dirname, '..', '..', 'models', 'GrupoConfig'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolveDisplayName, getParticipantJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { normalizarJidComDominio, normalizarJidUsuario } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 
 // ─────────────────────────────────────────────────────────────────────────
 // ⚠️ IMPORTANTE — Identidade do usuário (idWhatsApp)
@@ -48,17 +50,17 @@ function buildBarra(progresso, tamanho = 10) {
 // ─── Normalização do remetente ────────────────────────────────────────────────
 /**
  * Normaliza o JID do remetente de uma mensagem.
- * Retorna { fullJid, numero } ou null se inválido.
+ * Retorna { fullJid } ou null se inválido.
  */
 function normalizarRemetente(msg) {
   if (!msg || !msg.key) return null;
   const rawSender = (msg.key.participant || msg.key.remoteJid)?.toLowerCase();
   if (!rawSender) return null;
 
-  const numero = rawSender.split('@')[0].split(':')[0].replace(/\D/g, '');
-  if (!numero) return null;
+  const fullJid = normalizarJidUsuario(rawSender);
+  if (!fullJid) return null;
 
-  return { fullJid: jidNormalizedUser(rawSender), numero };
+  return { fullJid };
 }
 
 // ─── Helpers de guarda ────────────────────────────────────────────────────────
@@ -80,11 +82,15 @@ async function handleLevel(sock, msg, jid) {
   const remetente = normalizarRemetente(msg);
   if (!remetente) return;
 
-  const { numero } = remetente;
   // Resolve para o MESMO jid que a carteira real usa (@lid ↔ @pn) — sem
   // isso, quem tem carteira salva sob o outro formato aparecia como
   // "sem XP registrado" mesmo tendo XP acumulado.
   const fullJid = await resolverJidCarteira(remetente.fullJid, jid);
+  const nomeUsuario = await resolveDisplayName(fullJid, sock, {}, {
+    preferredName: msg.pushName,
+    candidateJids: [remetente.fullJid],
+    fallback: 'Você',
+  });
 
   try {
     const doc = await CarteiraGrupo.findOne({ idWhatsApp: fullJid, idGrupo: jid });
@@ -95,9 +101,8 @@ async function handleLevel(sock, msg, jid) {
       return sock.sendMessage(jid, {
         text:
           `📊 *NÍVEL DE PROGRESSO*\n\n` +
-          `@${numero}, você ainda não tem XP registrado neste grupo.\n` +
+          `*${nomeUsuario}*, você ainda não tem XP registrado neste grupo.\n` +
           `_Continue interagindo para começar a pontuar!_`,
-        mentions: [fullJid],
       }, { quoted: msg });
     }
 
@@ -108,7 +113,7 @@ async function handleLevel(sock, msg, jid) {
     const texto =
       `📊 *SEU STATUS DE NÍVEL*\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `👤 *Usuário:* @${numero}\n` +
+      `👤 *Usuário:* ${nomeUsuario}\n` +
       `${faixa.emoji} *Título:* ${faixa.nome}\n` +
       `⭐ *Nível:* ${level}  •  ✨ *XP Total:* ${xp.toLocaleString('pt-BR')}\n\n` +
       `📈 *Progresso para o nível ${level + 1}:*\n` +
@@ -117,7 +122,7 @@ async function handleLevel(sock, msg, jid) {
       `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `_💬 Continue ativo para subir de nível!_`;
 
-    return sock.sendMessage(jid, { text: texto, mentions: [fullJid] }, { quoted: msg });
+    return sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
   } catch (err) {
     console.error('[handleLevel] Erro:', err);
@@ -179,19 +184,11 @@ async function handleLevelToggle(sock, msg, jid, args, isAdminUser) {
   }
 }
 
-function normalizarJidBase(id) {
-  if (!id || typeof id !== 'string') return '';
-  const clean = id.toLowerCase();
-  const [user, domain] = clean.split('@');
-  if (!user || !domain) return clean;
-  return `${user.split(':')[0]}@${domain}`;
-}
-
 // ─── !ranklevel ───────────────────────────────────────────────────────────────
 /**
  * Top 10 usuários com mais XP ativos no grupo.
  */
-async function handleRankLevel(sock, msg, jid) {
+async function handleRankLevel(sock, msg, jid, contactNames = {}) {
   if (!await exigirGrupo(sock, msg, jid)) return;
 
   try {
@@ -201,13 +198,21 @@ async function handleRankLevel(sock, msg, jid) {
       if (metadata?.participants?.length) {
         membrosSet = new Set();
         for (const p of metadata.participants) {
-          if (p.id) {
-            membrosSet.add(p.id.toLowerCase());
-            membrosSet.add(normalizarJidBase(p.id));
-          }
-          if (p.lid) {
-            membrosSet.add(p.lid.toLowerCase());
-            membrosSet.add(normalizarJidBase(p.lid));
+          for (const id of getParticipantJids(p)) membrosSet.add(id);
+        }
+        const pns = [...membrosSet].filter(id => id.endsWith('@s.whatsapp.net'));
+        const lids = [...membrosSet].filter(id => id.endsWith('@lid'));
+        const condicoesMapa = [
+          ...(pns.length ? [{ pn: { $in: pns } }] : []),
+          ...(lids.length ? [{ lid: { $in: lids } }] : []),
+        ];
+        if (condicoesMapa.length) {
+          const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+          for (const mapa of mapas) {
+            const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+            const lid = normalizarJidComDominio(mapa.lid, 'lid');
+            if (pn) membrosSet.add(pn);
+            if (lid) membrosSet.add(lid);
           }
         }
       }
@@ -225,9 +230,8 @@ async function handleRankLevel(sock, msg, jid) {
       .filter(u => {
         if (!u.idWhatsApp) return false;
         if (!membrosSet) return true;
-        const idLower = u.idWhatsApp.toLowerCase();
-        const idBase  = normalizarJidBase(u.idWhatsApp);
-        return membrosSet.has(idLower) || membrosSet.has(idBase);
+        const idNormalizado = normalizarJidUsuario(u.idWhatsApp);
+        return !!idNormalizado && membrosSet.has(idNormalizado);
       })
       .slice(0, 10);
 
@@ -237,14 +241,10 @@ async function handleRankLevel(sock, msg, jid) {
       }, { quoted: msg });
     }
 
-    const MEDALS   = ['🥇', '🥈', '🥉'];
-    const mentions = [];
+    const MEDALS = ['🥇', '🥈', '🥉'];
 
-    const linhas = candidatos.map((user, i) => {
-      const fullJid = user.idWhatsApp.toLowerCase();
-      const numero  = fullJid.split('@')[0].split(':')[0].replace(/\D/g, '');
-      mentions.push(fullJid);
-
+    const linhas = await Promise.all(candidatos.map(async (user, i) => {
+      const nome = await resolveDisplayName(user.idWhatsApp, sock, contactNames, { fallback: 'Participante' });
       const xpRaw = Math.max(0, user.xp ?? 0);
 
       // ✅ Usa as statics do model — sem reimplementar a fórmula localmente
@@ -259,11 +259,11 @@ async function handleRankLevel(sock, msg, jid) {
       const prefix = MEDALS[i] ?? `🔹 *${i + 1}.*`;
 
       return (
-        `${prefix} @${numero} ${faixa.emoji}\n` +
-        `┣ 🏅 Nível *${level}* (${faixa.titulo})  •  ✨ *${xpRaw.toLocaleString('pt-BR')} XP*\n` +
-        `┗ [${buildBarra(progresso, 5)}] ${progresso}% → nível ${level + 1}`
+        prefix + ' *' + nome + '* ' + faixa.emoji + '\n' +
+        '┣ 🏅 Nível *' + level + '* (' + faixa.titulo + ')  •  ✨ *' + xpRaw.toLocaleString('pt-BR') + ' XP*\n' +
+        '┗ [' + buildBarra(progresso, 5) + '] ' + progresso + '% → nível ' + (level + 1)
       );
-    });
+    }));
 
     const texto =
       `🏆 *RANKING DE XP — TOP ${candidatos.length}* 🏆\n` +
@@ -272,7 +272,7 @@ async function handleRankLevel(sock, msg, jid) {
       `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `_Use *!level* para ver seu progresso pessoal!_`;
 
-    return sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
+    return sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
   } catch (err) {
     console.error('[handleRankLevel] Erro:', err);

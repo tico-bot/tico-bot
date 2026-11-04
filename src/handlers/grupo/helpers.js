@@ -1,8 +1,8 @@
 'use strict';
 
-const { normalizarJid } = require('../../utils/jid');
+const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio } = require('../../utils/jid');
 const LidMapping = require('../../models/LidMapping');
-const { getAlternateSenderJids } = require('../../utils/identity');
+const { getAlternateSenderJids, getParticipantJids } = require('../../utils/identity');
 const { isOwnerIdentity } = require('../extras/_shared');
 
 // ═══════════════════════════════════════════════════════════════
@@ -88,39 +88,33 @@ async function isAdmin(sock, groupJid, userJid, alternateJids = []) {
     const meta = await getGroupMetadataCached(sock, groupJid);
     if (!meta?.participants) return false;
 
-    const userBases = new Set(candidates.map(normalizeJidBase).filter(Boolean));
+    // Compara JIDs completos. A parte numérica de PN e LID não é uma identidade.
+    const userJids = new Set(candidates.map(value => normalizarJidUsuario(value)).filter(Boolean));
+    const encontrarCorrespondente = () => meta.participants.find(p =>
+      getParticipantJids(p).some(value => userJids.has(value))
+    );
 
-    let part = meta.participants.find(p => {
-      if (!p) return false;
-      const pIdBase  = normalizeJidBase(p.id);
-      const pLidBase = p.lid ? normalizeJidBase(p.lid) : '';
-      return userBases.has(pIdBase) || userBases.has(pLidBase);
-    });
-
-    // A metadata pode conter o par PN/LID mesmo quando LidMapping ainda não foi salvo.
-    if (part && await isOwnerIdentity(part.id, part.lid)) return true;
-
-    // Fallback para mensagens/metadata que tragam apenas uma das formas do JID.
+    // Evita consultar Mongo quando a metadata já confirma o JID exato.
+    let part = encontrarCorrespondente();
     if (!part) {
-      for (const candidate of candidates) {
-        const normalized = normalizarJid(candidate) || candidate;
-        const mapping = await LidMapping.findOne({
-          $or: [{ pn: normalized }, { lid: normalized }],
-        }).lean().catch(() => null);
-        if (!mapping) continue;
-
-        const alternate = normalizarJid(mapping.pn) === normalized ? mapping.lid : mapping.pn;
-        const altBase = alternate ? normalizeJidBase(alternate) : '';
-        if (altBase) {
-          part = meta.participants.find(p => p && (
-            normalizeJidBase(p.id) === altBase || normalizeJidBase(p.lid) === altBase
-          ));
+      const userPns = [...userJids].filter(value => value.endsWith('@s.whatsapp.net'));
+      const userLids = [...userJids].filter(value => value.endsWith('@lid'));
+      const condicoesMapa = [
+        ...(userPns.length ? [{ pn: { $in: userPns } }] : []),
+        ...(userLids.length ? [{ lid: { $in: userLids } }] : []),
+      ];
+      if (condicoesMapa.length) {
+        const mapas = await LidMapping.find({ $or: condicoesMapa }).select('pn lid').lean();
+        for (const mapa of mapas) {
+          const pn = normalizarJidComDominio(mapa.pn, 's.whatsapp.net');
+          const lid = normalizarJidComDominio(mapa.lid, 'lid');
+          if (pn?.endsWith('@s.whatsapp.net')) userJids.add(pn);
+          if (lid?.endsWith('@lid')) userJids.add(lid);
         }
-        if (part) break;
+        part = encontrarCorrespondente();
       }
     }
-
-    if (part && await isOwnerIdentity(part.id, part.lid)) return true;
+    if (part && await isOwnerIdentity(part.id, getParticipantJids(part))) return true;
     return part?.admin === 'admin' || part?.admin === 'superadmin';
   } catch (err) {
     console.error('[isAdmin] Erro ao verificar permissão de admin:', err.message);
@@ -144,9 +138,16 @@ async function getGroupOwner(sock, groupJid) {
   }
 }
 
-function isBotJid(jid, botJid) {
-  if (!botJid || !jid) return false;
-  return normalizeJidBase(jid) === normalizeJidBase(botJid);
+function isBotJid(jid, botJid, alternateJids = []) {
+  const participantes = Array.isArray(alternateJids) ? alternateJids : [alternateJids];
+  const bots = (Array.isArray(botJid) ? botJid : [botJid])
+    .filter(valor => typeof valor === 'string' && valor.includes('@'))
+    .map(valor => normalizarJidUsuario(valor)).filter(Boolean);
+  if (!bots.length) return false;
+  const identidades = [jid, ...participantes]
+    .filter(valor => typeof valor === 'string' && valor.includes('@'))
+    .map(valor => normalizarJidUsuario(valor)).filter(Boolean);
+  return identidades.some(id => bots.includes(id));
 }
 
 /**
@@ -162,27 +163,30 @@ async function resolveTargetJid(sock, msg, content, jid) {
   // Sem menção → tenta reply
   if (mentionedJid.length === 0) {
     if (!quotedParticipant) return null;
-    return normalizarJid(quotedParticipant) || quotedParticipant;
+    return normalizarJidUsuario(quotedParticipant);
   }
 
-  let rawJid = mentionedJid[0];
-  const targetBase = normalizeJidBase(rawJid);
+  let rawJid = normalizarJidUsuario(mentionedJid[0]);
+  if (!rawJid) return null;
 
   // Resolve @lid → @s.whatsapp.net quando o grupo fornece o mapeamento
   if (rawJid.endsWith('@lid') && jid.endsWith('@g.us')) {
     try {
       const meta = await getGroupMetadataCached(sock, jid);
-      const part = meta?.participants?.find(p => {
-        if (!p) return false;
-        return normalizeJidBase(p.id) === targetBase || (p.lid && normalizeJidBase(p.lid) === targetBase);
-      });
-      if (part?.id && !part.id.endsWith('@lid')) rawJid = part.id;
+      const part = meta?.participants?.find(p => getParticipantJids(p).includes(rawJid));
+      const pnMetadata = getParticipantJids(part).find(value => value.endsWith('@s.whatsapp.net'));
+      if (pnMetadata?.endsWith('@s.whatsapp.net')) rawJid = pnMetadata;
+      else {
+        const mapping = await LidMapping.findOne({ lid: rawJid }).select('pn').lean();
+        const pnMongo = normalizarJidComDominio(mapping?.pn, 's.whatsapp.net');
+        if (pnMongo?.endsWith('@s.whatsapp.net')) rawJid = pnMongo;
+      }
     } catch (err) {
       console.error('[resolveTargetJid] Erro ao resolver @lid:', err.message);
     }
   }
 
-  return normalizarJid(rawJid) || rawJid;
+  return rawJid;
 }
 
 function somenteGrupo(jid) {
@@ -211,12 +215,16 @@ async function checkAdmin(sock, msg, jid, cmd = 'este comando') {
 // ─── HELPERS DE MUTE (isolados por grupo) ─────────────────────
 // ═══════════════════════════════════════════════════════════════
 
-function isMuted(groupJid, userJid) {
-  const base = normalizeJidBase(userJid);
+function isMuted(groupJid, userJid, alternateJids = []) {
+  const aliases = Array.isArray(alternateJids) ? alternateJids : [alternateJids];
+  const candidates = new Set([userJid, ...aliases]
+    .filter(value => typeof value === 'string' && value.includes('@'))
+    .map(value => normalizarJidUsuario(value)).filter(Boolean));
   const set = mutedUsers.get(groupJid);
-  if (!set) return false;
+  if (!set || !candidates.size) return false;
   for (const item of set) {
-    if (normalizeJidBase(item) === base) return true;
+    const normalized = normalizarJidUsuario(item);
+    if (normalized && candidates.has(normalized)) return true;
   }
   return false;
 }
@@ -226,13 +234,17 @@ function muteUser(groupJid, userJid) {
   mutedUsers.get(groupJid).add(userJid);
 }
 
-function unmuteUser(groupJid, userJid) {
+function unmuteUser(groupJid, userJid, alternateJids = []) {
   const s = mutedUsers.get(groupJid);
   if (!s) return false;
-  const base = normalizeJidBase(userJid);
+  const aliases = Array.isArray(alternateJids) ? alternateJids : [alternateJids];
+  const candidates = new Set([userJid, ...aliases]
+    .filter(value => typeof value === 'string' && value.includes('@'))
+    .map(value => normalizarJidUsuario(value)).filter(Boolean));
+  if (!candidates.size) return false;
   let removed = false;
   for (const item of Array.from(s)) {
-    if (normalizeJidBase(item) === base) {
+    if (candidates.has(normalizarJidUsuario(item))) {
       s.delete(item);
       removed = true;
     }

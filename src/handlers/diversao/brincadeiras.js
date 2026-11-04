@@ -2,12 +2,12 @@
 const fs   = require('fs');
 const path = require('path');
 const { buscarTabelaCBF } = require('./brasileirao-cbf');
+const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids, getParticipantJids } = require('../../utils/identity');
 
-function getAlvo(contextInfo, senderJid, contactNames) {
+async function getAlvo(contextInfo, senderJid, contactNames, sock) {
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
   const alvoJid = mentionedJid || senderJid;
-  const numero = alvoJid ? alvoJid.split('@')[0].split(':')[0] : '';
-  const nome = contactNames?.[alvoJid] || (numero ? `@${numero}` : 'Usuário');
+  const nome = await resolveDisplayName(alvoJid, sock, contactNames);
   return { alvoJid, mentionedJid, nome };
 }
 
@@ -20,7 +20,7 @@ function buildBar(pct, emoji = '🟩') {
 async function handleGay(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct = Math.floor(Math.random() * 101);
 
   const display = mentionedJid ? nome : author;
@@ -112,7 +112,7 @@ async function handleGay(sock, msg, content, jid, author, contactNames) {
 async function handleLesbica(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -196,7 +196,7 @@ async function handleLesbica(sock, msg, content, jid, author, contactNames) {
 async function handleAura(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct = Math.floor(Math.random() * 101);
 
   let emoji, frase, barEmoji, imagemNome;
@@ -252,7 +252,7 @@ async function handleDado(sock, msg, jid, caption) {
 async function handleBucetudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct = Math.floor(Math.random() * 101);
 
   const display = mentionedJid ? nome : author;
@@ -413,8 +413,10 @@ async function handleShip(sock, msg, content, jid, contactNames) {
   }
 
   const [jid1, jid2] = mencionados;
-  const nome1 = contactNames?.[jid1] || `@${jid1.split('@')[0]}`;
-  const nome2 = contactNames?.[jid2] || `@${jid2.split('@')[0]}`;
+  const [nome1, nome2] = await Promise.all([
+    resolveDisplayName(jid1, sock, contactNames),
+    resolveDisplayName(jid2, sock, contactNames),
+  ]);
 
   const metade1  = nome1.slice(0, Math.ceil(nome1.length / 2));
   const metade2  = nome2.slice(Math.floor(nome2.length / 2));
@@ -542,7 +544,7 @@ async function handleRolar(sock, msg, content, jid, author) {
 async function handleXingar(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
     const xingamentos = [
@@ -595,7 +597,7 @@ async function handleXingar(sock, msg, content, jid, author, contactNames) {
 async function handleElogio(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const elogios = [
@@ -643,14 +645,14 @@ async function handleCrush(sock, msg, content, jid, author, contactNames) {
   }
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (mentionedJid.split('@')[0] === senderJid.split('@')[0]) {
+  if (await sameWhatsAppIdentity(mentionedJid, senderJid, sock, [], getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, {
       text: '😂 Narcisista! Você não pode ser seu próprio crush! 💀',
     }, { quoted: msg });
     return;
   }
 
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const nomeAlvo = await resolveDisplayName(mentionedJid, sock, contactNames);
   const chance   = Math.floor(Math.random() * 101);
 
   const faixas = [
@@ -737,8 +739,8 @@ async function handleCrush(sock, msg, content, jid, author, contactNames) {
 async function handleCantada(sock, msg, content, jid, author, contactNames) {
   const contextInfo  = content?.extendedTextMessage?.contextInfo;
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
-  const nomeAlvo     = mentionedJid
-    ? (contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`)
+  const nomeAlvo = mentionedJid
+    ? await resolveDisplayName(mentionedJid, sock, contactNames)
     : null;
 
   const cantadas = [
@@ -790,7 +792,7 @@ async function handleCantada(sock, msg, content, jid, author, contactNames) {
 async function handleSafadeza(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -895,7 +897,7 @@ async function handleSafadeza(sock, msg, content, jid, author, contactNames) {
 async function handleTiro(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
   const acertou = Math.random() < 0.5;
 
@@ -911,7 +913,7 @@ async function handleTiro(sock, msg, content, jid, author, contactNames) {
 async function handleMorte(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
   const idade = Math.floor(Math.random() * 81) + 20;
 
@@ -987,28 +989,24 @@ async function handleRoletaRussa2(sock, msg, content, jid, author, contactNames)
     return;
   }
 
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
-  const morreu   = Math.random() < 1 / 6;
-
+  const nomeAlvo = await resolveDisplayName(mentionedJid, sock, contactNames, { fallback: 'Participante' });
+  const morreu = Math.random() < 1 / 6;
   const frasesMorte = [
-    `*${author}* apontou pra @${mentionedJid.split('@')[0]} sem dó e... *BANG! 💥*\n\n☠️ _foi pro outro lado. Brutal._`,
-    `*${author}* olhou nos olhos de @${mentionedJid.split('@')[0]}, sorriu e... *BANG! 💥*\n\n💀 _não vai lembrar de nada._`,
-    `*${author}* disse "confia em mim" pra @${mentionedJid.split('@')[0]} e... *BANG! 💥*\n\n⚰️ _confiou. Erro fatal._`,
+    `*${author}* apontou pra *${nomeAlvo}* sem dó e... *BANG! 💥*\n\n☠️ _foi pro outro lado. Brutal._`,
+    `*${author}* olhou nos olhos de *${nomeAlvo}*, sorriu e... *BANG! 💥*\n\n💀 _não vai lembrar de nada._`,
+    `*${author}* disse "confia em mim" pra *${nomeAlvo}* e... *BANG! 💥*\n\n⚰️ _confiou. Erro fatal._`,
   ];
-
   const frasesSobreviveu = [
-    `*${author}* apontou pra @${mentionedJid.split('@')[0]} e... *CLIQUE! 😅*\n\n✅ _sobreviveu! Dessa vez._`,
-    `*${author}* tentou se livrar de @${mentionedJid.split('@')[0]} e... *CLIQUE! 😅*\n\n😂 _não foi dessa vez. Ainda tá aqui pra encher o saco._`,
-    `*${author}* apontou cheio de confiança e... *CLIQUE! 😅*\n\n🎉 @${mentionedJid.split('@')[0]} _escapou! O universo protegeu._`,
+    `*${author}* apontou pra *${nomeAlvo}* e... *CLIQUE! 😅*\n\n✅ _sobreviveu! Dessa vez._`,
+    `*${author}* tentou se livrar de *${nomeAlvo}* e... *CLIQUE! 😅*\n\n😂 _não foi dessa vez. Ainda tá aqui pra encher o saco._`,
+    `*${author}* apontou cheio de confiança e... *CLIQUE! 😅*\n\n🎉 *${nomeAlvo}* _escapou! O universo protegeu._`,
   ];
-
   const frase = morreu
     ? frasesMorte[Math.floor(Math.random() * frasesMorte.length)]
     : frasesSobreviveu[Math.floor(Math.random() * frasesSobreviveu.length)];
 
   await sock.sendMessage(jid, {
     text: `🔫 *ROLETA RUSSA* 🔫\n\n${frase}`,
-    mentions: [mentionedJid],
   }, { quoted: msg });
 }
 
@@ -1028,19 +1026,23 @@ async function handleRoletaRussa3(sock, msg, jid, author, senderJid) {
     }
 
     const vitimaJid = membros[Math.floor(Math.random() * membros.length)];
-    const mention   = `@${vitimaJid.split('@')[0]}`;
+    const participante = meta.participants.find(p => p.id === vitimaJid);
+    const nomeVitima = await resolveDisplayName(vitimaJid, sock, {}, {
+      candidateJids: getParticipantJids(participante),
+      preferredName: participante?.notify || participante?.name,
+      fallback: 'Participante',
+    });
 
     const frases = [
-      `O tambor girou entre todo mundo...\n\n💥 *BANG!* A bala pegou ${mention}!\n\n☠️ _Vai com Deus, otário(a)._`,
-      `Todo mundo rezando e o destino escolheu...\n\n💥 *BANG!* Direto em ${mention}!\n\n💀 _O grupo agradece pelo sacrifício._`,
-      `Silêncio total, tambor girando e...\n\n💥 *BANG!* ${mention} levou!\n\n⚰️ _Nem viu vir. Descanse em paz._`,
+      `O tambor girou entre todo mundo...\n\n💥 *BANG!* A bala pegou *${nomeVitima}*!\n\n☠️ _Vai com Deus, otário(a)._`,
+      `Todo mundo rezando e o destino escolheu...\n\n💥 *BANG!* Direto em *${nomeVitima}*!\n\n💀 _O grupo agradece pelo sacrifício._`,
+      `Silêncio total, tambor girando e...\n\n💥 *BANG!* *${nomeVitima}* levou!\n\n⚰️ _Nem viu vir. Descanse em paz._`,
     ];
 
     const frase = frases[Math.floor(Math.random() * frases.length)];
 
     await sock.sendMessage(jid, {
       text: `🔫 *ROLETA RUSSA NO GRUPO* 🔫\n\n${frase}`,
-      mentions: [vitimaJid],
     }, { quoted: msg });
 
   } catch {
@@ -1082,7 +1084,7 @@ async function handleBaterFalta(sock, msg, content, jid, author, contactNames) {
     return;
   }
 
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const nomeAlvo = await resolveDisplayName(mentionedJid, sock, contactNames);
 
   const resultados = [
     // ⚽ Gol
@@ -1502,7 +1504,7 @@ async function handleConfissao(sock, msg, jid) {
 async function handleJulgamento(sock, msg, jid, author, content, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const julgamentos = [
@@ -1544,7 +1546,7 @@ async function handleJulgamento(sock, msg, jid, author, content, contactNames) {
 async function handlePodre(sock, msg, jid, author, content, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const insultos = [
@@ -1572,7 +1574,7 @@ async function handlePodre(sock, msg, jid, author, content, contactNames) {
 async function handleFrango(sock, msg, jid, author, content, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -1653,7 +1655,7 @@ async function handleFrango(sock, msg, jid, author, content, contactNames) {
 async function handleMaldizer(sock, msg, jid, author, content, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const maldicoes = [
@@ -1698,7 +1700,7 @@ async function handleMaldizer(sock, msg, jid, author, content, contactNames) {
 async function handleFortuna(sock, msg, jid, author, content, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const fortunas = [
@@ -1748,7 +1750,7 @@ async function handleCompatibilidade(sock, msg, content, jid, author, contactNam
     return;
   }
 
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const nomeAlvo = await resolveDisplayName(mentionedJid, sock, contactNames);
   const pct = Math.floor(Math.random() * 101);
   const barra = buildBar(pct, '❤️');
 
@@ -1838,7 +1840,7 @@ async function handleCompatibilidade(sock, msg, content, jid, author, contactNam
 async function handleTrans(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -1929,7 +1931,7 @@ async function handleTrans(sock, msg, content, jid, author, contactNames) {
 async function handleCorno(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -2020,7 +2022,7 @@ async function handleCorno(sock, msg, content, jid, author, contactNames) {
 async function handleGado(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -2111,7 +2113,7 @@ async function handleGado(sock, msg, content, jid, author, contactNames) {
 async function handlePeitudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -2202,7 +2204,7 @@ async function handlePeitudo(sock, msg, content, jid, author, contactNames) {
 async function handlePauzudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const cm      = Math.floor(Math.random() * 31) + 5;
   const display = mentionedJid ? nome : author;
 
@@ -2293,7 +2295,7 @@ async function handlePauzudo(sock, msg, content, jid, author, contactNames) {
 async function handleBundudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -2384,7 +2386,7 @@ async function handleBundudo(sock, msg, content, jid, author, contactNames) {
 async function handleGordo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const display = mentionedJid ? nome : author;
 
   const kg = Math.floor(Math.random() * 271) + 30; // 30kg até 300kg
@@ -2475,7 +2477,7 @@ async function handleGordo(sock, msg, content, jid, author, contactNames) {
 async function handleCuzudo(sock, msg, content, jid, author, contactNames) {
   const contextInfo = content?.extendedTextMessage?.contextInfo;
   const senderJid   = msg.key.participant || msg.key.remoteJid;
-  const { alvoJid, mentionedJid, nome } = getAlvo(contextInfo, senderJid, contactNames);
+  const { alvoJid, mentionedJid, nome } = await getAlvo(contextInfo, senderJid, contactNames, sock);
   const pct     = Math.floor(Math.random() * 101);
   const display = mentionedJid ? nome : author;
 
@@ -2575,14 +2577,14 @@ async function handleSexo(sock, msg, content, jid, author, contactNames) {
   }
 
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  if (mentionedJid.split('@')[0] === senderJid.split('@')[0]) {
+  if (await sameWhatsAppIdentity(mentionedJid, senderJid, sock, [], getAlternateSenderJids(msg))) {
     await sock.sendMessage(jid, {
       text: '😂 Narcisista! Você não pode fazer isso consigo mesmo(a)! 💀',
     }, { quoted: msg });
     return;
   }
 
-  const nomeAlvo = contactNames?.[mentionedJid] || `@${mentionedJid.split('@')[0]}`;
+  const nomeAlvo = await resolveDisplayName(mentionedJid, sock, contactNames);
   const pct      = Math.floor(Math.random() * 101);
   const barra    = buildBar(pct, '🟥');
 

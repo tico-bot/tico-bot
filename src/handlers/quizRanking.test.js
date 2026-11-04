@@ -50,6 +50,7 @@ test('premiação dominical credita Prata e registra cada recebimento no extrato
   t.mock.method(CarteiraGrupo, 'updateMany', async () => ({ modifiedCount: 0 }));
 
   const sock = {
+    getName(jid) { return `Jogador ${jid.slice(-1)}`; },
     async sendMessage(jid, payload) {
       mensagens.push({ jid, payload });
     },

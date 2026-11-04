@@ -2,7 +2,7 @@
 
 const API_BASE = 'https://lrclib.net/api/search';
 const LYRICS_OVH_BASE = 'https://api.lyrics.ovh';
-const MAX_EXCERPT_CHARS = 90;
+const MAX_EXCERPT_WORDS = 10;
 const REQUEST_TIMEOUT_MS = 9000;
 const USER_AGENT = 'Tico-Bot/1.0 (+https://github.com/Claralopez222/WhatsappBot2)';
 
@@ -24,9 +24,9 @@ function makeShortExcerpt(record) {
   if (!record || record.instrumental) return '';
   const lyrics = cleanLyricsText(record.plainLyrics || record.syncedLyrics || '');
   if (!lyrics) return '';
-  const chars = Array.from(lyrics);
-  if (chars.length <= MAX_EXCERPT_CHARS) return lyrics;
-  return `${chars.slice(0, MAX_EXCERPT_CHARS - 1).join('').trimEnd()}…`;
+  const words = lyrics.split(/\s+/).filter(Boolean);
+  if (words.length <= MAX_EXCERPT_WORDS) return lyrics;
+  return `${words.slice(0, MAX_EXCERPT_WORDS).join(' ')}…`;
 }
 
 async function requestJson(url, fetchImpl) {
@@ -142,13 +142,13 @@ async function handleLetraMusica(sock, msg, jid, caption) {
     ];
     if (albumName) lines.push(`💿 ${albumName}`);
     if (excerpt) {
-      lines.push('', '*Prévia curta:*', excerpt);
+      lines.push('', '*Prévia da letra:*', excerpt);
     } else if (result.instrumental) {
-      lines.push('', '🎼 Esta faixa está marcada como instrumental.');
+      lines.push('', '🎼 O provedor marcou esta faixa como instrumental e não disponibilizou uma letra.');
     } else {
       lines.push('', 'Não há uma prévia disponível para esta faixa.');
     }
-    lines.push('', `🔗 *Ver mais:* ${lyricsSearchUrl(titleAndArtist)}`, `_Fonte de prévia: ${result.source || 'LRCLIB'}._`);
+    lines.push('', `🔗 *Ver mais:* ${lyricsSearchUrl(titleAndArtist)}`, `_Fonte: ${result.source || 'LRCLIB'}._`);
 
     await sock.sendMessage(jid, { text: lines.join('\n') }, { quoted: msg });
     return true;
@@ -165,7 +165,7 @@ async function handleLetraMusica(sock, msg, jid, caption) {
 module.exports = {
   API_BASE,
   LYRICS_OVH_BASE,
-  MAX_EXCERPT_CHARS,
+  MAX_EXCERPT_WORDS,
   cleanLyricsText,
   makeShortExcerpt,
   lyricsSearchUrl,

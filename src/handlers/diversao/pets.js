@@ -4,7 +4,7 @@ const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuari
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { isAdmin } = require('../grupo/helpers');
-const { getAlternateSenderJids } = require('../../utils/identity');
+const { getAlternateSenderJids, resolveDisplayName } = require('../../utils/identity');
 const GrupoConfig = require('../../models/GrupoConfig');
 
 const { prepareDailyMissionState } = require('./missoes');
@@ -848,7 +848,7 @@ async function handleRenomearPet(sock, msg, jid, caption) {
 }
 
 // !rankpet
-async function handlePetRank(sock, msg, jid) {
+async function handlePetRank(sock, msg, jid, contactNames = {}) {
   // ── Garantir que é grupo ──────────────────────────────────
   if (!jid?.endsWith('@g.us')) {
     return reply(sock, jid, msg, '⚠️ Este comando só pode ser usado em grupos.');
@@ -902,24 +902,20 @@ const membrosAtuais = new Set(
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
-    const mentions = [];
-    const linhas   = ranks.map((entry, i) => {
-      const fullJid = entry.idWhatsApp.toLowerCase();
-      const numero  = fullJid.split('@')[0].split(':')[0];
-      mentions.push(fullJid);
-
-      const def   = getPersonagem(entry.pet);
+    const linhas = await Promise.all(ranks.map(async (entry, i) => {
+      const nome = await resolveDisplayName(entry.idWhatsApp, sock, contactNames, { fallback: 'Tutor' });
+      const def = getPersonagem(entry.pet);
       const re    = RARITY_EMOJI[entry.pet.rarity] ?? '⭐';
       const nivel = entry.pet.level ?? 1;
       const xp    = entry.pet.xp    ?? 0;
       const humor = getHumor(entry.pet);
 
       return (
-        `${MEDALS[i]} @${numero}\n` +
+        MEDALS[i] + ' *' + nome + '*\n' +
         `   ${def.emoji} *${entry.pet.name}* ${re} (${entry.pet.rarity ?? '?'})\n` +
         `   🏆 Nível *${nivel}* | ✨ XP *${xp}* | ${humor}`
       );
-    });
+    }));
 
     const texto =
       `🐾 *RANKING DE PETS — TOP ${ranks.length}* 🐾\n` +
@@ -928,7 +924,7 @@ const membrosAtuais = new Set(
       `\n\n━━━━━━━━━━━━━━━━\n` +
       `_Use *!capturar* para entrar no ranking!_`;
 
-    return sock.sendMessage(jid, { text: texto, mentions }, { quoted: msg });
+    return sock.sendMessage(jid, { text: texto }, { quoted: msg });
 
   } catch (e) {
     console.error('[PetRank] Erro geral:', e);
@@ -1169,10 +1165,12 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return reply(sock, jid, msg, '❌ Erro interno ao adotar o pet. Tente novamente!');
     }
 
-    const def    = getPersonagem(petAdotado);
-    const re     = RARITY_EMOJI[petAdotado.rarity] ?? '⭐';
-    const numero = donoOriginal.split('@')[0].split(':')[0].replace(/\D/g, '');
-    const dono   = ehSeuProprio ? '_era seu próprio pet_' : `_de @${numero}_`;
+    const def = getPersonagem(petAdotado);
+    const re = RARITY_EMOJI[petAdotado.rarity] ?? '⭐';
+    const nomeDono = ehSeuProprio
+      ? ''
+      : await resolveDisplayName(donoOriginal, sock, {}, { fallback: 'um membro' });
+    const dono = ehSeuProprio ? '_era seu próprio pet_' : '_de *' + nomeDono + '*_';
 
     return replyWithPetImage(sock, jid, msg, petAdotado,
         `🎉 *ADOÇÃO CONCLUÍDA!*\n\n` +
@@ -1181,7 +1179,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
         `😊 Felicidade *${petAdotado.happiness ?? 0}%* | ⚡ Energia *${petAdotado.energy ?? 0}%*\n` +
         `${dono}\n\n` +
         `Use *${prefix}statuspet* para ver os atributos completos.`,
-      { mentions: ehSeuProprio ? [] : [`${numero}@s.whatsapp.net`], context: 'abrigo' }
+      { context: 'abrigo' }
     );
   }
 
@@ -1209,16 +1207,16 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return 0;
     });
 
-    let texto = `🏥 *ABRIGO DE PETS* — ${validos.length} pet(s)\n━━━━━━━━━━━━━━━━━━\n\n`;
+    let texto = '🏥 *ABRIGO DE PETS* — ' + validos.length + ' pet(s)\n━━━━━━━━━━━━━━━━━━\n\n';
 
-    validos.forEach((u, i) => {
-      const p      = u.petShelter.shelteredPet;
-      const def    = getPersonagem(p);
-      const re     = RARITY_EMOJI[p.rarity] ?? '⭐';
-      const humor  = getHumor(p);
-      const numero = u.idWhatsApp.split('@')[0].split(':')[0].replace(/\D/g, '');
-      const ehSeu  = u.idWhatsApp === userId;
-      const dono   = ehSeu ? ' *(seu)*' : ` _@${numero}_`;
+    for (const [i, u] of validos.entries()) {
+      const p = u.petShelter.shelteredPet;
+      const def = getPersonagem(p);
+      const re = RARITY_EMOJI[p.rarity] ?? '⭐';
+      const humor = getHumor(p);
+      const ehSeu = u.idWhatsApp === userId;
+      const nomeDono = ehSeu ? '' : await resolveDisplayName(u.idWhatsApp, sock, {}, { fallback: 'membro' });
+      const dono = ehSeu ? ' *(seu)*' : ' _de *' + nomeDono + '*_';
 
       // Tempo no abrigo
       let tempoAbrigo = '';
@@ -1231,7 +1229,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       texto += `   └ 🏆 Nível *${p.level ?? 1}* | 😊 *${p.happiness ?? 0}%* | ⚡ *${p.energy ?? 0}%* | 🍽️ *${p.fullness ?? 0}%*\n`;
       texto += `   └ ${humor}\n`;
       texto += `   └ 📋 _${prefix}abrigo ${p.name.includes(' ') ? `"${p.name}"` : p.name} pegar_\n\n`;
-    });
+    }
 
     texto += `━━━━━━━━━━━━━━━━━━\n`;
     texto += `🔄 *Adotar:* _${prefix}abrigo <nome exato> pegar_\n`;

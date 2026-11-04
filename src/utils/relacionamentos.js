@@ -11,6 +11,15 @@ function timestampValido(value) {
   return Number.isFinite(time) ? time : null;
 }
 
+function nomeParticipanteSeguro(value) {
+  if (typeof value !== 'string') return 'Participante';
+  const nome = value.trim().replace(/[\r\n]+/g, ' ').slice(0, 80);
+  if (!nome || /^@?\+?[\d\s().-]+$/.test(nome)) return 'Participante';
+  if (/^\d+@(s\.whatsapp\.net|lid)$/i.test(nome)) return 'Participante';
+  if (/@(s\.whatsapp\.net|lid)$/i.test(nome)) return 'Participante';
+  return nome;
+}
+
 function normalizarRegistro(registro) {
   if (!registro || typeof registro !== 'object') return null;
 
@@ -27,8 +36,8 @@ function normalizarRegistro(registro) {
 
   const [jidA, jidB] = [originalA, originalB].sort();
   const nomePorJid = new Map([
-    [originalA, String(registro.nomeA || originalA)],
-    [originalB, String(registro.nomeB || originalB)],
+    [originalA, nomeParticipanteSeguro(registro.nomeA)],
+    [originalB, nomeParticipanteSeguro(registro.nomeB)],
   ]);
 
   return {
@@ -112,8 +121,8 @@ async function migrarRelacionamentosLegados({ Usuario, Relacionamento, log = con
       tipo: usuario.casadoTipo,
       desde: usuario.casadoDesde,
       xpCasal: Math.max(Number(usuario.xpCasal) || 0, Number(parceiro.xpCasal) || 0),
-      nomeA: usuario.displayName || usuario.nome || usuario.idWhatsApp,
-      nomeB: parceiro.displayName || parceiro.nome || parceiro.idWhatsApp,
+      nomeA: usuario.displayName || usuario.nome,
+      nomeB: parceiro.displayName || parceiro.nome,
     });
     if (!registro) {
       ignorados++;

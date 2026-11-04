@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { getAlternateSenderJids, registrarLidEMapping } = require('./identity');
+const { getAlternateSenderJids, getParticipantJids, registrarLidEMapping } = require('./identity');
 const { isAdmin } = require('../handlers/grupo/helpers');
 const grupoHandler = require('../handlers/grupo');
 const router = require('../router');
@@ -103,7 +103,7 @@ test('roteador autoriza /bot off do ADM supremo quando o Baileys v2 envia sender
       message: { conversation: '/bot off' },
     };
 
-    await router.handleMessage({ async sendMessage() {} }, msg);
+    await router.handleMessage({ async sendMessage() {}, getName: () => 'ADM Supremo' }, msg);
 
     assert.ok(argsRecebidos, 'o roteador deve encaminhar /bot off ao handler');
     assert.equal(argsRecebidos[2], group);
@@ -116,12 +116,27 @@ test('roteador autoriza /bot off do ADM supremo quando o Baileys v2 envia sender
   }
 });
 
-test('preserva aliases de telefone em dígitos quando o provedor não inclui domínio', () => {
-  const result = getAlternateSenderJids({
-    key: {
-      participant: '123456789012345@lid',
-      participantPn: '5565993354137',
-    },
+test('normaliza campos participant.pn e participant.lid com os respectivos domínios', () => {
+  assert.deepEqual(getParticipantJids({
+    id: '123456789012345@lid',
+    pn: '5565993354137',
+    lid: '123456789012345',
+  }), ['123456789012345@lid', '5565993354137@s.whatsapp.net']);
+  assert.deepEqual(getParticipantJids({ id: '123456789012345' }), []);
+});
+
+test('rejeita campos senderPn/senderLid com domínio contrário ao declarado', () => {
+  assert.deepEqual(getAlternateSenderJids({ key: { participantPn: '123456789012345@lid' } }), []);
+  assert.deepEqual(getAlternateSenderJids({ key: { senderLid: '5565993354137@s.whatsapp.net' } }), []);
+});
+
+test('normaliza PN sem domínio como telefone, sem confundi-lo com LID', () => {
+  const pn = getAlternateSenderJids({
+    key: { participantPn: '5565993354137' },
   });
-  assert.deepEqual(result, ['5565993354137']);
+  const lid = getAlternateSenderJids({
+    key: { senderLid: '5565993354137' },
+  });
+  assert.deepEqual(pn, ['5565993354137@s.whatsapp.net']);
+  assert.deepEqual(lid, ['5565993354137@lid']);
 });
