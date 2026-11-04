@@ -5,6 +5,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'Cartei
 const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { isAdmin } = require('../grupo/helpers');
 const { getAlternateSenderJids, resolveDisplayName } = require('../../utils/identity');
+const { logError } = require('../../utils/logging');
 const GrupoConfig = require('../../models/GrupoConfig');
 
 const { prepareDailyMissionState } = require('./missoes');
@@ -1093,7 +1094,9 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
         if (nomes.length) {
           sugestoes = `\n\n🐾 *Pets disponíveis no abrigo:*\n${nomes.map(n => `• ${n}`).join('\n')}`;
         }
-      } catch {}
+      } catch (error) {
+        logError('abrigo', error, 'Falha ao carregar sugestões de pets do abrigo');
+      }
 
       return reply(sock, jid, msg,
         `❌ Nenhum pet com o nome "*${nomeBusca}*" encontrado no abrigo.\n` +

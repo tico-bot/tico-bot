@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const { alterarGold } = require('./prata');
 const { sameWhatsAppIdentity } = require('../identity');
+const { logError } = require('../logging');
 
 function getJidBase(jid) {
   if (!jid) return '';
@@ -55,7 +56,15 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
       throw err;
     }
   } finally {
-    if (session) await session.endSession();
+    if (session) {
+      // O fechamento da sessão não pode sobrescrever um resultado já confirmado
+      // pelo MongoDB nem mascarar a exceção original da transação.
+      try {
+        await session.endSession();
+      } catch (closeError) {
+        console.warn('[transferirGold] Falha ao encerrar sessão do MongoDB:', closeError?.stack || closeError?.message || closeError);
+      }
+    }
   }
 
   // MongoDB standalone não suporta transações multi-documento; mantém o fluxo
@@ -68,7 +77,20 @@ async function transferirGold(deIdWhatsApp, paraIdWhatsApp, idGrupo, valor, desc
     try {
       await alterarGold(deIdWhatsApp, idGrupo, val, `estorno: falha ao transferir para ${formatarReferenciaHistorico(paraIdWhatsApp)}`);
     } catch (estornoErr) {
-      console.error(`❌ FALHA CRÍTICA: débito de ${val} gold de ${deIdWhatsApp} não pôde ser estornado. Motivo original: ${err.message} | Motivo do estorno: ${estornoErr.message}`);
+      logError(
+        'transferirGold',
+        err,
+        `Falha no crédito de ${val} prata para ${formatarReferenciaHistorico(paraIdWhatsApp)} (erro original)`
+      );
+      logError(
+        'transferirGold',
+        estornoErr,
+        `FALHA CRÍTICA: débito de ${val} prata de ${formatarReferenciaHistorico(deIdWhatsApp)} não pôde ser estornado`
+      );
+      const erroCritico = new Error('A transferência falhou e o estorno do débito também falhou. É necessária conferência administrativa.', { cause: err });
+      erroCritico.code = 'TRANSFER_REFUND_FAILED';
+      erroCritico.refundError = estornoErr;
+      throw erroCritico;
     }
     throw err;
   }

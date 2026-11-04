@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { logError } = require('../../utils/logging');
 
 async function safeReact(sock, jid, msgKey, emoji) {
   try {
@@ -35,7 +36,8 @@ async function handleCep(sock, msg, jid, caption) {
     ].join('\n');
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
-  } catch {
+  } catch (error) {
+    logError('handleCep', error, 'Falha na consulta à ViaCEP');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Não consegui consultar este CEP.' }, { quoted: msg });
   }
@@ -94,6 +96,7 @@ async function handleClima(sock, msg, jid, caption) {
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
   } catch (err) {
+    logError('handleClima', err, 'Falha na consulta meteorológica');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: `❌ Não consegui obter o clima de *${cidade}*.` }, { quoted: msg });
   }
@@ -144,7 +147,8 @@ async function handleMoeda(sock, msg, jid, caption) {
 
     await sock.sendMessage(jid, { text: texto }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
-  } catch {
+  } catch (error) {
+    logError('handleMoeda', error, 'Falha ao consultar taxa de câmbio');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: `❌ Não consegui converter *${de}* para *${para}*.` }, { quoted: msg });
   }
@@ -308,7 +312,8 @@ async function handleTraduzir(sock, msg, jid, caption) {
       text: `🌐 *Tradução (${nomeOrigem} → ${nomeDestino}):*\n\n*${traduzido}*${aviso}`,
     }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
-  } catch {
+  } catch (error) {
+    logError('handleTraduzir', error, 'Falha na API de tradução');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Erro ao traduzir o texto. Tente novamente em instantes.' }, { quoted: msg });
   }

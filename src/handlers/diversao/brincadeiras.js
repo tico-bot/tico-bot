@@ -3,6 +3,7 @@ const fs   = require('fs');
 const path = require('path');
 const { buscarTabelaCBF } = require('./brasileirao-cbf');
 const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids, getParticipantJids } = require('../../utils/identity');
+const { logError } = require('../../utils/logging');
 
 async function getAlvo(contextInfo, senderJid, contactNames, sock) {
   const mentionedJid = contextInfo?.mentionedJid?.[0] || null;
@@ -223,7 +224,8 @@ async function handleAura(sock, msg, content, jid, author, contactNames) {
       caption,
       mentions: mentionedJid ? [alvoJid] : [],
     }, { quoted: msg });
-  } catch {
+  } catch (error) {
+    logError('handleAura', error, 'Imagem da aura indisponível; enviando versão em texto');
     // fallback sem imagem
     await sock.sendMessage(jid, {
       text: caption,
@@ -1012,6 +1014,13 @@ async function handleRoletaRussa2(sock, msg, content, jid, author, contactNames)
 
 // ─── !roletarussa3 (grupo inteiro)
 async function handleRoletaRussa3(sock, msg, jid, author, senderJid) {
+  if (!jid?.endsWith('@g.us')) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Só funciona em grupos!',
+    }, { quoted: msg });
+    return;
+  }
+
   try {
     const meta    = await sock.groupMetadata(jid);
     const membros = meta.participants
@@ -1045,9 +1054,10 @@ async function handleRoletaRussa3(sock, msg, jid, author, senderJid) {
       text: `🔫 *ROLETA RUSSA NO GRUPO* 🔫\n\n${frase}`,
     }, { quoted: msg });
 
-  } catch {
+  } catch (error) {
+    logError('handleRoletaRussa3', error, 'Falha ao buscar membros ou sortear participante');
     await sock.sendMessage(jid, {
-      text: '⚠️ Só funciona em grupos!',
+      text: '❌ Não consegui realizar o sorteio agora. Tente novamente em instantes.',
     }, { quoted: msg });
   }
 }

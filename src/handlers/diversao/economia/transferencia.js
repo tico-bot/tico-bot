@@ -7,15 +7,19 @@ const { resolveUserFromMsg, resolveGlobalId, extrairNumero, getAlternateSenderJi
 const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
+const { logError } = require(path.join(__dirname, '..', '..', '..', 'utils', 'logging'));
 
 function mensagemErroTransferencia(error) {
-  if (error.code === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
+  if (error?.code === 'TRANSFER_REFUND_FAILED') {
+    return '🚨 A transferência encontrou uma falha e não foi possível confirmar o estorno. Não tente repetir a operação; procure um administrador para conferir os saldos.';
+  }
+  if (error?.code === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED') {
     return '❌ A transferência não foi realizada: contas não vinculadas ao app não podem enviar para contas vinculadas. Vincule a sua conta ao app para enviar.';
   }
-  if (error.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
+  if (error?.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
     return '❌ A transferência não foi realizada: o destinatário precisa vincular a conta ao app primeiro.';
   }
-  if (error.code === 'VALOR_MINIMO_CONVERSAO') {
+  if (error?.code === 'VALOR_MINIMO_CONVERSAO') {
     return '❌ O valor é pequeno demais para ser convertido na moeda da conta. Tente uma quantia maior.';
   }
   return null;
@@ -24,6 +28,24 @@ function mensagemErroTransferencia(error) {
 function getNumeroPuro(jid) {
   if (!jid) return '';
   return jid.split('@')[0].split(':')[0];
+}
+
+// Mantém a doação anónima: só o destinatário é mencionado na confirmação.
+function obterStatusPixMulti(enviados, falhas) {
+  if (falhas <= 0) return 'success';
+  return enviados > 0 ? 'partial' : 'failed';
+}
+
+function criarMensagemConfirmacaoDoacao({ quantia, resultado, destinatarioJid }) {
+  const numeroDestinatario = getNumeroPuro(destinatarioJid);
+  const carteiraRemetente = resultado?.de;
+  return {
+    text:
+      `🎉 *DOAÇÃO ANÔNIMA DE PRATA!* 🎉\n\n` +
+      `🎁 Um membro do grupo doou *${formatarSaldo(quantia, carteiraRemetente)}* para *@${numeroDestinatario}*!\n\n` +
+      `💰 Novo saldo do doador: *${formatarSaldo(carteiraRemetente?.gold ?? 0, carteiraRemetente)}*`,
+    mentions: destinatarioJid ? [destinatarioJid] : [],
+  };
 }
 
 /**
@@ -157,7 +179,7 @@ async function handlePix(sock, msg, jid, caption) {
       await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
       return;
     }
-    console.error(`[handlePix] ERRO code=${e.code || '-'} name=${e.name}: ${e.message}`);
+    logError('handlePix', e, `PIX recusado/falhou (code=${e?.code || '-'} name=${e?.name || 'Error'})`);
     await sock.sendMessage(jid, {
       text: '❌ Não consegui concluir o PIX agora. Tente novamente em instantes e confira seu saldo com *!prata*.',
     }, { quoted: msg });
@@ -235,6 +257,7 @@ async function handlePixMulti(sock, msg, jid, caption) {
   }
 
   let enviados = 0;
+  let falhas = 0;
   let transferenciasRestritas = false;
   const mentionsList = [userId];
 
@@ -244,8 +267,12 @@ async function handlePixMulti(sock, msg, jid, caption) {
       enviados++;
       mentionsList.push(target);
     } catch (e) {
-      console.error(`[handlePixMulti] Erro ao enviar para ${target}:`, e.message);
-      if (mensagemErroTransferencia(e)) transferenciasRestritas = true;
+      logError('handlePixMulti', e, 'Falha ao transferir para um destinatário');
+      falhas++;
+      if (e?.code === 'LINKED_UNLINKED_TRANSFER_NOT_ALLOWED'
+          || e?.code === 'LINKED_TRANSFER_RECIPIENT_NOT_LINKED') {
+        transferenciasRestritas = true;
+      }
     }
   }
 
@@ -253,87 +280,134 @@ async function handlePixMulti(sock, msg, jid, caption) {
 
   await sock.sendMessage(jid, {
     text:
-      `${transferenciasRestritas ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '✅ *PIX MÚLTIPLO CONCLUÍDO!*'}\n\n` +
+      `${obterStatusPixMulti(enviados, falhas) === 'success' ? '✅ *PIX MÚLTIPLO CONCLUÍDO!*' : obterStatusPixMulti(enviados, falhas) === 'partial' ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '❌ *PIX MÚLTIPLO NÃO CONCLUÍDO*'}\n\n` +
       `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} Prata* cada!\n` +
       `💸 Total distribuído: *${enviados * quantiaPorPessoa} Prata*\n` +
       `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* Prata` +
-      (transferenciasRestritas ? '\n\n❌ Algumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
+      (falhas > 0 ? `\n\n⚠️ ${falhas} transferência(s) não foram concluídas.` : '') +
+      (transferenciasRestritas ? '\nAlgumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
     mentions: mentionsList,
   }, { quoted: msg });
 }
 
 // !doarprata quantia (alias legado: !pixdoar)
 async function handlePixDoar(sock, msg, jid, caption) {
-  const userId = jidNormalizedUser(resolveUserFromMsg(msg));
-  const parts  = caption.trim().split(/\s+/);
-  const quantia = parseInt(parts[1], 10);
-
-  if (isNaN(quantia) || quantia <= 0) {
-    await sock.sendMessage(jid, {
-      text: '⚠️ Informe a quantia que deseja doar!\nExemplo: *!doarprata 100*',
-    }, { quoted: msg });
-    return;
-  }
-
-  if (!jid.endsWith('@g.us')) {
-    await sock.sendMessage(jid, { text: '⚠️ O comando !doarprata só funciona em grupos.' }, { quoted: msg });
-    return;
-  }
-
-  let groupMeta;
-  try {
-    groupMeta = await sock.groupMetadata(jid);
-  } catch {
-    await sock.sendMessage(jid, { text: '❌ Não consegui buscar a lista de membros do grupo.' }, { quoted: msg });
-    return;
-  }
-
-  const botIdentidades = getParticipantJids(sock.user);
-  const senderAliases = getAlternateSenderJids(msg);
-  const participantes = [];
-  for (const participante of groupMeta.participants || []) {
-    const aliasesParticipante = getParticipantJids(participante);
-    const participanteJid = aliasesParticipante[0];
-    if (!participanteJid) continue;
-    const ehRemetente = await sameWhatsAppIdentity(
-      participanteJid, userId, sock, aliasesParticipante, senderAliases
-    );
-    const ehBot = botIdentidades.length
-      ? await sameWhatsAppIdentity(participanteJid, botIdentidades[0], sock, aliasesParticipante, botIdentidades.slice(1))
-      : false;
-    if (!ehRemetente && !ehBot) participantes.push(participanteJid);
-  }
-
-  if (participantes.length === 0) {
-    await sock.sendMessage(jid, { text: '⚠️ Nenhum membro elegível para receber a doação.' }, { quoted: msg });
-    return;
-  }
-
-  const sorteado = participantes[Math.floor(Math.random() * participantes.length)];
-  const numSorteado = getNumeroPuro(sorteado);
+  let etapa = 'preparar comando';
+  let transferenciaConcluida = false;
+  let quantia = null;
 
   try {
-    const res = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Prata');
-    await sock.sendMessage(jid, {
-      text:
-        `🎉 *DOAÇÃO ANÔNIMA DE PRATA!* 🎉\n\n` +
-        `🎁 *@${userBase}* doou *${formatarSaldo(quantia, res?.de)}* para *@${numSorteado}*!\n\n` +
-        `💰 Novo saldo do doador: *${formatarSaldo(res?.de?.gold ?? 0, res?.de)}*`,
-      mentions: [userId, sorteado],
-    }, { quoted: msg });
-  } catch (e) {
-    if (e instanceof RangeError) {
+    const userId = jidNormalizedUser(resolveUserFromMsg(msg));
+    const parts = String(caption || '').trim().split(/\s+/);
+    const valorInformado = parts[1] || '';
+    quantia = /^\d+$/.test(valorInformado) ? Number(valorInformado) : NaN;
+
+    if (!Number.isSafeInteger(quantia) || quantia <= 0) {
       await sock.sendMessage(jid, {
-        text: `⚠️ Você não possui *${formatarSaldo(quantia)}* suficientes para doar.`,
+        text: '⚠️ Informe uma quantia inteira e válida que deseja doar!\nExemplo: *!doarprata 100*',
       }, { quoted: msg });
       return;
     }
-    const mensagem = mensagemErroTransferencia(e);
-    if (mensagem) {
-      await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
+
+    if (!jid?.endsWith('@g.us')) {
+      await sock.sendMessage(jid, { text: '⚠️ O comando !doarprata só funciona em grupos.' }, { quoted: msg });
       return;
     }
-    await sock.sendMessage(jid, { text: '❌ Ocorreu um erro ao realizar a doação.' }, { quoted: msg });
+
+    etapa = 'consultar metadados do grupo';
+    const groupMeta = await sock.groupMetadata(jid);
+
+    const botIdentidades = getParticipantJids(sock.user);
+    const senderAliases = getAlternateSenderJids(msg);
+    const participantes = [];
+
+    etapa = 'identificar membros elegíveis';
+    for (const participante of groupMeta.participants || []) {
+      const aliasesParticipante = getParticipantJids(participante);
+      const participanteJid = aliasesParticipante[0];
+      if (!participanteJid) continue;
+
+      const ehRemetente = await sameWhatsAppIdentity(
+        participanteJid, userId, sock, aliasesParticipante, senderAliases
+      );
+      const ehBot = botIdentidades.length
+        ? await sameWhatsAppIdentity(
+            participanteJid,
+            botIdentidades[0],
+            sock,
+            aliasesParticipante,
+            botIdentidades.slice(1)
+          )
+        : false;
+
+      if (!ehRemetente && !ehBot) participantes.push(participanteJid);
+    }
+
+    if (participantes.length === 0) {
+      await sock.sendMessage(jid, { text: '⚠️ Nenhum membro elegível para receber a doação.' }, { quoted: msg });
+      return;
+    }
+
+    const sorteado = participantes[Math.floor(Math.random() * participantes.length)];
+
+    etapa = 'transferir prata';
+    let resultado;
+    try {
+      resultado = await transferirGold(userId, sorteado, jid, quantia, 'Doação de Prata');
+      transferenciaConcluida = true;
+    } catch (error) {
+      if (error instanceof RangeError) {
+        await sock.sendMessage(jid, {
+          text: `⚠️ Você não possui *${formatarSaldo(quantia)}* suficientes para doar.`,
+        }, { quoted: msg });
+        return;
+      }
+
+      const mensagem = mensagemErroTransferencia(error);
+      if (mensagem) {
+        await sock.sendMessage(jid, { text: mensagem }, { quoted: msg });
+        return;
+      }
+
+      throw error;
+    }
+
+    // Não revela o remetente e não informa falha financeira se a transferência
+    // já foi confirmada, evitando induzir uma segunda doação.
+    etapa = 'enviar confirmação da doação';
+    try {
+      await sock.sendMessage(jid, criarMensagemConfirmacaoDoacao({
+        quantia,
+        resultado,
+        destinatarioJid: sorteado,
+      }), { quoted: msg });
+    } catch (error) {
+      logError('handlePixDoar', error, 'Doação concluída, mas a confirmação não pôde ser enviada');
+      try {
+        await sock.sendMessage(jid, {
+          text: '✅ A doação foi processada, mas não consegui enviar a confirmação. Confira seu saldo com *!prata* antes de tentar novamente.',
+        }, { quoted: msg });
+      } catch (notifyError) {
+        logError('handlePixDoar', notifyError, 'Também falhou a notificação de confirmação');
+      }
+    }
+  } catch (error) {
+    if (transferenciaConcluida) {
+      logError('handlePixDoar', error, `Doação já concluída; falha posterior na etapa "${etapa}"`);
+      return;
+    }
+
+    logError('handlePixDoar', error, `Falha na etapa "${etapa}"`);
+
+    const textoErro = etapa === 'consultar metadados do grupo'
+      ? '❌ Não consegui buscar a lista de membros do grupo.'
+      : '❌ Ocorreu um erro ao realizar a doação. Tente novamente em instantes.';
+
+    try {
+      await sock.sendMessage(jid, { text: textoErro }, { quoted: msg });
+    } catch (notifyError) {
+      logError('handlePixDoar', notifyError, 'Falha ao avisar o usuário sobre o erro');
+    }
   }
 }
 
@@ -441,5 +515,7 @@ module.exports = {
   handlePix,
   handlePixMulti,
   handlePixDoar,
+  criarMensagemConfirmacaoDoacao,
+  obterStatusPixMulti,
   handleGive,
 };

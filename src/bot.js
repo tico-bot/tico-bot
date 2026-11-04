@@ -64,6 +64,9 @@ const NOISE = [
 ];
 const isNoise = (...args) => {
   try {
+    // Logs operacionais da aplicação (ex.: [PixDoar], [API], [XP]) nunca
+    // devem ser descartados só porque a stack contém termos do ruído do Baileys.
+    if (args.some(x => typeof x === 'string' && /^\[[^\]]+\]/.test(x))) return false;
     for (const x of args) {
       if (x && typeof x === 'object') {
         const keys = Object.keys(x);
@@ -104,10 +107,10 @@ function atualizarCacheContato(contato) {
 // ─── Guards de crash ──────────────────────────────────────────────────────────
 process.on('unhandledRejection', (reason) => {
   // Stack completo para identificar a origem das falhas assíncronas do Baileys.
-  console.error('⚠️ unhandledRejection capturado:', reason?.stack || reason?.message || reason);
+  console.error('[Process] unhandledRejection capturado:', reason?.stack || reason?.message || reason);
 });
 process.on('uncaughtException', (err) => {
-  console.error('⚠️ uncaughtException capturado:', err?.message || err);
+  console.error('[Process] uncaughtException capturado:', err?.stack || err?.message || err);
 });
 
 process.on('SIGINT',  async () => { saveData(); await releaseLock(); process.exit(); });
@@ -317,7 +320,7 @@ async function startBot() {
       try {
         await handleMessage(sock, msg);
       } catch (err) {
-        console.error('❌ Erro no processamento da mensagem:', err?.stack || err?.message || err);
+        console.error('[MessageHandler] Erro no processamento da mensagem:', err?.stack || err?.message || err);
       }
     }
   });

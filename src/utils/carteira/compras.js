@@ -1,6 +1,7 @@
 'use strict';
 
 const mongoose = require('mongoose');
+const { logError } = require('../logging');
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 
 /**
@@ -43,8 +44,8 @@ async function comprarComGold({
   let session = null;
   try {
     session = await mongoose.startSession();
-  } catch {
-    session = null;
+  } catch (error) {
+    logError('comprarComGold', error, 'Não foi possível abrir sessão do MongoDB; tentando fallback sem transação');
   }
 
   if (session) {
@@ -81,16 +82,21 @@ async function comprarComGold({
       transactionSuccess = true;
     } catch (err) {
       if (err.message === 'GOLD_INSUFICIENTE') {
-        await session.endSession();
         return { ok: false, motivo: 'GOLD_INSUFICIENTE' };
       }
       if (/replica set|standalone|Transaction numbers/i.test(err.message)) {
         isStandalone = true;
       } else {
-        console.error('⚠️ Erro em comprarComGold (transação):', err.message);
+        logError('comprarComGold', err, 'Falha na transação MongoDB');
       }
     } finally {
-      await session.endSession();
+      try {
+        await session.endSession();
+      } catch (closeError) {
+        // O fechamento não pode transformar compra já confirmada em falha aparente
+        // nem impedir que o fallback standalone seja executado.
+        logError('comprarComGold', closeError, 'Falha ao encerrar sessão do MongoDB');
+      }
     }
 
     if (transactionSuccess) {
@@ -130,24 +136,30 @@ async function comprarComGold({
       );
       return { ok: true, carteira: carteiraAtualizada };
     } catch (invErr) {
-      // Estorno atômico de gold caso o inventário falhe
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp, idGrupo },
-        {
-          $inc: { gold: preco },
-          $push: {
-            goldHistory: {
-              $each: [{ type: 'ganho', item: `Estorno: ${descricaoGold}`, amount: preco }],
-              $slice: -50,
+      // Estorno atômico de gold caso o inventário falhe.
+      try {
+        await CarteiraGrupo.findOneAndUpdate(
+          { idWhatsApp, idGrupo },
+          {
+            $inc: { gold: preco },
+            $push: {
+              goldHistory: {
+                $each: [{ type: 'ganho', item: `Estorno: ${descricaoGold}`, amount: preco }],
+                $slice: -50,
+              },
             },
-          },
-        }
-      );
-      console.error('❌ Estorno realizado em comprarComGold (standalone):', invErr.message);
+          }
+        );
+      } catch (refundErr) {
+        logError('comprarComGold', invErr, 'Falha ao creditar inventário após débito (erro original)');
+        logError('comprarComGold', refundErr, 'FALHA CRÍTICA: não foi possível estornar o débito da compra');
+        return { ok: false, motivo: 'ESTORNO_FALHOU' };
+      }
+      logError('comprarComGold', invErr, 'Falha ao creditar inventário; débito estornado');
       return { ok: false, motivo: 'ERRO' };
     }
   } catch (err) {
-    console.error('⚠️ Erro em comprarComGold (fallback):', err.message);
+    logError('comprarComGold', err, 'Falha no fallback sem transação');
     return { ok: false, motivo: 'ERRO' };
   }
 }
@@ -202,11 +214,17 @@ async function venderComGold({
     );
     return { ok: true, carteira: carteiraAtualizada };
   } catch (err) {
-    await modeloInventario.findOneAndUpdate(
-      filtroInventario,
-      { $inc: { [campoInventario]: qtd } }
-    );
-    console.error('❌ Estorno de item em venderComGold:', err.message);
+    try {
+      await modeloInventario.findOneAndUpdate(
+        filtroInventario,
+        { $inc: { [campoInventario]: qtd } }
+      );
+    } catch (refundErr) {
+      logError('venderComGold', err, 'Falha ao creditar saldo da venda (erro original)');
+      logError('venderComGold', refundErr, 'FALHA CRÍTICA: não foi possível devolver o item ao inventário');
+      return { ok: false, motivo: 'ESTORNO_FALHOU' };
+    }
+    logError('venderComGold', err, 'Falha ao creditar saldo; item devolvido ao inventário');
     return { ok: false, motivo: 'ERRO' };
   }
 }

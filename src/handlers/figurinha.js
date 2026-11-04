@@ -29,6 +29,7 @@ const {
 
 const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
 const { contarSticker: registrarSticker } = require(path.join(__dirname, '..', 'utils', 'persistence'));
+const { logError } = require(path.join(__dirname, '..', 'utils', 'logging'));
 
 // ═══════════════════════════════════════════════════════════════
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -294,7 +295,8 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
       msg, 'buffer', {},
       { logger, reuploadRequest: sock.updateMediaMessage }
     );
-  } catch {
+  } catch (error) {
+    logError('processMedia', error, 'Falha ao baixar mídia do WhatsApp');
     await sock.sendMessage(jid, { text: '❌ Não consegui baixar a mídia. Tente reenviar.' }, { quoted: msg });
     return;
   }
@@ -334,7 +336,7 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
         sticker = await convertVideoToSticker(buffer, durSec);
       }
     } catch (e) {
-      console.log('❌ Erro sticker vídeo:', e.message);
+      logError('processMedia', e, 'Falha na conversão inicial de vídeo');
       if (e.code === 'VIDEO_TOO_LONG' || e.message?.startsWith('VIDEO_TOO_LONG:')) {
         await sock.sendMessage(jid, {
           text: `⚠️ O vídeo ultrapassa o limite de *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
@@ -344,6 +346,7 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
       try {
         sticker = await convertVideoToSticker(buffer, durSec);
       } catch (fallbackError) {
+        logError('processMedia', fallbackError, 'Falha também na conversão alternativa de vídeo');
         if (fallbackError.code === 'VIDEO_TOO_LONG' || fallbackError.message?.startsWith('VIDEO_TOO_LONG:')) {
           await sock.sendMessage(jid, {
             text: `⚠️ O vídeo ultrapassa o limite de *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
@@ -369,7 +372,8 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
           .webp({ quality: 85 })
           .toBuffer();
         sticker = await convertImageToSticker(normalized);
-      } catch {
+      } catch (fallbackError) {
+        logError('processMedia', fallbackError, 'Falha ao normalizar e converter imagem');
         await sock.sendMessage(jid, { text: '❌ Erro ao converter imagem. Tente outro arquivo.' }, { quoted: msg });
         return;
       }
@@ -387,7 +391,7 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
     await sock.sendMessage(jid, { sticker });
     await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
-    console.log('❌ Erro ao enviar sticker:', e.message);
+    logError('processMedia', e, 'Falha ao enviar figurinha ao WhatsApp');
     await sock.sendMessage(jid, { text: '❌ Não consegui enviar a figurinha.' }, { quoted: msg });
   }
 

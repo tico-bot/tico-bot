@@ -8,6 +8,7 @@ const {
   localMinorUnitsToBrlCents,
 } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira', 'wallet'));
 const { resolveGlobalId } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
+const { logError } = require(path.join(__dirname, '..', '..', '..', 'utils', 'logging'));
 const { randomUUID, randomInt } = require('crypto');
 
 // Credita o prêmio com um requestId fixo: se a 1ª chamada tiver sido aplicada
@@ -20,7 +21,7 @@ async function creditarPremio(carteira, senderNorm, jid, valor, descricao) {
     return await alterarGold(senderNorm, jid, valor, descricao, opts);
   } catch (e) {
     if (!carteira?.walletLinked) throw e;
-    console.error(`[cassino] falha ao creditar "${descricao}", repetindo com o mesmo requestId:`, e.message);
+    logError('cassino', e, `Falha ao creditar "${descricao}"; repetindo com o mesmo requestId`);
     return alterarGold(senderNorm, jid, valor, descricao, opts);
   }
 }
@@ -188,9 +189,18 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
     { quoted: msg }
   );
 
+  let falhaAnimacaoRegistrada = false;
   for (const [s1, s2, s3] of SLOTS_FRAMES_ANIM) {
     await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
-    try { await sock.sendMessage(jid, { text: buildFrame(s1, s2, s3, true), edit: msgInicial.key }); } catch {}
+    try {
+      await sock.sendMessage(jid, { text: buildFrame(s1, s2, s3, true), edit: msgInicial.key });
+    } catch (error) {
+      // O giro ainda pode ser concluído e o resultado publicado; registra só a primeira falha.
+      if (!falhaAnimacaoRegistrada) {
+        logError('slots', error, 'Animação de edição indisponível; continuará até o resultado final');
+        falhaAnimacaoRegistrada = true;
+      }
+    }
   }
 
   await new Promise(r => setTimeout(r, SLOTS_FRAME_DELAY));
@@ -206,7 +216,7 @@ async function handleSlots(sock, msg, jid, senderJid, caption) {
       const carteiraAtualizada = await creditarPremio(carteira, senderNorm, jid, premio, `Slots (${mult}x)`);
       saldoFinal = carteiraAtualizada.gold;
     } catch (e) {
-      console.error(`[slots] PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}:`, e.message);
+      logError('slots', e, `PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}`);
       await sock.sendMessage(jid, {
         text: '⚠️ Não consegui creditar seu prêmio agora. Fale com um admin; a rodada foi registrada.',
       }, { quoted: msg });
@@ -303,7 +313,7 @@ async function handleCorrida(sock, msg, jid, senderJid, caption) {
       const carteiraAtualizada = await creditarPremio(carteira, senderNorm, jid, premio, `Corrida (${bichoEscolha.nome})`);
       saldoFinal = carteiraAtualizada.gold;
     } catch (e) {
-      console.error(`[corrida] PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}:`, e.message);
+      logError('corrida', e, `PRÊMIO NÃO CREDITADO jid=${senderNorm} premio=${premio}`);
       await sock.sendMessage(jid, {
         text: '⚠️ Não consegui creditar seu prêmio agora. Fale com um admin; a rodada foi registrada.',
       }, { quoted: msg });

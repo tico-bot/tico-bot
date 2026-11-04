@@ -14,10 +14,13 @@ try {
   const pescaModule = require(path.join(__dirname, '..', 'pesca'));
   VARAS_PESCA = pescaModule.VARAS_PESCA || {};
   ISCAS = pescaModule.ISCAS || {};
-} catch {}
+} catch (error) {
+  logError('loja', error, 'Configurações de pesca indisponíveis; vara/isca não serão listadas');
+}
 
 const { resolverItemKey } = require('./_shared');
 const { formatWalletAmount, getWalletBalance } = require('../../../utils/carteira/wallet');
+const { logError } = require('../../../utils/logging');
 
 async function getMoneyFormatter(msg) {
   const userId = jidNormalizedUser(resolveUserFromMsg(msg));
@@ -297,7 +300,9 @@ async function handleComprar(sock, msg, jid, caption) {
       return;
     }
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao processar a compra. Nada foi debitado. Tente novamente.',
+      text: resultado.motivo === 'ESTORNO_FALHOU'
+        ? '🚨 A compra encontrou uma falha e não foi possível confirmar o estorno. Não tente comprar novamente agora; procure um administrador para verificar seu saldo e inventário.'
+        : '⚠️ Erro ao processar a compra. O débito foi estornado. Tente novamente.',
     }, { quoted: msg });
     return;
   }
@@ -387,7 +392,9 @@ async function handleVender(sock, msg, jid, caption) {
       return;
     }
     await sock.sendMessage(jid, {
-      text: '⚠️ Não foi possível concluir a venda. Seu item continua no inventário.',
+      text: resultado.motivo === 'ESTORNO_FALHOU'
+        ? '🚨 A venda falhou e não consegui confirmar a devolução do item ao inventário. Não tente repetir a operação; procure um administrador para conferir seus dados.'
+        : '⚠️ Não foi possível concluir a venda. Seu item foi devolvido ao inventário.',
     }, { quoted: msg });
     return;
   }

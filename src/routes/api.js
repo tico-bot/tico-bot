@@ -213,24 +213,36 @@ async function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token ausente.' });
+
+  let payload;
   try {
-    const payload = jwt.verify(token, getJwtSecret());
-    if (!payload.idWhatsApp) return res.status(401).json({ error: 'Sessão inválida.' });
-    const conta = await Usuario.findOne({ idWhatsApp: payload.idWhatsApp })
-      .select('idWhatsApp username passwordHash tokenVersion')
-      .lean();
-    if (!conta || Number(payload.tokenVersion || 0) !== Number(conta.tokenVersion || 0)) {
-      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
-    }
-    // Tokens de link do WhatsApp permitem abrir o perfil, mas não são login de conta.
-    if (payload.tokenType !== 'profile' && (!conta.username || !conta.passwordHash)) {
-      return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
-    }
-    req.user = payload;
-    next();
+    payload = jwt.verify(token, getJwtSecret());
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado.' });
   }
+
+  if (!payload.idWhatsApp) return res.status(401).json({ error: 'Sessão inválida.' });
+
+  let conta;
+  try {
+    conta = await Usuario.findOne({ idWhatsApp: payload.idWhatsApp })
+      .select('idWhatsApp username passwordHash tokenVersion')
+      .lean();
+  } catch (error) {
+    // Uma falha do MongoDB não é token inválido; devolver 503 preserva o diagnóstico.
+    console.error('[API auth] Falha ao consultar conta no MongoDB:', error?.stack || error?.message || error);
+    return res.status(503).json({ error: 'Autenticação temporariamente indisponível. Tente novamente.' });
+  }
+
+  if (!conta || Number(payload.tokenVersion || 0) !== Number(conta.tokenVersion || 0)) {
+    return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+  }
+  // Tokens de link do WhatsApp permitem abrir o perfil, mas não são login de conta.
+  if (payload.tokenType !== 'profile' && (!conta.username || !conta.passwordHash)) {
+    return res.status(401).json({ error: 'Sessão encerrada. Entre novamente.' });
+  }
+  req.user = payload;
+  return next();
 }
 
 // ─── MIDDLEWARE: chave de admin ────────────────────────────────────────────────

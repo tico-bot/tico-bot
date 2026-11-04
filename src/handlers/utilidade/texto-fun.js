@@ -2,6 +2,7 @@
 
 const path = require('path');
 const { resolveDisplayName } = require('../../utils/identity');
+const { logError } = require('../../utils/logging');
 
 async function safeReact(sock, jid, msgKey, emoji) {
   try {
@@ -34,7 +35,8 @@ async function handleQrcode(sock, msg, jid, caption) {
     const qrBuffer  = await QRCodeLib.toBuffer(texto, { type: 'png', width: 512, margin: 2 });
     await sock.sendMessage(jid, { image: qrBuffer, caption: `🔳 *QR Code gerado!*\n\n_${texto.slice(0, 80)}_` }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
-  } catch {
+  } catch (error) {
+    logError('handleQrcode', error, 'Falha ao gerar QR Code');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Não consegui gerar o QR Code.' }, { quoted: msg });
   }
@@ -57,7 +59,8 @@ async function handleEncurtar(sock, msg, jid, caption) {
 
     await sock.sendMessage(jid, { text: `🔗 *Link encurtado com sucesso:*\n\n${encurtado}` }, { quoted: msg });
     await safeReact(sock, jid, msg.key, '✅');
-  } catch {
+  } catch (error) {
+    logError('handleEncurtar', error, 'Falha ao encurtar link');
     await safeReact(sock, jid, msg.key, '❌');
     await sock.sendMessage(jid, { text: '❌ Não consegui encurtar o link.' }, { quoted: msg });
   }

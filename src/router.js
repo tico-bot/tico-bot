@@ -34,6 +34,7 @@ const {
 // ─── Identidade / JID ─────────────────────────────────────────────────────
 const { normalizarJid, extrairNumero, registrarLidEMapping, getAlternateSenderJids, getParticipantJids, resolveDisplayName } = require('./utils/identity');
 const { normalizarJidComDominio } = require('./utils/jid');
+const { logError } = require('./utils/logging');
 
 // ─── Models ───────────────────────────────────────────────────────────────
 const LidMapping    = require(path.join(__dirname, 'models', 'LidMapping'));
@@ -281,7 +282,7 @@ async function handleMessage(sock, msg) {
   // A escrita é aguardada só quando há identidade LID envolvida.
   const temIdentidadeLid = senderJid?.endsWith('@lid') || senderAlternateJids.some(id => id.endsWith('@lid'));
   if (senderJid && temIdentidadeLid) {
-    await registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
+    await registrarLidEMapping(msg, msg.pushName || author).catch(error => logError('router', error, 'Falha ao salvar vínculo PN/LID antes do comando'));
   }
 
   // ── Guard bot on/off (funciona com qualquer prefixo !, ., /, ,, # ou customizado) ──
@@ -366,7 +367,7 @@ async function handleMessage(sock, msg) {
       }
     }
 
-    if (!temIdentidadeLid) registrarLidEMapping(msg, msg.pushName || author).catch(() => {});
+    if (!temIdentidadeLid) registrarLidEMapping(msg, msg.pushName || author).catch(error => logError('router', error, 'Falha ao salvar vínculo PN/LID em segundo plano'));
   }
 
   // ── Slow Mode ────────────────────────────────────────────────
@@ -433,7 +434,7 @@ async function handleMessage(sock, msg) {
   // ── Auto-Sticker ─────────────────────────────────────────────
   if (isGroup && autoStickerGroups.has(jid) && !isAnyCmd(raw)) {
     if (imageMsg || videoMsg) {
-      try { await figurinhaHandler.processMedia(sock, msg, content, jid, author, stickerCount); } catch {}
+      try { await figurinhaHandler.processMedia(sock, msg, content, jid, author, stickerCount); } catch (error) { logError('AutoSticker', error, 'Falha ao processar mídia automaticamente'); }
       return;
     }
   }

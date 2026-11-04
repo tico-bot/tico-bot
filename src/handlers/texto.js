@@ -5,6 +5,7 @@
 
 const path = require('path');
 const { fetchBuffer } = require(path.join(__dirname, '..', 'fetchurl'));
+const { logError } = require(path.join(__dirname, '..', 'utils', 'logging'));
 
 // ─── !traduzir ────────────────────────────────────────────────────────────────
 async function handleTraduzir(sock, msg, jid, caption) {
@@ -17,7 +18,7 @@ async function handleTraduzir(sock, msg, jid, caption) {
     const traduzido = json[0].map(x => x[0]).join('');
     const origem = json[2] || 'desconhecido';
     await sock.sendMessage(jid, { text: `🌐 *Tradução* (${origem} → pt)\n\n${traduzido}` }, { quoted: msg });
-  } catch { await sock.sendMessage(jid, { text: '❌ Não consegui traduzir agora.' }, { quoted: msg }); }
+  } catch (error) { logError('handleTraduzirLegado', error, 'Falha na API de tradução'); await sock.sendMessage(jid, { text: '❌ Não consegui traduzir agora.' }, { quoted: msg }); }
 }
 
 // ─── !maiusculo, !invertido, !caixa ───────────────────────────────────────────

@@ -13,6 +13,7 @@ const { calcularMensagensPerfil, somarContagensIdentidades } = require(path.join
 const { countGroupCounter, listGroupCounters } = require(path.join(__dirname, '..', '..', 'utils', 'group-activity'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { logError } = require(path.join(__dirname, '..', '..', 'utils', 'logging'));
 
 const PET_EMOJIS = {
   tubarao: '🦈', dragao: '🐉', falcao: '🦅', leao: '🦁', tigre: '🐯',
@@ -102,7 +103,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
         : '✅ Pronto para resgatar!';
       bankText = `💳 ${formatarSaldo(banco.amount, carteira)} investido (${banco.interest}% juros)  ${status}`;
     }
-  } catch {}
+  } catch (error) {
+    logError('handlePerfil', error, 'Falha ao consultar carteira e saldo');
+  }
 
   const identities = jidEquivalentes(userInfo, alvoJid);
   const findCount = (map, field = null) => somarContagensIdentidades(
@@ -147,7 +150,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       const alvoNormalizado = new Set([...identities].map(id => normalizarJid(id) || id));
       const idx = ranks.findIndex(([key]) => alvoNormalizado.has(key));
       if (idx >= 0) rankText = `  ·  #${idx + 1} no grupo`;
-    } catch {}
+    } catch (error) {
+      logError('handlePerfil', error, 'Falha ao calcular posição no ranking do grupo');
+    }
   }
 
   let xp       = 0;
@@ -171,16 +176,24 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       const barsOn = Math.max(0, Math.min(10, Math.floor(xpPct / 10)));
       xpBar   = '█'.repeat(barsOn) + '░'.repeat(10 - barsOn);
     }
-  } catch {}
+  } catch (error) {
+    logError('handlePerfil', error, 'Falha ao carregar XP e nível');
+  }
 
   let isAdmin   = false;
   let groupName = '';
   if (jid.endsWith('@g.us')) {
-    try { groupName = (await sock.groupMetadata(jid)).subject || ''; } catch {}
+    try {
+      groupName = (await sock.groupMetadata(jid)).subject || '';
+    } catch (error) {
+      logError('handlePerfil', error, 'Falha ao consultar nome do grupo');
+    }
     try {
       const grupoHandler = require('../grupo');
       isAdmin = await grupoHandler.isAdmin(sock, jid, alvoJid);
-    } catch {}
+    } catch (error) {
+      logError('handlePerfil', error, 'Falha ao consultar permissões de administrador');
+    }
   }
 
   let missaoText = '';
@@ -195,7 +208,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       const resgatadas = dailyMissionDefinitions.filter(m => dm.claimed?.[m.id]).length;
       missaoText = `${concluidas}/${dailyMissionDefinitions.length} concluídas  ·  ${resgatadas} resgatadas`;
     }
-  } catch {}
+  } catch (error) {
+    logError('handlePerfil', error, 'Falha ao montar resumo de missões');
+  }
 
   let petText = '❌ Sem pet';
   try {
@@ -254,7 +269,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     // podem continuar exibindo "casado" depois que o casal terminou.
 
     if (parceiroJid) mentionsList.push(parceiroJid);
-  } catch {}
+  } catch (error) {
+    logError('handlePerfil', error, 'Falha ao consultar relacionamento');
+  }
 
   let acessoriosText = '';
   try {
@@ -267,7 +284,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
       }
       if (ativos.length > 0) acessoriosText = ativos.join('  ');
     }
-  } catch {}
+  } catch (error) {
+    logError('handlePerfil', error, 'Falha ao montar acessórios do casal');
+  }
 
   let bio = typeof userData?.bio === 'string' ? userData.bio.trim().slice(0, 150) : '';
   if (perfilPorGrupo) {
@@ -279,7 +298,9 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
         idWhatsApp: { $in: [...identities] },
       }).select('bio').lean();
       bio = typeof bioGrupo?.bio === 'string' ? bioGrupo.bio.trim().slice(0, 150) : '';
-    } catch {}
+    } catch (error) {
+      logError('handlePerfil', error, 'Falha ao consultar bio específica do grupo');
+    }
   }
 
 
@@ -357,7 +378,11 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     }
   } catch (e) {
     console.error('⚠️ Erro ao enviar perfil:', e.message);
-    try { await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg }); } catch {}
+    try {
+      await sock.sendMessage(jid, { text: texto, mentions: mentionsList }, { quoted: msg });
+    } catch (fallbackError) {
+      logError('handlePerfil', fallbackError, 'Falha também ao enviar perfil como texto');
+    }
   }
 }
 

@@ -7,6 +7,7 @@ const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', '
 const { alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { getSenderJid } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const crypto = require('crypto');
+const { logError } = require(path.join(__dirname, '..', '..', '..', 'utils', 'logging'));
 const {
   adjustWalletLocal,
   formatWalletAmount,
@@ -21,7 +22,9 @@ try {
   const missoesMod = require(path.join(__dirname, '..', 'missoes'));
   if (missoesMod.prepareDailyMissionState) prepareDailyMissionState = missoesMod.prepareDailyMissionState;
   if (missoesMod.incrementMission) incrementMission = missoesMod.incrementMission;
-} catch {}
+} catch (error) {
+  logError('handleGarimpar', error, 'Módulo de missões indisponível; progresso de missão ficará desativado');
+}
 
 const { MINERIOS, EVENTOS_GARIMPO, NARRATIVAS } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
@@ -94,7 +97,7 @@ async function handleGarimpar(sock, msg, jid) {
   try {
     walletGarimpo = await getWalletBalance(userId);
   } catch (e) {
-    console.error('⚠️ Erro handleGarimpar (carteira):', e.message);
+    logError('handleGarimpar', e, 'Falha ao consultar carteira');
     await sock.sendMessage(jid, {
       text: '⚠️ Carteira temporariamente indisponível. Tente novamente em instantes.',
     }, { quoted: msg });
@@ -248,15 +251,19 @@ async function handleGarimpar(sock, msg, jid) {
       // Conta vinculada com timeout/rede: o servidor pode ter pago sem responder. Mantém o cooldown.
       const resultadoIncerto = contaVinculada && /timeout|network|ECONN|socket/i.test(String(e.message));
       if (!creditoFeito && !resultadoIncerto) {
-        await Usuario.findOneAndUpdate(
-          { idWhatsApp: userId },
-          { $set: { ultimoGarimpo: docAtual?.ultimoGarimpo ?? null } }
-        ).catch(() => {});
+        try {
+          await Usuario.findOneAndUpdate(
+            { idWhatsApp: userId },
+            { $set: { ultimoGarimpo: docAtual?.ultimoGarimpo ?? null } }
+          );
+        } catch (rollbackError) {
+          logError('handleGarimpar', rollbackError, 'Falha ao restaurar o cooldown após erro');
+        }
 
         garimpoCache.delete(userId);
       }
 
-      console.error('⚠️ Erro handleGarimpar:', e.message);
+      logError('handleGarimpar', e, resultadoIncerto ? 'Resultado do crédito incerto' : 'Falha ao processar garimpo');
       await sock.sendMessage(jid, {
         text: resultadoIncerto
           ? '⚠️ Não consegui confirmar o garimpo agora. Confira seu saldo com *!prata* antes de tentar de novo.'
