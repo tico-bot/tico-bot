@@ -48,6 +48,27 @@ function equipamentoValido(carteiras, campo, inventario) {
   )?.[campo] ?? null;
 }
 
+function timestampOuZero(valor) {
+  if (!valor) return 0;
+  const timestamp = new Date(valor).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function valorMaisRecente(carteiras, campo) {
+  const registro = carteiras.reduce((maisRecente, atual) =>
+    timestampOuZero(atual[campo]) > timestampOuZero(maisRecente?.[campo])
+      ? atual
+      : maisRecente,
+  null);
+  return registro?.[campo] || null;
+}
+
+function ultimoRouboRegistrado(carteiras) {
+  return carteiras
+    .filter(carteira => carteira.lastRobbedBy)
+    .sort((a, b) => timestampOuZero(b.lastRobbedAt) - timestampOuZero(a.lastRobbedAt))[0] || null;
+}
+
 async function resolverJidsEquivalentes(idWhatsApp) {
   const jidNorm = normalizarJid(idWhatsApp);
   if (!jidNorm) return [];
@@ -117,6 +138,22 @@ async function getCarteira(idWhatsApp, idGrupo) {
         itensRouboBanco,
         equiparouboBanco: equipamentoValido(carteiras, 'equiparouboBanco', itensRouboBanco),
       };
+
+      // A fusão PN/LID não pode apagar estado dos cooldowns ou do sistema de roubo.
+      for (const campo of ['ultimoRoubo', 'ultimoRouboBanco', 'prestoAte', 'imunidadeRouboAte', 'ultimaPolicia']) {
+        const data = valorMaisRecente(carteiras, campo);
+        if (data) updateSet[campo] = data;
+      }
+
+      // O autor, valor e data pertencem ao mesmo evento de roubo: manter o trio
+      // do registo mais recente, sem misturar o ladrão de um evento com o valor de outro.
+      const rouboRecente = ultimoRouboRegistrado(carteiras);
+      if (rouboRecente) {
+        updateSet.lastRobbedBy = rouboRecente.lastRobbedBy;
+        updateSet.lastRobbedAmount = Math.max(0, Number(rouboRecente.lastRobbedAmount) || 0);
+        updateSet.lastRobbedAt = rouboRecente.lastRobbedAt || null;
+      }
+
       if (empAtivo)   updateSet.emprestimo = empAtivo;
       if (petAtivo)   updateSet.pet = petAtivo;
       if (bancoAtivo) updateSet.banco = bancoAtivo;

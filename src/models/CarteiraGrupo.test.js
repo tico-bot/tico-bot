@@ -77,3 +77,17 @@ test('cópia de XP da carteira mantém o estado explicitamente ativado', () => {
   });
   assert.equal(carteira.config.xpAtivo, true);
 });
+
+test('schema permite persistir os campos usados pelo sistema de roubo e polícia', () => {
+  for (const campo of [
+    'ultimoRouboBanco',
+    'prestoAte',
+    'imunidadeRouboAte',
+    'lastRobbedBy',
+    'lastRobbedAmount',
+    'lastRobbedAt',
+    'ultimaPolicia',
+  ]) {
+    assert.ok(CarteiraGrupo.schema.path(campo), `campo ${campo} deve existir no schema`);
+  }
+});

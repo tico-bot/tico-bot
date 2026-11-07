@@ -717,7 +717,7 @@ async function handleRoubar(sock, msg, jid) {
   // ── Registrar cooldown ANTES da tentativa ────────────────────────────────────
   // (o cooldown consome mesmo se o roubo falhar — custo da tentativa)
   await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: atacanteId, idGrupo },
+    { _id: carteiraAtacante._id },
     { $set: { ultimoRoubo: new Date() } }
   );
 
@@ -804,7 +804,7 @@ async function handleRoubar(sock, msg, jid) {
     await incrementMission(atacanteId, 'roubo3', 1).catch(() => {});
 
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: vitimaId, idGrupo },
+      { _id: carteiraVitima._id },
       {
         $set: {
           imunidadeRouboAte: new Date(agora + IMUNIDADE_ROUBO_MS),
@@ -826,7 +826,7 @@ async function handleRoubar(sock, msg, jid) {
   } else {
     // ── Roubo fracassado — vai preso ────────────────────────────────────────
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: atacanteId, idGrupo },
+      { _id: carteiraAtacante._id },
       { $set: { prestoAte: new Date(agora + COOLDOWN_PRESO_MS) } }
     );
 
@@ -932,7 +932,11 @@ async function handlePolicia(sock, msg, jid) {
   // gravado em lastRobbedBy no momento do !roubar.
   const variantesLadrao = await resolverVariantesJid(ladrao);
 
-  if (!variantesLadrao.includes(carteiraVitima.lastRobbedBy) || agora > imunidadeAte) {
+  const ladraoCorrespondeAoRegistro = carteiraVitima.lastRobbedBy
+    ? await sameWhatsAppIdentity(carteiraVitima.lastRobbedBy, ladrao, sock, [], variantesLadrao)
+    : false;
+
+  if (!ladraoCorrespondeAoRegistro || agora > imunidadeAte) {
     await sock.sendMessage(jid, {
       text:
         `❌ *NÃO É POSSÍVEL CHAMAR A POLÍCIA!*\n\n` +
@@ -954,7 +958,7 @@ async function handlePolicia(sock, msg, jid) {
 
   // ── Registrar chamada (antes da rolagem para evitar spam em erro) ─────────
   await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: vitimaId, idGrupo },
+    { _id: carteiraVitima._id },
     { $set: { ultimaPolicia: new Date() } }
   );
 
@@ -978,7 +982,7 @@ async function handlePolicia(sock, msg, jid) {
     // Todas as escritas em paralelo
     const ops = [
       CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: ladrao, idGrupo },
+        { _id: carteiraLadrao._id },
         { $set: { prestoAte: new Date(novoPrestoAte) } }
       ),
     ];
@@ -1140,7 +1144,7 @@ async function handleRoubarBanco(sock, msg, jid) {
 
   // ── Registrar cooldown antes da tentativa ─────────────────────────────────
   await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: atacanteId, idGrupo },
+    { _id: carteiraAtacante._id },
     { $set: { ultimoRouboBanco: new Date() } }
   );
 
@@ -1177,10 +1181,17 @@ async function handleRoubarBanco(sock, msg, jid) {
 
     // Debitar do banco da vítima só se ainda houver saldo suficiente —
     // evita banco.amount negativo com assaltos concorrentes.
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: vitimaId, idGrupo, 'banco.amount': { $gte: valorRoubado } },
-      { $inc: { 'banco.amount': -valorRoubado } }
+    const debitoBanco = await CarteiraGrupo.findOneAndUpdate(
+      { _id: carteiraVitima._id, 'banco.amount': { $gte: valorRoubado } },
+      { $inc: { 'banco.amount': -valorRoubado } },
+      { new: true }
     );
+    if (!debitoBanco) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ O saldo do banco mudou durante o assalto. Nenhum roubo foi concluído; tente novamente.',
+      }, { quoted: msg });
+      return;
+    }
 
     // Creditar atacante
     const carteiraAtualizada = await alterarGold(
@@ -1199,7 +1210,7 @@ async function handleRoubarBanco(sock, msg, jid) {
 
     // Registrar para o !policia funcionar
     await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: vitimaId, idGrupo },
+      { _id: carteiraVitima._id },
       {
         $set: {
           imunidadeRouboAte: new Date(agora + IMUNIDADE_ROUBO_MS),
@@ -1218,7 +1229,7 @@ async function handleRoubarBanco(sock, msg, jid) {
     await Promise.all([
       // 4h preso
       CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: atacanteId, idGrupo },
+        { _id: carteiraAtacante._id },
         { $set: { prestoAte: new Date(agora + COOLDOWN_PRESO_BANCO_MS) } }
       ),
       // Multa em gold — versão "segura" que nunca lança erro por saldo

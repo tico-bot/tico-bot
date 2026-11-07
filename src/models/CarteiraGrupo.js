@@ -128,7 +128,16 @@ const carteiraGrupoSchema = new mongoose.Schema(
     equiparoubo: { type: String, default: null },
     itensRouboBanco:  { type: Map, of: { type: Number, min: 0 }, default: {} },
     equiparouboBanco: { type: String, default: null },
-    ultimoRoubo: { type: Date,   default: null },
+    ultimoRoubo: { type: Date, default: null },
+    ultimoRouboBanco: { type: Date, default: null },
+    prestoAte: { type: Date, default: null },
+
+    // Registo do último roubo sofrido, necessário para o comando /policia.
+    imunidadeRouboAte: { type: Date, default: null },
+    lastRobbedBy: { type: String, default: null, trim: true, lowercase: true },
+    lastRobbedAmount: { type: Number, default: 0, min: 0 },
+    lastRobbedAt: { type: Date, default: null },
+    ultimaPolicia: { type: Date, default: null },
 
     // ── Segurança — defesa (isolada por grupo) ───────────────────
     itensSec:   { type: Map, of: { type: Number, min: 0 }, default: {} },
