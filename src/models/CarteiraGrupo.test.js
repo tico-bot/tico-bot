@@ -91,3 +91,37 @@ test('schema permite persistir os campos usados pelo sistema de roubo e polícia
     assert.ok(CarteiraGrupo.schema.path(campo), `campo ${campo} deve existir no schema`);
   }
 });
+
+
+test('schema guarda o abrigo de personagens dentro da carteira do grupo', () => {
+  const abrigo = CarteiraGrupo.schema.path('petShelter');
+  assert.ok(abrigo, 'petShelter deve existir em CarteiraGrupo');
+  for (const campo of ['isSheltered', 'shelteredPet', 'leftAt']) {
+    assert.ok(abrigo.schema.path(campo), `petShelter.${campo} deve existir no schema`);
+  }
+});
+
+
+test('pet collection stores several characters and all evolution attributes', () => {
+  const wallet = new CarteiraGrupo({
+    idWhatsApp: '5511999999999@s.whatsapp.net',
+    idGrupo: '120363000000000000@g.us',
+    pet: {
+      petId: 'active-pet', type: 'lula', name: 'Lula', rarity: 'LENDÁRIO',
+      xpMult: 2, pontMult: 2, health: 87, hygiene: 76,
+      accessories: ['coroa'], skills: ['Truques'],
+    },
+    pets: [
+      { petId: 'active-pet', type: 'lula', name: 'Lula', rarity: 'LENDÁRIO', xpMult: 2, pontMult: 2, health: 87, hygiene: 76 },
+      { petId: 'pet-2', type: 'arrogante', name: 'Arrogante', rarity: 'COMUM' },
+    ],
+  });
+
+  assert.equal(wallet.pet.xpMult, 2);
+  assert.equal(wallet.pet.pontMult, 2);
+  assert.equal(wallet.pet.health, 87);
+  assert.equal(wallet.pet.hygiene, 76);
+  assert.deepEqual(wallet.pet.accessories, ['coroa']);
+  assert.equal(wallet.pets.length, 2);
+  assert.equal(wallet.pets[1].petId, 'pet-2');
+});

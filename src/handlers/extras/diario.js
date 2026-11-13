@@ -1,6 +1,7 @@
 'use strict';
 
 const Usuario     = require('../../models/Usuario');
+const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const DailyStreak = require('../../models/DailyStreak');
 const { hojeStr, diffDias } = require('../../utils/tempo');
 const { getUserId, creditarGold, requestIdDe, formatarSaldo } = require('./_shared');
@@ -38,11 +39,16 @@ const CONQUISTAS = [
 ];
 
 async function avaliarConquistas(userId) {
-  const [usuario, streakDoc] = await Promise.all([
+  const [usuario, streakDoc, carteiraComPet] = await Promise.all([
     Usuario.findOne({ idWhatsApp: userId }).lean(),
     DailyStreak.findOne({ idWhatsApp: userId }).lean(),
+    CarteiraGrupo.findOne({ idWhatsApp: userId, $or: [
+      { 'pet.name': { $exists: true, $nin: [null, ''] } },
+      { 'pets.0.name': { $exists: true, $nin: [null, ''] } },
+    ] }).select('pet pets').lean(),
   ]);
-  const u = usuario  || {};
+  const u = usuario || {};
+  if (carteiraComPet) u.pet = carteiraComPet.pet?.type ? carteiraComPet.pet : carteiraComPet.pets?.[0] || { type: 'colecionado' };
   const s = streakDoc || {};
 
   const jaTinha  = new Set(s.achievements || []);

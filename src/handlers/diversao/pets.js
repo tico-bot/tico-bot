@@ -2,10 +2,12 @@ const path          = require('path');
 const fs            = require('fs');
 const Usuario       = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
-const { resolverJidCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolverJidCarteira, getCarteira } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { isAdmin } = require('../grupo/helpers');
 const { getAlternateSenderJids, resolveDisplayName } = require('../../utils/identity');
 const { logError } = require('../../utils/logging');
+const { ABRIGO_TEMPO_MAXIMO_MS, filtroAbrigoDoGrupo, limparPetsExpiradosDoAbrigo } = require('../../utils/petShelter');
+const { atualizarNecessidades, obterEstagioPet, calcularHumorPet, gerarPetId } = require('../../utils/petNeeds');
 const GrupoConfig = require('../../models/GrupoConfig');
 
 const { prepareDailyMissionState } = require('./missoes');
@@ -209,15 +211,7 @@ function formatarTempo(ms) {
  * @returns {string}
  */
 function getHumor(pet) {
-  const avg = (
-    (pet.happiness ?? 0) +
-    (pet.energy    ?? 0) +
-    (pet.fullness  ?? 0)
-  ) / 3;
-  if (avg >= 80) return '😄 Feliz';
-  if (avg >= 50) return '😐 Normal';
-  if (avg >= 25) return '😟 Triste';
-  return '😢 Sofrendo';
+  return calcularHumorPet(pet);
 }
 
 /**
@@ -226,7 +220,7 @@ function getHumor(pet) {
  * @returns {number}
  */
 function getRankScore(pet) {
-  return (pet.level ?? 1) * 1000 + (pet.xp ?? 0);
+  return ((pet.level ?? 1) * 1000 + (pet.xp ?? 0)) * (pet.pontMult ?? 1);
 }
 
 /**
@@ -234,45 +228,182 @@ function getRankScore(pet) {
  * @param {string} userId
  * @returns {Promise<object|null>}
  */
+function petParaObjeto(pet) {
+  if (!pet) return null;
+  return typeof pet.toObject === 'function' ? pet.toObject() : { ...pet };
+}
+
+function mesmaIdentidadePet(a, b) {
+  if (!a || !b) return false;
+  if (a.petId && b.petId) return a.petId === b.petId;
+  return a.type === b.type && a.name === b.name && String(a.capturedAt || '') === String(b.capturedAt || '');
+}
+
+async function obterCarteiraComColecao(userId, idGrupo) {
+  const carteira = await getCarteira(userId, idGrupo);
+  if (!carteira) return null;
+
+  let alterada = false;
+  const colecao = Array.from(carteira.pets || []).map(petParaObjeto).filter(p => p?.name);
+  let ativo = petParaObjeto(carteira.pet);
+
+  // Associa registros legados sem petId antes de gerar IDs novos, para não duplicar
+  // o mesmo personagem que já exista tanto no campo ativo quanto na coleção.
+  if (ativo?.name && !ativo.petId) {
+    const correspondente = colecao.find(p =>
+      p.type === ativo.type &&
+      p.name === ativo.name &&
+      String(p.capturedAt || '') === String(ativo.capturedAt || '')
+    );
+    ativo.petId = correspondente?.petId || gerarPetId();
+    if (correspondente && !correspondente.petId) correspondente.petId = ativo.petId;
+    alterada = true;
+  }
+
+  for (let i = 0; i < colecao.length; i++) {
+    let pet = colecao[i];
+    if (!pet.petId) { pet = { ...pet, petId: gerarPetId() }; alterada = true; }
+    const atualizado = atualizarNecessidades(pet);
+    if (JSON.stringify(atualizado) !== JSON.stringify(pet)) alterada = true;
+    colecao[i] = atualizado;
+  }
+
+  if (ativo?.name) {
+    const atualizado = atualizarNecessidades(ativo);
+    if (JSON.stringify(atualizado) !== JSON.stringify(ativo)) alterada = true;
+    ativo = atualizado;
+    const indice = colecao.findIndex(p => mesmaIdentidadePet(p, ativo));
+    if (indice >= 0) colecao[indice] = ativo;
+    else { colecao.push(ativo); alterada = true; }
+  } else if (colecao.length) {
+    ativo = colecao[0];
+    alterada = true;
+  }
+
+  if (alterada) {
+    carteira.pets = colecao;
+    carteira.pet = ativo || null;
+    await carteira.save();
+  }
+  return carteira;
+}
+
 async function getPet(userId, idGrupo) {
   const cacheKey = `${userId}:${idGrupo}`;
   const cached = petCache.get(cacheKey);
   if (cached) return cached;
 
-  const carteira = await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo }).select('pet').lean();
-  const pet = carteira?.pet ?? null;
+  const carteira = await obterCarteiraComColecao(userId, idGrupo);
+  const pet = petParaObjeto(carteira?.pet);
+  if (!pet?.name) return null;
 
-  if (pet?.name) petCache.set(cacheKey, pet);
-  return pet;
+  const atualizado = atualizarNecessidades({ ...pet, petId: pet.petId || gerarPetId() });
+  petCache.set(cacheKey, atualizado);
+  return atualizado;
 }
 
-/**
- * Salva o pet ativo do usuário (cache + banco).
- * @param {string} userId
- * @param {object} pet
- */
+/** Salva o pet ativo e mantém a cópia correspondente na coleção do grupo. */
 async function savePet(userId, idGrupo, pet) {
   const cacheKey = `${userId}:${idGrupo}`;
-  petCache.set(cacheKey, pet);
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo },
-    { $set: { pet } },
-    { upsert: true }
-  );
+  const petSalvo = { ...pet, petId: pet.petId || gerarPetId() };
+  const carteira = await getCarteira(userId, idGrupo);
+  if (!carteira) throw new Error('Carteira do grupo não encontrada.');
+
+  const colecao = Array.from(carteira.pets || []).map(petParaObjeto).filter(p => p?.name);
+  const indice = colecao.findIndex(p => mesmaIdentidadePet(p, petSalvo));
+  if (indice >= 0) colecao[indice] = petSalvo;
+  else colecao.push(petSalvo);
+
+  carteira.pets = colecao;
+  carteira.pet = petSalvo;
+  await carteira.save();
+  petCache.set(cacheKey, petSalvo);
+  return petSalvo;
 }
 
-/**
- * Remove o pet ativo do usuário (cache + banco).
- * Use este em vez de fazer $unset manual espalhado pelo código.
- * @param {string} userId
- */
+/** Adiciona um personagem à coleção sem substituir o ativo, salvo quando não houver um. */
+async function addPetToCollection(userId, idGrupo, pet, { activateIfEmpty = true } = {}) {
+  const petSalvo = { ...pet, petId: pet.petId || gerarPetId() };
+  const carteira = await getCarteira(userId, idGrupo);
+  if (!carteira) throw new Error('Carteira do grupo não encontrada.');
+  const colecao = Array.from(carteira.pets || []).map(petParaObjeto).filter(p => p?.name);
+  const indice = colecao.findIndex(p => mesmaIdentidadePet(p, petSalvo));
+  if (indice >= 0) colecao[indice] = petSalvo;
+  else colecao.push(petSalvo);
+  carteira.pets = colecao;
+  if (activateIfEmpty && !carteira.pet?.name) carteira.pet = petSalvo;
+  await carteira.save();
+  if (carteira.pet?.petId === petSalvo.petId) petCache.set(`${userId}:${idGrupo}`, petSalvo);
+  return petSalvo;
+}
+
+/** Remove um personagem transferido/abandonado e ativa o próximo da coleção, se existir. */
+async function removerPetDaColecao(userId, idGrupo, pet) {
+  const carteira = await getCarteira(userId, idGrupo);
+  if (!carteira) throw new Error('Carteira do grupo não encontrada.');
+  const colecao = Array.from(carteira.pets || []).map(petParaObjeto).filter(p => p?.name && !mesmaIdentidadePet(p, pet));
+  const ativo = petParaObjeto(carteira.pet);
+  carteira.pets = colecao;
+  if (ativo && mesmaIdentidadePet(ativo, pet)) carteira.pet = colecao[0] || null;
+  await carteira.save();
+  petCache.delete(`${userId}:${idGrupo}`);
+  return carteira.pet;
+}
+
+async function getPetCollection(userId, idGrupo) {
+  const carteira = await obterCarteiraComColecao(userId, idGrupo);
+  return Array.from(carteira?.pets || []).map(petParaObjeto).filter(p => p?.name);
+}
+
 async function clearPet(userId, idGrupo) {
-  const cacheKey = `${userId}:${idGrupo}`;
-  petCache.delete(cacheKey);
-  await CarteiraGrupo.findOneAndUpdate(
-    { idWhatsApp: userId, idGrupo },
-    { $unset: { pet: '' } }
-  );
+  petCache.delete(`${userId}:${idGrupo}`);
+  const carteira = await getCarteira(userId, idGrupo);
+  if (!carteira) return;
+  carteira.pet = null;
+  await carteira.save();
+}
+
+
+async function consumirItemPet(userId, idGrupo, chaves) {
+  for (const chave of chaves) {
+    const carteira = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp: userId, idGrupo, [`itensPets.${chave}`]: { $gt: 0 } },
+      { $inc: { [`itensPets.${chave}`]: -1 } },
+      { new: true }
+    );
+    if (carteira) return { chave, origem: 'grupo' };
+  }
+
+  // Compatibilidade: itens comprados antes de a loja separar inventários por grupo.
+  for (const chave of chaves) {
+    const usuario = await Usuario.findOneAndUpdate(
+      { idWhatsApp: userId, [`inventory.${chave}`]: { $gt: 0 } },
+      { $inc: { [`inventory.${chave}`]: -1 } },
+      { new: true }
+    );
+    if (usuario) return { chave, origem: 'global' };
+  }
+  return null;
+}
+
+async function devolverItemPet(userId, idGrupo, item) {
+  if (!item) return;
+  if (item.origem === 'global') {
+    await Usuario.updateOne({ idWhatsApp: userId }, { $inc: { [`inventory.${item.chave}`]: 1 } });
+  } else {
+    await CarteiraGrupo.updateOne({ idWhatsApp: userId, idGrupo }, { $inc: { [`itensPets.${item.chave}`]: 1 } });
+  }
+}
+
+function textoItemPet(chave) {
+  return ({
+    racao: 'Ração Normal', racaopremium: 'Ração Premium', carnefresh: 'Carne Fresca',
+    peixe: 'Peixe Fresco', leite: 'Leite', bolinha: 'Bolinha de Tênis',
+    pelucia: 'Pelúcia', corda: 'Corda de Puxar', disco: 'Disco Voador',
+    casabrinquedo: 'Casa de Brinquedo', remedio: 'Remédio Geral', vacina: 'Vacina',
+    shampoo: 'Shampoo Especial', sabonete: 'Sabonete Pet', coleira: 'Coleira Colorida',
+    coleiraouro: 'Coleira de Ouro', bandana: 'Bandana', coroa: 'Coroa Pet',
+  })[chave] || chave;
 }
 
 /**
@@ -362,22 +493,7 @@ async function handleCapturarPet(sock, msg, jid) {
     return reply(sock, jid, msg, '❌ Erro interno: personagem inválido.');
   }
 
-  // 1. Verifica se o usuário já possui um pet ativo NESTE GRUPO
-  let petExistente;
-  try {
-    petExistente = await getPet(userId, jid);
-  } catch (err) {
-    console.error('[capturar] Erro ao buscar pet existente:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao verificar seu personagem. Tente novamente!');
-  }
-
-  if (petExistente?.name) {
-    return reply(
-      sock, jid, msg,
-      '⚠️ Você já tem um personagem neste grupo! Use *!abrigo deixar* para liberá-lo antes de capturar outro.',
-    );
-  }
-
+  // O jogador pode colecionar vários personagens; apenas um fica ativo por vez.
   // 2. Reserva atomicamente o personagem: apenas uma captura pode vencer.
   let reservado;
   try {
@@ -408,7 +524,9 @@ async function handleCapturarPet(sock, msg, jid) {
   }
 
   // 4. Instanciação do novo pet capturado
+  const agora = new Date();
   const novoPet = {
+    petId:           gerarPetId(),
     type:            spawn.type,
     name:            def.nome,
     rarity:          spawn.rarity,
@@ -419,12 +537,17 @@ async function handleCapturarPet(sock, msg, jid) {
     happiness:       50,
     energy:          100,
     fullness:        100,
-    capturedAt:      new Date().toISOString(),
-    lastInteraction: new Date().toISOString(),
+    health:          100,
+    hygiene:         100,
+    accessories:     [],
+    skills:          [],
+    capturedAt:      agora,
+    lastInteraction: agora,
+    lastNeedsUpdate: agora,
   };
 
   try {
-    await savePet(userId, jid, novoPet);
+    await addPetToCollection(userId, jid, novoPet, { activateIfEmpty: true });
   } catch (err) {
     console.error('[capturar] Erro ao salvar pet:', err);
     spawnedPets.set(jid, spawn);
@@ -460,92 +583,63 @@ async function handleCapturarPet(sock, msg, jid) {
 async function handleAlimentarPet(sock, msg, jid) {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
-
   const espera = checkCooldown(`${userId}:${jid}`, 'alimentar', CONFIG.COOLDOWN_ALIMENTAR);
-  if (espera > 0) {
-    return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para alimentar novamente!`);
-  }
+  if (espera > 0) return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para alimentar novamente!`);
 
   let pet;
-  try {
-    pet = await getPet(userId, jid);
-  } catch (err) {
+  try { pet = await getPet(userId, jid); }
+  catch (err) {
     console.error('[alimentar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu personagem. Tente novamente!');
   }
-
-  if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um personagem neste grupo. Use *!capturar* quando um aparecer!');
-  }
-
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo. Use *!pets* para ver sua coleção.');
   if (pet.fullness >= CONFIG.STAT_MAX) {
     clearCooldown(`${userId}:${jid}`, 'alimentar');
-    return reply(sock, jid, msg,
-      `❌ *${pet.name}* está completamente cheio (🍽️ 100%) e recusou a comida!`
-    );
+    return reply(sock, jid, msg, `❌ *${pet.name}* está completamente satisfeito (🍽️ 100%) e não quer comer agora!`);
   }
 
-  const petAtualizado = comTimestamp({
-    ...pet,
-    fullness:  clamp(pet.fullness  + 30),
-    happiness: clamp(pet.happiness + 10),
-  });
-
-  let userComComida;
-  try {
-    await prepareDailyMissionState(userId);
-    // Consome comida do inventário global (Usuario) e salva pet na CarteiraGrupo
-    userComComida = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId, 'inventory.comida': { $gt: 0 } },
-      { $inc: { 'inventory.comida': -1, 'dailyMissions.progress.pet10': 1 } },
-      { new: true, upsert: false }
-    );
-    if (!userComComida) {
-      clearCooldown(`${userId}:${jid}`, 'alimentar');
-      return reply(sock, jid, msg,
-        '❌ Você não tem comida no inventário! Compre na *!loja* antes de alimentar.'
-      );
-    }
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid },
-      { $set: { pet: petAtualizado } },
-      { new: true }
-    );
-  } catch (err) {
-    // Se a comida já foi debitada, tenta devolvê-la para não perder item
-    // quando a gravação do estado do pet falhar.
-    if (userComComida) {
-      try {
-        await Usuario.updateOne(
-          { idWhatsApp: userId },
-          { $inc: { 'inventory.comida': 1, 'dailyMissions.progress.pet10': -1 } }
-        );
-      } catch (rollbackErr) {
-        console.error('[alimentar] Falha ao devolver comida após erro:', rollbackErr);
-      }
-    }
+  const alimentos = {
+    racaopremium: { fome: 45, felicidade: 10 },
+    carnefresh: { fome: 40, felicidade: 10 },
+    peixe: { fome: 35, felicidade: 12 },
+    racao: { fome: 30, felicidade: 5 },
+    leite: { fome: 20, felicidade: 15 },
+    comida: { fome: 20, felicidade: 5 }, // item legado
+  };
+  let item;
+  try { item = await consumirItemPet(userId, jid, Object.keys(alimentos)); }
+  catch (err) {
     clearCooldown(`${userId}:${jid}`, 'alimentar');
-    console.error('[alimentar] Erro ao atualizar:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao alimentar o pet. Tente novamente!');
+    console.error('[alimentar] Erro ao consumir alimento:', err);
+    return reply(sock, jid, msg, '❌ Não consegui acessar seu estoque de alimentos. Tente novamente.');
+  }
+  if (!item) {
+    clearCooldown(`${userId}:${jid}`, 'alimentar');
+    return reply(sock, jid, msg, '❌ Você não tem alimentos para pets! Compre ração na *!lojapet*.');
   }
 
-  petCache.set(`${userId}:${jid}`, petAtualizado);
+  const efeito = alimentos[item.chave];
+  const atualizado = comTimestamp({
+    ...pet,
+    fullness: clamp(pet.fullness + efeito.fome),
+    happiness: clamp(pet.happiness + efeito.felicidade),
+  });
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) {
+    try { await devolverItemPet(userId, jid, item); }
+    catch (rollbackErr) { console.error('[alimentar] Falha ao devolver alimento:', rollbackErr); }
+    clearCooldown(`${userId}:${jid}`, 'alimentar');
+    console.error('[alimentar] Erro ao salvar pet:', err);
+    return reply(sock, jid, msg, '❌ Erro ao alimentar o pet. O alimento foi devolvido quando possível.');
+  }
+  await prepareDailyMissionState(userId).then(() => Usuario.updateOne(
+    { idWhatsApp: userId }, { $inc: { 'dailyMissions.progress.pet10': 1 } }
+  )).catch(err => console.warn('[alimentar] Não foi possível atualizar a missão diária:', err.message));
 
-  const invMap = userComComida.inventory;
-  const qtdRestante = invMap instanceof Map ? (invMap.get('comida') ?? 0) : (invMap?.comida ?? 0);
-
-  const aviso = qtdRestante === 0
-    ? '\n\n⚠️ _Você ficou sem comida! Compre mais na *!loja*._'
-    : qtdRestante <= 2
-      ? `\n\n⚠️ _Estoque baixo! Só restam *${qtdRestante}* comida(s). Compre mais na *!loja*._`
-      : '';
-
-  return replyWithPetImage(sock, jid, msg, petAtualizado,
-    `🍖 Você alimentou *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
-    `🍽️ Fome       : *${petAtualizado.fullness}%*\n` +
-    `📦 Comidas restantes: *${qtdRestante}*` +
-    aviso,
+  return replyWithPetImage(sock, jid, msg, atualizado,
+    `🍖 Você alimentou *${atualizado.name}* com *${textoItemPet(item.chave)}*!\n\n` +
+    `🍽️ Fome: *${atualizado.fullness}%*\n😊 Felicidade: *${atualizado.happiness}%*\n` +
+    `❤️ Saúde: *${atualizado.health ?? 100}%*`,
     { context: 'alimentar' }
   );
 }
@@ -556,109 +650,68 @@ async function handleAlimentarPet(sock, msg, jid) {
  * Faz o usuário brincar com o pet, aumentando nível e felicidade,
  * mas consumindo energia e fome.
  */
-async function handleBrincarPet(sock, msg, jid) {
+async function handleBrincarPet(sock, msg, jid, caption = '') {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
-
   const espera = checkCooldown(`${userId}:${jid}`, 'brincar', CONFIG.COOLDOWN_BRINCAR);
-  if (espera > 0) {
-    return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para brincar novamente!`);
-  }
+  if (espera > 0) return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para brincar novamente!`);
 
   let pet;
-  try {
-    pet = await getPet(userId, jid);
-  } catch (err) {
+  try { pet = await getPet(userId, jid); }
+  catch (err) {
     console.error('[brincar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu personagem. Tente novamente!');
   }
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo. Use *!pets* para ver sua coleção.');
+  if ((pet.energy ?? 0) < 15) return reply(sock, jid, msg, `❌ *${pet.name}* está sem energia para brincar! Use *!curar* ou espere descansar.`);
+  if ((pet.fullness ?? 0) <= 0) return reply(sock, jid, msg, `❌ *${pet.name}* está com fome demais para brincar! Use *!alimentar* primeiro.`);
 
-  if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
+  const brinquedos = {
+    bolinha: { felicidade: 10, xp: 8, energia: 5 },
+    pelucia: { felicidade: 12, xp: 5, energia: 0 },
+    corda: { felicidade: 8, xp: 10, energia: 7 },
+    disco: { felicidade: 10, xp: 12, energia: 8 },
+    casabrinquedo: { felicidade: 15, xp: 15, energia: 0 },
+  };
+  const brinquedoDigitado = caption.replace(/^[!.,/]\s*brincar\b/i, '').trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+  let itemBrinquedo = null;
+  if (brinquedoDigitado) {
+    if (!brinquedos[brinquedoDigitado]) return reply(sock, jid, msg, `⚠️ Brinquedo desconhecido. Use: *${Object.keys(brinquedos).join('*, *')}*.`);
+    try { itemBrinquedo = await consumirItemPet(userId, jid, [brinquedoDigitado]); }
+    catch (err) { console.error('[brincar] Erro ao consumir brinquedo:', err); }
+    if (!itemBrinquedo) return reply(sock, jid, msg, `❌ Você não tem *${textoItemPet(brinquedoDigitado)}* no inventário deste grupo. Veja *!lojapet*.`);
   }
 
-  // ── Verificações de estado ────────────────────────────────
-  const ENERGIA_MINIMA = 15;
-  if ((pet.energy ?? 0) < ENERGIA_MINIMA) {
-    return reply(sock, jid, msg,
-      `❌ *${pet.name}* está sem energia para brincar! (⚡ ${pet.energy ?? 0}%)\n\n_Use *!curar* para recuperar energia._`
-    );
-  }
-
-  if ((pet.fullness ?? 0) <= 0) {
-    return reply(sock, jid, msg,
-      `❌ *${pet.name}* está com fome demais para brincar! Use *!alimentar* primeiro.`
-    );
-  }
-
-  // ── Sistema de XP ─────────────────────────────────────────
-  const def        = PET_SYSTEM[pet.type] ?? { xpMult: 1.0 };
-  const nivelAtual = pet.level ?? 1;
-  const xpAtual    = pet.xp    ?? 0;
-  const xpParaSubir = nivelAtual * 100;
-  const xpGanho    = Math.round(20 * (pet.xpMult ?? def.xpMult ?? 1.0));
-  const xpNovo     = xpAtual + xpGanho;
-
-  const podeSubir  = nivelAtual < CONFIG.NIVEL_MAX && xpNovo >= xpParaSubir;
-  const novoNivel  = podeSubir ? nivelAtual + 1 : nivelAtual;
-  const xpFinal    = podeSubir ? xpNovo - xpParaSubir : xpNovo;
-  const subiuNivel = novoNivel > nivelAtual;
-
-  // ── Calcular novo estado ──────────────────────────────────
+  const bonus = itemBrinquedo ? brinquedos[itemBrinquedo.chave] : { felicidade: 0, xp: 0, energia: 0 };
+  const xpGanho = Math.round((20 + bonus.xp) * (pet.xpMult ?? 1));
+  const { pet: petComXp, desbloqueios } = aplicarExperienciaPet(pet, xpGanho);
   const petAtualizado = comTimestamp({
-    ...pet,
-    happiness: clamp(pet.happiness + 20),
-    energy:    clamp(pet.energy    - 15),
-    fullness:  clamp(pet.fullness  - 10),
-    level:     novoNivel,
-    xp:        xpFinal,
+    ...petComXp,
+    happiness: clamp(pet.happiness + 20 + bonus.felicidade),
+    energy: clamp(pet.energy - 15 - bonus.energia),
+    fullness: clamp(pet.fullness - 10),
   });
 
-  // ── Salvar no banco ───────────────────────────────────────
-  try {
-    await prepareDailyMissionState(userId);
-    await Promise.all([
-      CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: jid },
-        { $set: { pet: petAtualizado } },
-        { upsert: true }
-      ),
-      Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
-        { $inc: { 'dailyMissions.progress.pet10': 1 } },
-        { upsert: true }
-      ),
-    ]);
-  } catch (err) {
+  try { await savePet(userId, jid, petAtualizado); }
+  catch (err) {
+    if (itemBrinquedo) await devolverItemPet(userId, jid, itemBrinquedo).catch(e => console.error('[brincar] Falha ao devolver brinquedo:', e));
     console.error('[brincar] Erro ao atualizar:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao brincar com o pet. Tente novamente!');
+    return reply(sock, jid, msg, '❌ Erro interno ao brincar com o pet. O brinquedo foi devolvido quando possível.');
   }
+  await prepareDailyMissionState(userId).then(() => Usuario.updateOne(
+    { idWhatsApp: userId }, { $inc: { 'dailyMissions.progress.pet10': 1 } }
+  )).catch(err => console.warn('[brincar] Não foi possível atualizar a missão diária:', err.message));
 
-  petCache.set(`${userId}:${jid}`, petAtualizado);
-
-  // ── Montar resposta ───────────────────────────────────────
-  const xpBar = buildXpBar(xpFinal, podeSubir ? novoNivel * 100 : xpParaSubir);
-
-  const nivelMsg    = subiuNivel
-    ? `\n\n🎉 *${petAtualizado.name}* subiu para o nível *${petAtualizado.level}*!`
-    : '';
-  const fomeAviso   = petAtualizado.fullness <= 20
-    ? `\n⚠️ _${petAtualizado.name} está com fome! Use *!alimentar*._`
-    : '';
-  const energiaAviso = petAtualizado.energy <= 20
-    ? `\n⚠️ _${petAtualizado.name} está cansado! Use *!curar* ou aguarde._`
-    : '';
-
+  const xpMax = petAtualizado.level < CONFIG.NIVEL_MAX ? petAtualizado.level * 100 : null;
+  const xpBar = xpMax ? buildXpBar(petAtualizado.xp, xpMax) : '👑 *NÍVEL MÁXIMO*';
+  const nivelMsg = petAtualizado.level > (pet.level ?? 1) ? `\n\n🎉 *${petAtualizado.name}* chegou ao nível *${petAtualizado.level}*!` : '';
+  const habilidadeMsg = desbloqueios.length ? `\n🔓 Habilidade${desbloqueios.length > 1 ? 's' : ''} desbloqueada${desbloqueios.length > 1 ? 's' : ''}: ${desbloqueios.join(', ')}` : '';
+  const brinquedoMsg = itemBrinquedo ? ` com *${textoItemPet(itemBrinquedo.chave)}*` : '';
   return replyWithPetImage(sock, jid, msg, petAtualizado,
-    `🎾 Você brincou com *${petAtualizado.name}*!\n\n` +
-    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
-    `⚡ Energia    : *${petAtualizado.energy}%*\n` +
-    `🍽️ Fome       : *${petAtualizado.fullness}%*\n` +
-    `🏆 Nível      : *${petAtualizado.level}/${CONFIG.NIVEL_MAX}*\n` +
-    `✨ XP         : +${xpGanho} ${xpBar}` +
-    nivelMsg +
-    fomeAviso +
-    energiaAviso,
+    `🎾 Você brincou com *${petAtualizado.name}*${brinquedoMsg}!\n\n` +
+    `😊 Felicidade: *${petAtualizado.happiness}%*\n⚡ Energia: *${petAtualizado.energy}%*\n` +
+    `🍽️ Fome: *${petAtualizado.fullness}%*\n❤️ Saúde: *${petAtualizado.health ?? 100}%*\n` +
+    `🏆 Nível: *${petAtualizado.level}/${CONFIG.NIVEL_MAX}*\n✨ XP: +${xpGanho} ${xpBar}${nivelMsg}${habilidadeMsg}`,
     { context: 'brincar' }
   );
 }
@@ -679,106 +732,294 @@ function buildXpBar(xpAtual, xpTotal, tamanho = 10) {
 async function handleCurarPet(sock, msg, jid) {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
-
   const espera = checkCooldown(`${userId}:${jid}`, 'curar', CONFIG.COOLDOWN_CURAR);
-  if (espera > 0) {
-    return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para curar novamente!`);
-  }
+  if (espera > 0) return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para curar novamente!`);
 
   let pet;
-  try {
-    pet = await getPet(userId, jid);
-  } catch (err) {
+  try { pet = await getPet(userId, jid); }
+  catch (err) {
     console.error('[curar] Erro ao buscar pet:', err);
     return reply(sock, jid, msg, '❌ Erro interno ao buscar seu personagem. Tente novamente!');
   }
-
-  if (!pet?.name) {
-    return reply(sock, jid, msg, '⚠️ Você não tem um pet. Use *!capturar* quando um aparecer!');
-  }
-
-  // ── Verificar se já está saudável ─────────────────────────
-  const energiaCheia    = (pet.energy    ?? 0) >= CONFIG.STAT_MAX;
-  const felicidadeCheia = (pet.happiness ?? 0) >= CONFIG.STAT_MAX;
-
-  if (energiaCheia && felicidadeCheia) {
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
+  if ((pet.health ?? 100) >= 100 && (pet.energy ?? 0) >= 100 && (pet.happiness ?? 0) >= 100) {
     clearCooldown(`${userId}:${jid}`, 'curar');
-    return reply(sock, jid, msg,
-      `✅ *${pet.name}* já está completamente saudável!\n\n` +
-      `⚡ Energia    : *${pet.energy}%*\n` +
-      `😊 Felicidade : *${pet.happiness}%*`
-    );
+    return reply(sock, jid, msg, `✅ *${pet.name}* já está completamente saudável!`);
   }
 
-  // ── Calcular novo estado ──────────────────────────────────
-  const beneficios = [];
-  if (!energiaCheia)    beneficios.push(`⚡ Energia +50`);
-  if (!felicidadeCheia) beneficios.push(`😊 Felicidade +20`);
+  let item;
+  try { item = await consumirItemPet(userId, jid, ['remedio']); }
+  catch (err) {
+    clearCooldown(`${userId}:${jid}`, 'curar');
+    console.error('[curar] Erro ao consumir remédio:', err);
+    return reply(sock, jid, msg, '❌ Não consegui acessar seu estoque de remédios.');
+  }
+  if (!item) {
+    clearCooldown(`${userId}:${jid}`, 'curar');
+    return reply(sock, jid, msg, '❌ Você não tem Remédio Geral! Compre na *!lojapet*.');
+  }
 
-  const petAtualizado = comTimestamp({
+  const atualizado = comTimestamp({
     ...pet,
-    energy:    clamp(pet.energy    + 50),
-    happiness: clamp(pet.happiness + 20),
+    health: clamp((pet.health ?? 100) + 50, 1),
+    energy: clamp((pet.energy ?? 0) + 25),
+    happiness: clamp((pet.happiness ?? 0) + 10),
   });
-
-  // ── Salvar no banco ───────────────────────────────────────
-  let userAtualizado;
-  try {
-    userAtualizado = await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId, 'inventory.remedio': { $gt: 0 } },
-      { $inc: { 'inventory.remedio': -1 } },
-      { new: true, upsert: false },
-    );
-  } catch (err) {
-    console.error('[curar] Erro ao atualizar usuário:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao curar o pet. Tente novamente!');
-  }
-
-  if (!userAtualizado) {
-    clearCooldown(`${userId}:${jid}`, 'curar');
-    return reply(sock, jid, msg,
-      '❌ Você não tem remédios no inventário! Compre na *!loja*.'
-    );
-  }
-
-  try {
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid },
-      { $set: { pet: petAtualizado } },
-      { upsert: true }
-    );
-  } catch (err) {
-    try {
-      await Usuario.updateOne(
-        { idWhatsApp: userId },
-        { $inc: { 'inventory.remedio': 1 } }
-      );
-    } catch (rollbackErr) {
-      console.error('[curar] Falha ao devolver remédio após erro:', rollbackErr);
-    }
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) {
+    try { await devolverItemPet(userId, jid, item); }
+    catch (rollbackErr) { console.error('[curar] Falha ao devolver remédio:', rollbackErr); }
     clearCooldown(`${userId}:${jid}`, 'curar');
     console.error('[curar] Erro ao salvar pet:', err);
-    return reply(sock, jid, msg, '❌ Erro interno ao salvar a cura. O remédio foi devolvido quando possível; tente novamente.');
+    return reply(sock, jid, msg, '❌ Erro interno ao salvar a cura. O remédio foi devolvido quando possível.');
   }
 
-  petCache.set(`${userId}:${jid}`, petAtualizado);
-
-  const qtdRestante = userAtualizado.inventory?.get?.('remedio') ?? userAtualizado.inventory?.remedio ?? 0;
-  const aviso = qtdRestante === 0
-    ? '\n\n⚠️ _Você ficou sem remédios! Compre mais na *!loja*._'
-    : qtdRestante <= 2
-      ? `\n\n⚠️ _Estoque baixo! Só restam *${qtdRestante}* remédio(s). Compre mais na *!loja*._`
-      : '';
-
-  return replyWithPetImage(sock, jid, msg, petAtualizado,
-    `💊 Você curou *${petAtualizado.name}*!\n` +
-    `${beneficios.join(' | ')}\n\n` +
-    `⚡ Energia    : *${petAtualizado.energy}%*\n` +
-    `😊 Felicidade : *${petAtualizado.happiness}%*\n` +
-    `📦 Remédios restantes: *${qtdRestante}*` +
-    aviso,
+  return replyWithPetImage(sock, jid, msg, atualizado,
+    `💊 Você tratou *${atualizado.name}*!\n❤️ Saúde: *${atualizado.health}%*\n⚡ Energia: *${atualizado.energy}%*\n😊 Felicidade: *${atualizado.happiness}%*`,
     { context: 'curar' }
   );
+}
+
+function extrairMencao(msg, caption = '') {
+  const contexto = msg?.message?.extendedTextMessage?.contextInfo
+    || msg?.message?.imageMessage?.contextInfo
+    || msg?.message?.videoMessage?.contextInfo
+    || {};
+  const mencionados = contexto.mentionedJid || [];
+  if (mencionados[0]) return mencionados[0];
+  const match = String(caption).match(/@([0-9]{5,})/);
+  return match ? `${match[1]}@s.whatsapp.net` : null;
+}
+
+function aplicarExperienciaPet(pet, quantidade) {
+  let level = Math.max(1, pet.level || 1);
+  let xp = Math.max(0, pet.xp || 0) + Math.max(0, quantidade);
+  while (level < CONFIG.NIVEL_MAX && xp >= level * 100) {
+    xp -= level * 100;
+    level++;
+  }
+  const skills = new Set(pet.skills || []);
+  const desbloqueios = [
+    [5, 'Truques'], [10, 'Agilidade'], [20, 'Companheiro Experiente'], [50, 'Lenda do Grupo'],
+  ].filter(([nivel, nome]) => level >= nivel && !skills.has(nome));
+  for (const [, nome] of desbloqueios) skills.add(nome);
+  return { pet: { ...pet, level, xp, skills: [...skills] }, desbloqueios: desbloqueios.map(([, nome]) => nome) };
+}
+
+async function handleSelecionarPet(sock, msg, jid, caption = '') {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const nomeBusca = caption.replace(/^[!.,/]\s*petselecionar\s*/i, '').trim().replace(/^['"]|['"]$/g, '');
+  if (!nomeBusca) return reply(sock, jid, msg, '⚠️ Informe o nome do personagem. Exemplo: *!petselecionar Lula*');
+  try {
+    const colecao = await getPetCollection(userId, jid);
+    const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const exatos = colecao.filter(p => normalizar(p.name) === normalizar(nomeBusca));
+    const parciais = colecao.filter(p => normalizar(p.name).includes(normalizar(nomeBusca)));
+    const pet = exatos[0] || (parciais.length === 1 ? parciais[0] : null);
+    if (!pet) return reply(sock, jid, msg, parciais.length > 1 ? '⚠️ Há vários personagens com esse trecho de nome. Informe o nome completo.' : `❌ Você não tem *${nomeBusca}* na coleção deste grupo. Use *!pets*.`);
+    await savePet(userId, jid, pet);
+    return replyWithPetImage(sock, jid, msg, pet, `✅ *${pet.name}* agora é seu personagem ativo!\n\nUse *!statuspet* para consultar os atributos.`, { context: 'selecionar' });
+  } catch (err) {
+    console.error('[petselecionar] Erro:', err);
+    return reply(sock, jid, msg, '❌ Não foi possível trocar o personagem ativo. Tente novamente.');
+  }
+}
+
+async function handleBanharPet(sock, msg, jid) {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const pet = await getPet(userId, jid).catch(err => { console.error('[banhar] Erro ao buscar pet:', err); return null; });
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
+  if ((pet.hygiene ?? 100) >= 100) return reply(sock, jid, msg, `🧼 *${pet.name}* já está limpinho!`);
+  let item;
+  try { item = await consumirItemPet(userId, jid, ['shampoo', 'sabonete']); }
+  catch (err) { console.error('[banhar] Erro ao consumir higiene:', err); }
+  if (!item) return reply(sock, jid, msg, '❌ Você precisa de Shampoo Especial ou Sabonete Pet. Compre na *!lojapet*.');
+  const higiene = item.chave === 'shampoo' ? 70 : 40;
+  const atualizado = comTimestamp({ ...pet, hygiene: clamp((pet.hygiene ?? 0) + higiene), happiness: clamp((pet.happiness ?? 0) + 5) });
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) {
+    await devolverItemPet(userId, jid, item).catch(e => console.error('[banhar] Falha no estorno:', e));
+    return reply(sock, jid, msg, '❌ Não foi possível salvar o banho. O item foi devolvido quando possível.');
+  }
+  return replyWithPetImage(sock, jid, msg, atualizado, `🧼 *${atualizado.name}* tomou banho com ${textoItemPet(item.chave)}!\n✨ Higiene: *${atualizado.hygiene}%*\n😊 Felicidade: *${atualizado.happiness}%*`, { context: 'banhar' });
+}
+
+async function handleVacinarPet(sock, msg, jid) {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const pet = await getPet(userId, jid).catch(err => { console.error('[vacinar] Erro ao buscar pet:', err); return null; });
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
+  if ((pet.health ?? 100) >= 100 && pet.lastVaccinatedAt && Date.now() - new Date(pet.lastVaccinatedAt).getTime() < 30 * 24 * 60 * 60 * 1000) {
+    return reply(sock, jid, msg, `✅ *${pet.name}* já está saudável e vacinado recentemente.`);
+  }
+  let item;
+  try { item = await consumirItemPet(userId, jid, ['vacina']); }
+  catch (err) { console.error('[vacinar] Erro ao consumir vacina:', err); }
+  if (!item) return reply(sock, jid, msg, '❌ Você não tem Vacina! Compre na *!lojapet*.');
+  const atualizado = comTimestamp({ ...pet, health: clamp((pet.health ?? 100) + 45, 1), lastVaccinatedAt: new Date() });
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) {
+    await devolverItemPet(userId, jid, item).catch(e => console.error('[vacinar] Falha no estorno:', e));
+    return reply(sock, jid, msg, '❌ Não foi possível registrar a vacinação. O item foi devolvido quando possível.');
+  }
+  return replyWithPetImage(sock, jid, msg, atualizado, `💉 *${atualizado.name}* foi vacinado!\n❤️ Saúde: *${atualizado.health}%*\n📅 Vacinação registrada.`, { context: 'vacinar' });
+}
+
+async function handleEquiparPet(sock, msg, jid, caption = '') {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const chave = caption.replace(/^[!.,/]\s*equiparpet\s*/i, '').trim().toLowerCase().replace(/\s+/g, '');
+  const acessorios = ['coleira', 'coleiraouro', 'bandana', 'coroa'];
+  if (!acessorios.includes(chave)) return reply(sock, jid, msg, `⚠️ Informe um acessório: *${acessorios.join('*, *')}*.`);
+  const pet = await getPet(userId, jid).catch(() => null);
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
+  if ((pet.accessories || []).includes(chave)) return reply(sock, jid, msg, `🎀 *${pet.name}* já está usando ${textoItemPet(chave)}.`);
+  const item = await consumirItemPet(userId, jid, [chave]).catch(err => { console.error('[equiparpet] Erro no inventário:', err); return null; });
+  if (!item) return reply(sock, jid, msg, `❌ Você não possui ${textoItemPet(chave)} neste grupo. Compre na *!lojapet*.`);
+  const atualizado = comTimestamp({ ...pet, accessories: [...(pet.accessories || []), chave] });
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) {
+    await devolverItemPet(userId, jid, item).catch(e => console.error('[equiparpet] Falha no estorno:', e));
+    return reply(sock, jid, msg, '❌ Não foi possível equipar o acessório. O item foi devolvido quando possível.');
+  }
+  return replyWithPetImage(sock, jid, msg, atualizado, `🎀 *${pet.name}* agora está usando *${textoItemPet(chave)}*!\nAcessórios: ${(atualizado.accessories || []).map(textoItemPet).join(', ')}`, { context: 'equipar' });
+}
+
+async function handleDesequiparPet(sock, msg, jid, caption = '') {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const chave = caption.replace(/^[!.,/]\s*desequiparpet\s*/i, '').trim().toLowerCase().replace(/\s+/g, '');
+  const pet = await getPet(userId, jid).catch(() => null);
+  if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
+  const acessorios = pet.accessories || [];
+  const item = acessorios.find(a => a === chave || textoItemPet(a).toLowerCase() === chave);
+  if (!item) return reply(sock, jid, msg, `⚠️ *${pet.name}* não está usando esse acessório. Veja *!statuspet*.`);
+  const atualizado = comTimestamp({ ...pet, accessories: acessorios.filter(a => a !== item) });
+  try {
+    await savePet(userId, jid, atualizado);
+    await CarteiraGrupo.updateOne({ idWhatsApp: userId, idGrupo: jid }, { $inc: { [`itensPets.${item}`]: 1 } });
+  } catch (err) {
+    console.error('[desequiparpet] Erro:', err);
+    return reply(sock, jid, msg, '❌ Não foi possível devolver o acessório ao inventário.');
+  }
+  return reply(sock, jid, msg, `✅ *${textoItemPet(item)}* foi retirado de *${pet.name}* e devolvido ao inventário deste grupo.`);
+}
+
+async function handlePassearPet(sock, msg, jid) {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const espera = checkCooldown(`${userId}:${jid}`, 'passear', 60 * 60 * 1000);
+  if (espera > 0) return reply(sock, jid, msg, `⏳ *${formatarTempo(espera)}* para passear novamente.`);
+  const pet = await getPet(userId, jid).catch(err => { console.error('[passear] Erro:', err); return null; });
+  if (!pet?.name) { clearCooldown(`${userId}:${jid}`, 'passear'); return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.'); }
+  if ((pet.energy ?? 0) < 15 || (pet.fullness ?? 0) < 10) { clearCooldown(`${userId}:${jid}`, 'passear'); return reply(sock, jid, msg, `⚠️ *${pet.name}* precisa descansar ou comer antes do passeio.`); }
+  const { pet: comXp, desbloqueios } = aplicarExperienciaPet(pet, 25 * (pet.xpMult ?? 1));
+  const atualizado = comTimestamp({ ...comXp, energy: clamp(pet.energy - 10), fullness: clamp(pet.fullness - 5), happiness: clamp(pet.happiness + 12) });
+  const encontrou = Math.random() < 0.25;
+  try {
+    await savePet(userId, jid, atualizado);
+    if (encontrou) await CarteiraGrupo.updateOne({ idWhatsApp: userId, idGrupo: jid }, { $inc: { 'itensPets.racao': 1 } });
+  } catch (err) { console.error('[passear] Erro ao registrar passeio:', err); return reply(sock, jid, msg, '❌ Não foi possível concluir o passeio.'); }
+  return replyWithPetImage(sock, jid, msg, atualizado,
+    `🌳 Você passeou com *${atualizado.name}*!\n😊 Felicidade: *${atualizado.happiness}%*\n⚡ Energia: *${atualizado.energy}%*\n✨ XP: +25` +
+    (encontrou ? '\n🎁 Vocês encontraram uma Ração Normal no caminho!' : '') +
+    (desbloqueios.length ? `\n🔓 Habilidade${desbloqueios.length > 1 ? 's' : ''} desbloqueada${desbloqueios.length > 1 ? 's' : ''}: ${desbloqueios.join(', ')}` : ''),
+    { context: 'passear' }
+  );
+}
+
+async function handleTreinarPet(sock, msg, jid) {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const espera = checkCooldown(`${userId}:${jid}`, 'treinar', 30 * 60 * 1000);
+  if (espera > 0) return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para treinar novamente.`);
+  const pet = await getPet(userId, jid).catch(err => { console.error('[treinar] Erro:', err); return null; });
+  if (!pet?.name) { clearCooldown(`${userId}:${jid}`, 'treinar'); return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.'); }
+  if ((pet.energy ?? 0) < 25 || (pet.fullness ?? 0) < 15) { clearCooldown(`${userId}:${jid}`, 'treinar'); return reply(sock, jid, msg, `⚠️ *${pet.name}* precisa de energia e comida para treinar.`); }
+  const { pet: comXp, desbloqueios } = aplicarExperienciaPet(pet, 35 * (pet.xpMult ?? 1));
+  const atualizado = comTimestamp({ ...comXp, energy: clamp(pet.energy - 20), fullness: clamp(pet.fullness - 10), happiness: clamp(pet.happiness + 5) });
+  try { await savePet(userId, jid, atualizado); }
+  catch (err) { console.error('[treinar] Erro ao salvar:', err); return reply(sock, jid, msg, '❌ Não foi possível salvar o treino.'); }
+  return replyWithPetImage(sock, jid, msg, atualizado,
+    `🏋️ *${atualizado.name}* terminou o treino!\n🏆 Nível: *${atualizado.level}*\n✨ XP: *${atualizado.xp}*\n⚡ Energia: *${atualizado.energy}%*` +
+    (desbloqueios.length ? `\n🔓 Habilidade${desbloqueios.length > 1 ? 's' : ''} desbloqueada${desbloqueios.length > 1 ? 's' : ''}: ${desbloqueios.join(', ')}` : ''),
+    { context: 'treinar' }
+  );
+}
+
+async function handleVisitarPet(sock, msg, jid, caption = '') {
+  const alvoRaw = extrairMencao(msg, caption);
+  if (!alvoRaw) return reply(sock, jid, msg, '⚠️ Marque a pessoa cujo personagem deseja visitar. Exemplo: *!visitarpet @pessoa*');
+  const alvoId = await resolverJidCarteira(alvoRaw, jid);
+  const pet = await getPet(alvoId, jid).catch(err => { console.error('[visitarpet] Erro:', err); return null; });
+  if (!pet?.name) return reply(sock, jid, msg, '😕 Essa pessoa não tem um personagem ativo neste grupo.');
+  const nomeDono = await resolveDisplayName(alvoId, sock, {}, { fallback: 'Jogador' });
+  return replyWithPetImage(sock, jid, msg, pet,
+    `👋 Você visitou o personagem de *${nomeDono}*!\n🐾 *${pet.name}* (${pet.rarity ?? 'COMUM'})\n🏆 Nível ${pet.level ?? 1} • ${obterEstagioPet(pet)}\n😊 ${pet.happiness ?? 0}% • ⚡ ${pet.energy ?? 0}% • ❤️ ${pet.health ?? 100}%`,
+    { context: 'visitar' }
+  );
+}
+
+async function handleCompeticaoPet(sock, msg, jid, caption = '', modalidade = 'duelo') {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  const alvoRaw = extrairMencao(msg, caption);
+  if (!alvoRaw) return reply(sock, jid, msg, `⚠️ Marque um adversário. Exemplo: *!${modalidade === 'corrida' ? 'corridapet' : 'duelopet'} @pessoa*`);
+  const alvoId = await resolverJidCarteira(alvoRaw, jid);
+  if (!alvoId || alvoId === userId) return reply(sock, jid, msg, '⚠️ Você precisa desafiar outra pessoa do grupo.');
+
+  const cooldown = modalidade === 'corrida' ? 'corridapet' : 'duelopet';
+  const espera = checkCooldown(`${userId}:${jid}`, cooldown, 30 * 60 * 1000);
+  if (espera > 0) return reply(sock, jid, msg, `⏳ Aguarde *${formatarTempo(espera)}* para desafiar novamente.`);
+  const esperaAlvo = checkCooldown(`${alvoId}:${jid}`, cooldown, 30 * 60 * 1000);
+  if (esperaAlvo > 0) { clearCooldown(`${userId}:${jid}`, cooldown); return reply(sock, jid, msg, '⏳ Essa pessoa acabou de participar de uma competição. Tente mais tarde.'); }
+
+  const [petA, petB] = await Promise.all([
+    getPet(userId, jid).catch(() => null),
+    getPet(alvoId, jid).catch(() => null),
+  ]);
+  if (!petA?.name || !petB?.name) {
+    clearCooldown(`${userId}:${jid}`, cooldown);
+    clearCooldown(`${alvoId}:${jid}`, cooldown);
+    return reply(sock, jid, msg, '⚠️ Os dois jogadores precisam ter um personagem ativo neste grupo.');
+  }
+
+  const sorteio = () => Math.random() * 25;
+  const pontos = pet => modalidade === 'corrida'
+    ? (pet.energy ?? 0) + (pet.happiness ?? 0) * 0.25 + (pet.level ?? 1) * 1.5 + sorteio()
+    : (pet.level ?? 1) * 2 + (pet.health ?? 100) * 0.25 + (pet.energy ?? 0) * 0.15 + (pet.happiness ?? 0) * 0.1 + sorteio();
+  const venceA = pontos(petA) >= pontos(petB);
+  const vencedor = venceA ? petA : petB;
+  const perdedor = venceA ? petB : petA;
+  const donoVencedor = venceA ? userId : alvoId;
+  const donoPerdedor = venceA ? alvoId : userId;
+  const { pet: vencedorXp, desbloqueios } = aplicarExperienciaPet(vencedor, modalidade === 'corrida' ? 35 : 40);
+  const vencedorFinal = comTimestamp({ ...vencedorXp, happiness: clamp(vencedor.happiness + 8) });
+  const perdedorFinal = comTimestamp({ ...perdedor, energy: clamp(perdedor.energy - 8) });
+  try {
+    await savePet(donoVencedor, jid, vencedorFinal);
+    await savePet(donoPerdedor, jid, perdedorFinal);
+  } catch (err) {
+    console.error(`[${cooldown}] Falha ao salvar resultado:`, err);
+    return reply(sock, jid, msg, '❌ A competição terminou, mas não consegui salvar o resultado.');
+  }
+  const nomeVencedor = await resolveDisplayName(donoVencedor, sock, {}, { fallback: 'Vencedor' });
+  const tipo = modalidade === 'corrida' ? 'CORRIDA DE PETS' : 'DUELO DE PETS';
+  return replyWithPetImage(sock, jid, msg, vencedorFinal,
+    `🏆 *${tipo}*\n\n🥇 *${nomeVencedor}* venceu com *${vencedor.name}*!\n🆚 ${petA.name} vs. ${petB.name}\n✨ O vencedor ganhou experiência.\n⚡ O outro personagem gastou um pouco de energia.` +
+    (desbloqueios.length ? `\n🔓 Habilidade desbloqueada: ${desbloqueios.join(', ')}` : ''),
+    { context: cooldown }
+  );
+}
+
+async function handleDueloPet(sock, msg, jid, caption = '') {
+  return handleCompeticaoPet(sock, msg, jid, caption, 'duelo');
+}
+
+async function handleCorridaPet(sock, msg, jid, caption = '') {
+  return handleCompeticaoPet(sock, msg, jid, caption, 'corrida');
 }
 
 // !renomearpet / !nomearpet <nome>
@@ -826,12 +1067,7 @@ async function handleRenomearPet(sock, msg, jid, caption) {
   petCache.delete(`${userId}:${jid}`);
 
   try {
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo: jid },
-      { $set: { pet: petAtualizado } },
-      { upsert: true }
-    );
-    petCache.set(`${userId}:${jid}`, petAtualizado);
+    await savePet(userId, jid, petAtualizado);
   } catch (err) {
     console.error('[renomear] Erro ao salvar pet:', err);
     petCache.set(`${userId}:${jid}`, pet);
@@ -933,33 +1169,66 @@ const membrosAtuais = new Set(
   }
 }
 
-// !pets
+// !pets — coleção particular do jogador neste grupo
 async function handlePets(sock, msg, jid, caption = '') {
+  const userId = await getUserId(msg, jid);
+  if (!userId) return;
+  try {
+    const colecao = await getPetCollection(userId, jid);
+    if (!colecao.length) {
+      return reply(sock, jid, msg,
+        `🎒 *SUA COLEÇÃO DE PERSONAGENS*\n\nVocê ainda não capturou nenhum personagem neste grupo.\n\n` +
+        `Use *!personagens* para ver o catálogo e *!capturar* quando um aparecer.`
+      );
+    }
+
+    const carteira = await getCarteira(userId, jid);
+    const ativoId = carteira?.pet?.petId;
+    let texto = `🎒 *SUA COLEÇÃO — ESTE GRUPO* (${colecao.length})\n━━━━━━━━━━━━━━━━━━\n\n`;
+    for (const [i, pet] of colecao.entries()) {
+      const def = getPersonagem(pet);
+      const raridade = RARITY_EMOJI[pet.rarity] ?? '⭐';
+      const ativo = pet.petId === ativoId;
+      texto += `${i + 1}. ${def.emoji} *${pet.name}* ${raridade}${ativo ? ' ✅ _ativo_' : ''}\n`;
+      texto += `   └ ${pet.rarity ?? 'COMUM'} • Nível ${pet.level ?? 1} • ${obterEstagioPet(pet)}\n`;
+      texto += `   └ 😊 ${pet.happiness ?? 0}% • ⚡ ${pet.energy ?? 0}% • ❤️ ${pet.health ?? 100}%\n`;
+      if (!ativo) texto += `   └ 📌 _!petselecionar ${pet.name.includes(' ') ? `"${pet.name}"` : pet.name}_\n`;
+      texto += '\n';
+    }
+    texto += `━━━━━━━━━━━━━━━━━━\n`;
+    texto += `📌 Para trocar o personagem ativo: *!petselecionar <nome>*\n`;
+    texto += `🌿 Para ver todos os personagens existentes: *!personagens*`;
+    return reply(sock, jid, msg, texto);
+  } catch (err) {
+    console.error('[pets:colecao] Erro ao carregar coleção:', err);
+    return reply(sock, jid, msg, '⚠️ Não foi possível carregar sua coleção agora. Tente novamente.');
+  }
+}
+
+// !personagens — catálogo de espécies/personagens que podem surgir
+async function handleCatalogoPersonagens(sock, msg, jid, caption = '') {
   const prefixMatch = caption.match(/^([!.,/])/);
-  const prefix      = prefixMatch ? prefixMatch[1] : '!';
-
+  const prefix = prefixMatch ? prefixMatch[1] : '!';
   const grupos = { 'PERSONAGENS (RARIDADE ALEATÓRIA)': PERSONAGENS.map(p => `  🐾 *${p.nome}*`) };
-
-  // Mostra o spawn ativo do grupo, se houver
-  const spawnAtivo  = getSpawnAtivo(jid);
-  const spawnAviso  = spawnAtivo
-    ? `\n🌿 *UM PET ESTÁ APARECIDO AGORA!* Use *${prefix}capturar* rápido!\n`
+  const spawnAtivo = getSpawnAtivo(jid);
+  const spawnAviso = spawnAtivo
+    ? `\n🌿 *UM PERSONAGEM ESTÁ APARECIDO AGORA!* Use *${prefix}capturar* rápido!\n`
     : '';
-
-  let texto = `🎭 *PERSONAGENS* 🎭\n${spawnAviso}\n`;
-
+  let texto = `🎭 *CATÁLOGO DE PERSONAGENS* 🎭${spawnAviso}\n`;
   for (const [rar, lista] of Object.entries(grupos)) {
-    if (!lista.length) continue; // omite raridade sem nenhum pet
+    if (!lista.length) continue;
     texto += `🎲 *${rar}* (${lista.length})\n${lista.join('\n')}\n\n`;
   }
-
-  texto += `💡 _Um pet selvagem aparece a cada hora. Use *${prefix}capturar* na hora certa!_`;
-
+  texto += `💡 _Um personagem pode surgir a cada 30 minutos, quando os spawns estão ativados no grupo._`;
   return reply(sock, jid, msg, texto);
 }
 
 // handleAbrigo — !abrigo deixar / !abrigo <nome> pegar
 async function handleAbrigo(sock, msg, jid, caption = '') {
+  if (!jid?.endsWith('@g.us')) {
+    return reply(sock, jid, msg, '⚠️ O abrigo de personagens só pode ser usado em grupos.');
+  }
+
   const userId = await getUserId(msg, jid);
   if (!userId) return;
 
@@ -967,11 +1236,122 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
   const prefix = prefixMatch ? prefixMatch[1] : '!';
 
   const args = caption
-    .replace(/^[!.,/]?abrigo\s*/i, '')
+    .replace(/^[!.,/]?(?:abrigo|shelter)\s*/i, '')
     .trim()
     .split(/\s+/)
     .filter(Boolean)
     .map(s => s.toLowerCase());
+
+  try {
+    await Promise.all([
+      limparPetsExpiradosDoAbrigo(CarteiraGrupo),
+      limparPetsExpiradosDoAbrigo(Usuario), // limpa apenas registros globais antigos, ainda não migrados
+    ]);
+  } catch (err) {
+    logError('abrigo', err, 'Falha ao expirar personagens antigos');
+    return reply(sock, jid, msg, '⚠️ Não foi possível atualizar o abrigo agora. Tente novamente!');
+  }
+
+  // ── !abrigo migrar — trazer o antigo abrigo global para este grupo ─────────
+  if (args[0] === 'migrar') {
+    let legado;
+    try {
+      legado = await Usuario.findOne({
+        idWhatsApp: userId,
+        'petShelter.isSheltered': true,
+        'petShelter.shelteredPet.name': { $exists: true },
+      }).select('petShelter').lean();
+    } catch (err) {
+      console.error('[abrigo:migrar] Erro ao buscar abrigo legado:', err);
+      return reply(sock, jid, msg, '❌ Não foi possível consultar seu abrigo antigo. Tente novamente!');
+    }
+
+    const petLegado = legado?.petShelter?.shelteredPet;
+    if (!petLegado?.name) {
+      return reply(sock, jid, msg, 'ℹ️ Você não tem personagem guardado no abrigo antigo para migrar.');
+    }
+
+    const leftAtLegado = legado.petShelter.leftAt ? new Date(legado.petShelter.leftAt) : new Date();
+    if (!Number.isFinite(leftAtLegado.getTime()) || Date.now() - leftAtLegado.getTime() >= ABRIGO_TEMPO_MAXIMO_MS) {
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId, 'petShelter.isSheltered': true, 'petShelter.shelteredPet.name': petLegado.name },
+        { $set: { 'petShelter.isSheltered': false, 'petShelter.shelteredPet': null, 'petShelter.leftAt': null } }
+      );
+      return reply(sock, jid, msg, '⌛ Seu personagem do abrigo antigo já ultrapassou os 20 minutos e expirou.');
+    }
+
+    let carteira;
+    try {
+      carteira = await getCarteira(userId, jid);
+    } catch (err) {
+      console.error('[abrigo:migrar] Erro ao resolver carteira do grupo:', err);
+      return reply(sock, jid, msg, '❌ Não foi possível abrir a carteira deste grupo. Tente novamente!');
+    }
+
+    if (carteira?.pet?.name) {
+      return reply(sock, jid, msg, `⚠️ Você já tem *${carteira.pet.name}* ativo neste grupo. Use *${prefix}abrigo deixar* ou libere-o antes de migrar.`);
+    }
+    if (carteira?.petShelter?.isSheltered && carteira.petShelter.shelteredPet?.name) {
+      return reply(sock, jid, msg, `⚠️ Você já tem *${carteira.petShelter.shelteredPet.name}* no abrigo deste grupo.`);
+    }
+
+    let retiradoDoLegado;
+    try {
+      retiradoDoLegado = await Usuario.findOneAndUpdate(
+        {
+          idWhatsApp: userId,
+          'petShelter.isSheltered': true,
+          'petShelter.shelteredPet.name': petLegado.name,
+          'petShelter.leftAt': legado.petShelter.leftAt ?? null,
+        },
+        { $set: { 'petShelter.isSheltered': false, 'petShelter.shelteredPet': null, 'petShelter.leftAt': null } },
+        { new: true }
+      );
+    } catch (err) {
+      console.error('[abrigo:migrar] Erro ao reservar personagem antigo:', err);
+      return reply(sock, jid, msg, '❌ Não foi possível reservar seu personagem antigo. Tente novamente!');
+    }
+
+    if (!retiradoDoLegado) {
+      return reply(sock, jid, msg, '⚠️ Seu abrigo antigo foi alterado por outra ação. Consulte novamente.');
+    }
+
+    try {
+      const salvo = await CarteiraGrupo.findOneAndUpdate(
+        {
+          _id: carteira._id,
+          idGrupo: jid,
+          'pet.name': { $in: [null, ''] },
+          'petShelter.isSheltered': { $ne: true },
+        },
+        {
+          $set: {
+            petShelter: {
+              isSheltered: true,
+              shelteredPet: petLegado,
+              leftAt: leftAtLegado,
+            },
+          },
+        },
+        { new: true }
+      );
+      if (!salvo) throw new Error('A carteira do grupo mudou durante a migração.');
+    } catch (err) {
+      console.error('[abrigo:migrar] Erro ao salvar personagem no grupo:', err);
+      await Usuario.findOneAndUpdate(
+        { idWhatsApp: userId, 'petShelter.isSheltered': false, 'petShelter.shelteredPet': null },
+        { $set: { petShelter: legado.petShelter } }
+      ).catch(rollbackError => console.error('[abrigo:migrar] Falha ao restaurar o abrigo antigo:', rollbackError));
+      return reply(sock, jid, msg, '❌ Não foi possível migrar o personagem. O abrigo antigo foi restaurado; tente novamente.');
+    }
+
+    return reply(sock, jid, msg,
+      `✅ *PERSONAGEM MIGRADO!*\n\n` +
+      `🐾 *${petLegado.name}* agora está no abrigo deste grupo.\n` +
+      `⏳ O prazo original de 20 minutos foi preservado.\n\n` +
+      `Use *${prefix}abrigo* para consultar ou *${prefix}abrigo ${petLegado.name.includes(' ') ? `\"${petLegado.name}\"` : petLegado.name} pegar* para resgatar.`
+    );
+  }
 
   // ── !abrigo deixar ───────────────────────────────────────────────────────────
   if (args[0] === 'deixar') {
@@ -989,54 +1369,55 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       );
     }
 
-    // Verifica se já tem um pet no abrigo
+    let carteira;
     try {
-      const jaNoAbrigo = await Usuario.findOne({
-        idWhatsApp: userId,
-        'petShelter.isSheltered': true,
-        'petShelter.shelteredPet.name': { $exists: true },
-      }).lean();
-
-      if (jaNoAbrigo?.petShelter?.shelteredPet?.name) {
-        const nomePetAbrigo = jaNoAbrigo.petShelter.shelteredPet.name;
-        const nomeCmdResgatar = nomePetAbrigo.includes(' ') ? `"${nomePetAbrigo}"` : nomePetAbrigo;
-        return reply(sock, jid, msg,
-          `⚠️ Você já tem *${nomePetAbrigo}* no abrigo!\n\n` +
-          `_Resgate-o primeiro com: *${prefix}abrigo ${nomeCmdResgatar} pegar*_`
-        );
-      }
+      carteira = await getCarteira(userId, jid);
+      pet = petParaObjeto(carteira?.pet) ?? pet;
     } catch (err) {
-      console.error('[abrigo:deixar] Erro ao verificar abrigo:', err);
+      console.error('[abrigo:deixar] Erro ao resolver carteira do grupo:', err);
+      return reply(sock, jid, msg, '❌ Erro interno ao verificar seu abrigo. Tente novamente!');
     }
 
-    petCache.delete(`${userId}:${jid}`);
+    if (carteira?.petShelter?.isSheltered && carteira.petShelter.shelteredPet?.name) {
+      const nomePetAbrigo = carteira.petShelter.shelteredPet.name;
+      const nomeCmdResgatar = nomePetAbrigo.includes(' ') ? `"${nomePetAbrigo}"` : nomePetAbrigo;
+      return reply(sock, jid, msg,
+        `⚠️ Você já tem *${nomePetAbrigo}* no abrigo deste grupo!\n\n` +
+        `_Resgate-o primeiro com: *${prefix}abrigo ${nomeCmdResgatar} pegar*_`
+      );
+    }
 
     try {
-      await CarteiraGrupo.findOneAndUpdate(
-        { idWhatsApp: userId, idGrupo: jid },
-        { $unset: { pet: '' } }
-      );
-      const resultado = await Usuario.findOneAndUpdate(
-        { idWhatsApp: userId },
+      const petsRestantes = Array.from(carteira.pets || [])
+        .map(petParaObjeto)
+        .filter(p => p?.name && !mesmaIdentidadePet(p, pet));
+      const resultado = await CarteiraGrupo.findOneAndUpdate(
+        {
+          _id: carteira._id,
+          idGrupo: jid,
+          'pet.name': pet.name,
+          'petShelter.isSheltered': { $ne: true },
+        },
         {
           $set: {
-            'petShelter.isSheltered':   true,
-            'petShelter.shelteredPet':  pet,
-            'petShelter.leftAt':        new Date().toISOString(),
-            'petShelter.ownerId':       userId,
-            'petShelter.idGrupoOrigem': jid,
+            pet: petsRestantes[0] || null,
+            pets: petsRestantes,
+            petShelter: {
+              isSheltered: true,
+              shelteredPet: pet,
+              leftAt: new Date(),
+            },
           },
         },
         { new: true }
       );
 
       if (!resultado) {
-        petCache.set(`${userId}:${jid}`, pet);
-        return reply(sock, jid, msg, '⚠️ Usuário não encontrado no banco de dados.');
+        return reply(sock, jid, msg, '⚠️ Seu personagem mudou enquanto era enviado ao abrigo. Consulte *!statuspet* e tente novamente.');
       }
+      petCache.delete(`${userId}:${jid}`);
     } catch (err) {
-      petCache.set(`${userId}:${jid}`, pet);
-      console.error('[abrigo:deixar] Erro ao salvar no banco:', err);
+      console.error('[abrigo:deixar] Erro ao salvar no abrigo do grupo:', err);
       return reply(sock, jid, msg, '❌ Erro interno ao enviar pet ao abrigo. Tente novamente!');
     }
 
@@ -1051,7 +1432,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       `😊 Felicidade *${pet.happiness ?? 0}%* | ⚡ Energia *${pet.energy ?? 0}%* | 🍽️ Fome *${pet.fullness ?? 0}%*\n\n` +
       `📋 Para ver o abrigo: *${prefix}abrigo*\n` +
       `🔄 Para resgatar: *${prefix}abrigo ${nomeCmdPegar} pegar*\n\n` +
-      `💡 _Qualquer pessoa pode adotar seu pet enquanto ele estiver no abrigo!_`
+      `💡 _Qualquer pessoa pode adotá-lo nos próximos 20 minutos. Depois disso, ele será removido do abrigo._`
     );
   }
 
@@ -1059,17 +1440,25 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
   if (args.length >= 2 && args[args.length - 1] === 'pegar') {
     // Reconstrói o nome preservando capitalização original (antes do .toLowerCase())
     const nomeBusca = caption
-      .replace(/^[!.,/]?abrigo\s*/i, '')
+      .replace(/^[!.,/]?(?:abrigo|shelter)\s*/i, '')
       .trim()
       .replace(/\s+pegar$/i, '')
+      .trim()
+      .replace(/^['"]|['"]$/g, '')
       .trim();
 
     let alvo;
     try {
-      alvo = await Usuario.findOne({
-        'petShelter.isSheltered': true,
-        'petShelter.shelteredPet.name': { $regex: new RegExp(nomeBusca, 'i') },
-      }).lean();
+      const candidatos = await CarteiraGrupo.find(filtroAbrigoDoGrupo(jid))
+        .select('idWhatsApp petShelter')
+        .lean();
+      const normalizarNome = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const exatos = candidatos.filter(c => normalizarNome(c.petShelter?.shelteredPet?.name) === normalizarNome(nomeBusca));
+      const parciais = candidatos.filter(c => normalizarNome(c.petShelter?.shelteredPet?.name).includes(normalizarNome(nomeBusca)));
+      alvo = exatos[0] || (parciais.length === 1 ? parciais[0] : null);
+      if (!exatos.length && parciais.length > 1) {
+        return reply(sock, jid, msg, `⚠️ Há mais de um personagem parecido com *${nomeBusca}*. Informe o nome completo que aparece em *!abrigo*.`);
+      }
     } catch (err) {
       console.error('[abrigo:pegar] Erro ao buscar no banco:', err);
       return reply(sock, jid, msg, '❌ Erro interno ao buscar no abrigo. Tente novamente!');
@@ -1079,7 +1468,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       // Lista os pets disponíveis para ajudar o usuário
       let sugestoes = '';
       try {
-        const disponiveis = await Usuario.find({ 'petShelter.isSheltered': true })
+        const disponiveis = await CarteiraGrupo.find(filtroAbrigoDoGrupo(jid))
           .select('petShelter.shelteredPet.name petShelter.shelteredPet.type petShelter.shelteredPet.rarity')
           .lean();
         const nomes = disponiveis
@@ -1106,36 +1495,35 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       );
     }
 
-    // Verifica se o usuário já tem um pet ativo
-    let petAtual;
-    try {
-      petAtual = await getPet(userId, jid);
-    } catch (err) {
-      console.error('[abrigo:pegar] Erro ao buscar pet atual:', err);
+    // Adoção acrescenta à coleção; o personagem ativo atual não é substituído.
+    try { await getCarteira(userId, jid); }
+    catch (err) {
+      console.error('[abrigo:pegar] Erro ao buscar carteira do adotante:', err);
       return reply(sock, jid, msg, '❌ Erro interno. Tente novamente!');
-    }
-
-    if (petAtual?.name) {
-      return reply(sock, jid, msg,
-        `⚠️ Você já tem *${petAtual.name}*!\n\n` +
-        `Use *${prefix}abrigo deixar* antes de adotar outro.`
-      );
     }
 
     const petAdotado   = alvo.petShelter.shelteredPet;
     const donoOriginal = alvo.idWhatsApp;
-    const ehSeuProprio = donoOriginal === userId;
+    const donoResolvido = await resolverJidCarteira(donoOriginal, jid);
+    const ehSeuProprio = donoResolvido === userId;
 
     // Trava otimista: marca como não-sheltered antes de salvar no adotante
     // para evitar adoções duplas simultâneas
     let liberou;
     try {
-      liberou = await Usuario.findOneAndUpdate(
-        { idWhatsApp: donoOriginal, 'petShelter.isSheltered': true },
+      liberou = await CarteiraGrupo.findOneAndUpdate(
+        {
+          _id: alvo._id,
+          ...filtroAbrigoDoGrupo(jid),
+          'petShelter.shelteredPet.name': petAdotado.name,
+        },
         {
           $set: {
-            'petShelter.isSheltered':  false,
-            'petShelter.shelteredPet': null,
+            petShelter: {
+              isSheltered: false,
+              shelteredPet: null,
+              leftAt: null,
+            },
           },
         },
         { new: true }
@@ -1153,14 +1541,22 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
     }
 
     try {
-      await savePet(userId, jid, petAdotado);
+      await addPetToCollection(userId, jid, petAdotado, { activateIfEmpty: true });
     } catch (err) {
       console.error('[abrigo:pegar] Erro ao salvar pet adotado:', err);
       // Rollback: restaura o pet no abrigo do dono original se falhar ao salvar no adotante
       try {
-        await Usuario.findOneAndUpdate(
-          { idWhatsApp: donoOriginal },
-          { $set: { 'petShelter.isSheltered': true, 'petShelter.shelteredPet': petAdotado } }
+        await CarteiraGrupo.findOneAndUpdate(
+          { _id: alvo._id, idGrupo: jid, 'petShelter.isSheltered': false },
+          {
+            $set: {
+              petShelter: {
+                isSheltered: true,
+                shelteredPet: petAdotado,
+                leftAt: alvo.petShelter.leftAt,
+              },
+            },
+          }
         );
       } catch (rbErr) {
         console.error('[abrigo:pegar] Erro no rollback:', rbErr);
@@ -1181,14 +1577,14 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
         `🏆 Nível *${petAdotado.level ?? 1}* | ✨ XP *${petAdotado.xp ?? 0}*\n` +
         `😊 Felicidade *${petAdotado.happiness ?? 0}%* | ⚡ Energia *${petAdotado.energy ?? 0}%*\n` +
         `${dono}\n\n` +
-        `Use *${prefix}statuspet* para ver os atributos completos.`,
+        `O personagem foi adicionado à sua coleção. Use *${prefix}petselecionar ${petAdotado.name.includes(' ') ? `\"${petAdotado.name}\"` : petAdotado.name}* para ativá-lo; *${prefix}statuspet* mostra o personagem ativo.`,
       { context: 'abrigo' }
     );
   }
 
   // ── !abrigo (listagem) ───────────────────────────────────────────────────────
   try {
-    const lista = await Usuario.find({ 'petShelter.isSheltered': true })
+    const lista = await CarteiraGrupo.find(filtroAbrigoDoGrupo(jid))
       .select('idWhatsApp petShelter')
       .lean();
 
@@ -1199,7 +1595,8 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return reply(sock, jid, msg,
         `🏥 *ABRIGO DE PETS*\n\n` +
         `😔 O abrigo está vazio no momento!\n\n` +
-        `💡 Deixe seu pet com: *${prefix}abrigo deixar*`
+        `💡 Deixe seu pet com: *${prefix}abrigo deixar*\n` +
+        `_Tinha um personagem no abrigo antigo? Use *${prefix}abrigo migrar* neste grupo._`
       );
     }
 
@@ -1210,7 +1607,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       return 0;
     });
 
-    let texto = '🏥 *ABRIGO DE PETS* — ' + validos.length + ' pet(s)\n━━━━━━━━━━━━━━━━━━\n\n';
+    let texto = '🏥 *ABRIGO DE PETS DESTE GRUPO* — ' + validos.length + ' pet(s)\n⏳ Permanência máxima: *20 minutos*\n━━━━━━━━━━━━━━━━━━\n\n';
 
     for (const [i, u] of validos.entries()) {
       const p = u.petShelter.shelteredPet;
@@ -1499,6 +1896,22 @@ function initPetScheduler(sock) {
         console.warn('[PetScheduler] Não foi possível atualizar grupos; mantendo a lista em cache:', err.message);
       }
     }
+
+    // Expira personagens do abrigo a cada ciclo, mesmo quando não há grupos
+    // ativos ou quando os spawns automáticos estão na pausa noturna.
+    try {
+      const [removidosAbrigo, removidosAbrigoLegado] = await Promise.all([
+        limparPetsExpiradosDoAbrigo(CarteiraGrupo),
+        limparPetsExpiradosDoAbrigo(Usuario),
+      ]);
+      const totalRemovidos = removidosAbrigo + removidosAbrigoLegado;
+      if (totalRemovidos > 0) {
+        console.log(`[PetScheduler] Abrigo: ${totalRemovidos} personagem(ns) expirado(s) após 20 minutos.`);
+      }
+    } catch (err) {
+      console.error('[PetScheduler] Falha ao limpar personagens expirados do abrigo:', err.message);
+    }
+
     const total = activeGroups.size;
 
     if (total === 0) {
@@ -1654,6 +2067,8 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
   if ((pet.fullness  ?? 0) <= 20) alertas.push(`🍽️ _${pet.name} está com fome! Use *${prefix}alimentar*._`);
   if ((pet.energy    ?? 0) <= 20) alertas.push(`⚡ _${pet.name} está sem energia! Use *${prefix}curar*._`);
   if ((pet.happiness ?? 0) <= 20) alertas.push(`😟 _${pet.name} está triste! Use *${prefix}brincar*._`);
+  if ((pet.health ?? 100) <= 30) alertas.push(`❤️ _${pet.name} está com a saúde baixa! Use *${prefix}curar* ou *${prefix}vacinar*._`);
+  if ((pet.hygiene ?? 100) <= 25) alertas.push(`🧼 _${pet.name} precisa de um banho! Use *${prefix}banhar*._`);
 
   const alertaTexto = alertas.length > 0
     ? `\n⚠️ *AVISOS URGENTES:*\n${alertas.join('\n')}\n`
@@ -1673,6 +2088,7 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
     `🐾 *${PET_SYSTEM[pet.type] ? (pet.name || def.nome) : def.nome}* ${re}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `📋 *Tipo    :* ${def.nome} (${pet.rarity ?? '?'})\n` +
+    `🌱 *Estágio :* ${obterEstagioPet(pet)}\n` +
     `🎭 *Humor   :* ${humor}\n` +
     `🏆 *Nível   :* ${nivel}/${CONFIG.NIVEL_MAX}\n` +
     `✨ *XP      :* ${xpBar}\n` +
@@ -1681,6 +2097,8 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
     `😊 *Felicidade*\n${barraAtributo(pet.happiness)}\n` +
     `⚡ *Energia*\n${barraAtributo(pet.energy)}\n` +
     `🍽️ *Fome*\n${barraAtributo(pet.fullness)}\n` +
+    `❤️ *Saúde*\n${barraAtributo(pet.health ?? 100)}\n` +
+    `🧼 *Higiene*\n${barraAtributo(pet.hygiene ?? 100)}\n` +
     `━━━━━━━━━━━━━━━━━━\n` +
     `⏱️ *Cooldowns:*\n` +
     `  🍖 Alimentar : ${cdAlimentar}\n` +
@@ -1691,7 +2109,10 @@ async function handleStatusPet(sock, msg, jid, caption = '') {
     (alertaTexto ? '' : '\n') +
     `📌 *Comandos:*\n` +
     `  *${prefix}alimentar* | *${prefix}brincar* | *${prefix}curar*\n` +
-    `  *${prefix}renomearpet* | *${prefix}abrigo deixar*`;
+    `  *${prefix}banhar* | *${prefix}vacinar* | *${prefix}passear* | *${prefix}treinar*\n` +
+    `  *${prefix}equiparpet* | *${prefix}desequiparpet* | *${prefix}petselecionar*\n` +
+    `  *${prefix}renomearpet* | *${prefix}abrigo deixar*` +
+    (pet.accessories?.length ? `\n🎀 *Acessórios:* ${pet.accessories.map(textoItemPet).join(', ')}` : '');
   return sock.sendMessage(jid, { image: getPetImage(def), caption: statusTexto }, { quoted: msg });
 }
 
@@ -1826,8 +2247,19 @@ module.exports = {
   handleBrincarPet,
   handleCurarPet,
   handleRenomearPet,
+  handleSelecionarPet,
+  handleBanharPet,
+  handleVacinarPet,
+  handleEquiparPet,
+  handleDesequiparPet,
+  handlePassearPet,
+  handleTreinarPet,
+  handleVisitarPet,
+  handleDueloPet,
+  handleCorridaPet,
   handlePetRank,
   handlePets,
+  handleCatalogoPersonagens,
   handleAbrigo,
   handleStatusPet,
   handlePetToggle,

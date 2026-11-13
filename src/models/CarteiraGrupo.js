@@ -29,6 +29,40 @@ const emprestimoSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const petShelterSchema = new mongoose.Schema(
+  {
+    isSheltered:  { type: Boolean, default: false },
+    shelteredPet: { type: mongoose.Schema.Types.Mixed, default: null },
+    leftAt:       { type: Date, default: null },
+  },
+  { _id: false }
+);
+
+const petSchema = new mongoose.Schema(
+  {
+    petId:           { type: String, default: null, trim: true },
+    type:            { type: String, default: null },
+    name:            { type: String, default: null, trim: true },
+    rarity:          { type: String, default: null },
+    xpMult:          { type: Number, default: 1, min: 0 },
+    pontMult:        { type: Number, default: 1, min: 0 },
+    level:           { type: Number, default: 1, min: 1 },
+    xp:              { type: Number, default: 0, min: 0 },
+    happiness:       { type: Number, default: 60, min: 0, max: 100 },
+    energy:          { type: Number, default: 80, min: 0, max: 100 },
+    fullness:        { type: Number, default: 80, min: 0, max: 100 },
+    health:          { type: Number, default: 100, min: 1, max: 100 },
+    hygiene:         { type: Number, default: 100, min: 0, max: 100 },
+    accessories:     { type: [String], default: () => [] },
+    skills:          { type: [String], default: () => [] },
+    capturedAt:      { type: Date, default: null },
+    lastInteraction: { type: Date, default: null },
+    lastNeedsUpdate: { type: Date, default: null },
+    lastVaccinatedAt:{ type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const pescaStatsSchema = new mongoose.Schema(
   {
     totalPescados:  { type: Number, default: 0, min: 0 },
@@ -147,21 +181,11 @@ const carteiraGrupoSchema = new mongoose.Schema(
     itensPets: { type: Map, of: { type: Number, min: 0 }, default: {} },
 
     // ── Pet ativo (isolado por grupo) ────────────────────────
-    pet: {
-      type: new mongoose.Schema({
-        type:            { type: String,  default: null },
-        name:            { type: String,  default: null, trim: true },
-        rarity:          { type: String,  default: null },
-        level:           { type: Number,  default: 1,    min: 1 },
-        xp:              { type: Number,  default: 0,    min: 0 },
-        happiness:       { type: Number,  default: 60,   min: 0, max: 100 },
-        energy:          { type: Number,  default: 80,   min: 0, max: 100 },
-        fullness:        { type: Number,  default: 80,   min: 0, max: 100 },
-        capturedAt:      { type: Date,    default: null },
-        lastInteraction: { type: Date,    default: null },
-      }, { _id: false }),
-      default: null,
-    },
+    pet: { type: petSchema, default: null },
+    // Coleção de personagens pertencentes ao jogador neste grupo.
+    pets: { type: [petSchema], default: () => [] },
+    // ── Abrigo de personagens (isolado por grupo) ───────────────
+    petShelter: { type: petShelterSchema, default: () => ({}) },
 
     // ── Empréstimo ───────────────────────────────────────────────
     emprestimo: { type: emprestimoSchema, default: () => ({}) },
@@ -209,6 +233,7 @@ carteiraGrupoSchema.index({ idGrupo: 1, gold: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, xp: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, mensagens: -1 });
 carteiraGrupoSchema.index({ idGrupo: 1, quizPoints: -1 });
+carteiraGrupoSchema.index({ idGrupo: 1, 'petShelter.isSheltered': 1, 'petShelter.leftAt': 1 });
 
 // ─── Fórmulas de XP / Nível (fonte única de verdade) ──────────────────────────
 // XP total necessário para ALCANÇAR um determinado nível.

@@ -30,7 +30,8 @@ const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils'
 
 const COOLDOWN_ROUBO_MS  = 15 * 60 * 1000; // 15 minutos entre tentativas
 const COOLDOWN_PRESO_MS  = 2 * 60 * 60 * 1000; // 2 horas preso se falhar
-const COOLDOWN_POLICIA_MS = 30 * 60 * 1000; // 30 min pra chamar polícia de novo
+const COOLDOWN_POLICIA_MS = 15 * 60 * 1000; // 15 min pra chamar polícia de novo
+const JANELA_DENUNCIA_POLICIA_MS = 15 * 60 * 1000; // 15 min após o roubo para chamar a polícia
 const IMUNIDADE_ROUBO_MS  = 2 * 60 * 60 * 1000; // 2h de imunidade após ser roubado
 const TAXA_SUCESSO_BASE  = 50;
 const TAXA_MIN           = 5;
@@ -822,7 +823,7 @@ async function handleRoubar(sock, msg, jid) {
       `😢 *Saldo da vítima:* ${formatarSaldo(carteiraVitimaAtualizada.gold, carteiraVitimaAtualizada)}\n` +
       `🗑️ *Item consumido:* ${itemAtaque.nome}\n` +
       (itemDefesa ? `🛡️ *Defesa da vítima consumida:* ${itemDefesa.nome}\n` : ``) +
-      `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
+      `💡 A vítima tem *15 minutos* para usar *!policia @você*!`;
   } else {
     // ── Roubo fracassado — vai preso ────────────────────────────────────────
     await CarteiraGrupo.findOneAndUpdate(
@@ -924,8 +925,12 @@ async function handlePolicia(sock, msg, jid) {
     getCarteira(ladrao,   idGrupo),
   ]);
 
-  // ── Verificar janela de roubo (imunidade) ─────────────────────────────────
-  const imunidadeAte = _tsOuZero(carteiraVitima.imunidadeRouboAte);
+  // ── Verificar prazo para denunciar o roubo ─────────────────────────────────
+  const ultimoRouboEm = _tsOuZero(carteiraVitima.lastRobbedAt);
+  const dentroDaJanelaDenuncia =
+    ultimoRouboEm > 0 &&
+    agora >= ultimoRouboEm &&
+    agora - ultimoRouboEm <= JANELA_DENUNCIA_POLICIA_MS;
 
   // Compara contra todas as variantes conhecidas do ladrão (@lid ↔ número real)
   // — o mentionedJid da menção pode vir num formato diferente do que foi
@@ -936,11 +941,11 @@ async function handlePolicia(sock, msg, jid) {
     ? await sameWhatsAppIdentity(carteiraVitima.lastRobbedBy, ladrao, sock, [], variantesLadrao)
     : false;
 
-  if (!ladraoCorrespondeAoRegistro || agora > imunidadeAte) {
+  if (!ladraoCorrespondeAoRegistro || !dentroDaJanelaDenuncia) {
     await sock.sendMessage(jid, {
       text:
         `❌ *NÃO É POSSÍVEL CHAMAR A POLÍCIA!*\n\n` +
-        `Você só pode acionar a polícia contra quem te roubou nas últimas 2 horas.`,
+        `Você só pode acionar a polícia nos primeiros 15 minutos após o roubo.`,
     }, { quoted: msg });
     return;
   }
@@ -1206,7 +1211,7 @@ async function handleRoubarBanco(sock, msg, jid) {
       `💰 *Seu novo saldo:* ${formatarSaldo(carteiraAtualizada.gold, carteiraAtualizada)}\n` +
       `🏦 *Banco da vítima restante:* ${formatarSaldo(saldoBanco - valorRoubado, carteiraVitima)}\n` +
       `🗑️ *Item consumido:* ${itemAtaque.nome}\n\n` +
-      `💡 A vítima pode usar *!policia @você* nas próximas 2h!`;
+      `💡 A vítima tem *15 minutos* para usar *!policia @você*!`;
 
     // Registrar para o !policia funcionar
     await CarteiraGrupo.findOneAndUpdate(

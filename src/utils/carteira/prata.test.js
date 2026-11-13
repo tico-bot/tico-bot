@@ -25,6 +25,16 @@ test('fusão de carteiras PN/LID preserva o estado do sistema de roubo e políci
     lastRobbedBy: '111111111@s.whatsapp.net',
     lastRobbedAmount: 10,
     lastRobbedAt: dataAntiga,
+    pet: { petId: 'active-pet', type: 'lula', name: 'Pet ativo', level: 8 },
+    pets: [
+      { petId: 'pet-pn', type: 'arrogante', name: 'Coleção PN', level: 4 },
+      { petId: 'active-pet', type: 'lula', name: 'Pet ativo', level: 8 },
+    ],
+    petShelter: {
+      isSheltered: true,
+      shelteredPet: { name: 'Pet antigo' },
+      leftAt: dataAntiga,
+    },
   };
   const secundaria = {
     _id: 'carteira-lid',
@@ -39,6 +49,12 @@ test('fusão de carteiras PN/LID preserva o estado do sistema de roubo e políci
     lastRobbedBy: '222222222@lid',
     lastRobbedAmount: 75,
     lastRobbedAt: dataNova,
+    pets: [{ petId: 'pet-lid', type: 'lula', name: 'Pet ativo LID', level: 8 }],
+    petShelter: {
+      isSheltered: true,
+      shelteredPet: { petId: 'sheltered-pet', name: 'Pet mais recente', type: 'rodney' },
+      leftAt: dataNova,
+    },
   };
 
   const mappingQuery = {
@@ -75,6 +91,11 @@ test('fusão de carteiras PN/LID preserva o estado do sistema de roubo e políci
   assert.equal(resultado.lastRobbedBy, secundaria.lastRobbedBy);
   assert.equal(resultado.lastRobbedAmount, secundaria.lastRobbedAmount);
   assert.equal(resultado.lastRobbedAt.getTime(), dataNova.getTime());
+  assert.equal(resultado.petShelter.shelteredPet.name, 'Pet mais recente');
+  assert.equal(resultado.pet.name, 'Pet ativo', 'o personagem ativo deve continuar ativo');
+  assert.equal(resultado.pets.length, 3, 'coleção PN/LID deve ser unificada sem perder personagens');
+  assert.deepEqual(new Set(resultado.pets.map(p => p.petId)), new Set(['pet-pn', 'active-pet', 'pet-lid']));
+  assert.equal(resultado.petShelter.leftAt.getTime(), dataNova.getTime());
   for (const campo of ['ultimoRoubo', 'ultimoRouboBanco', 'prestoAte', 'imunidadeRouboAte', 'ultimaPolicia']) {
     assert.equal(resultado[campo].getTime(), dataNova.getTime(), campo);
   }

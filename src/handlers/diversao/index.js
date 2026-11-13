@@ -96,9 +96,11 @@ const {
 
 const {
   handleCapturarPet, handleAlimentarPet, handleBrincarPet,
-  handleStatusPet, handlePetRank, handlePets, handleAbrigo,
-  handleAdoptarPet, handleRenomearPet, initPetScheduler, registerActiveGroup,
-  handleCurarPet,handlePetToggle,
+  handleStatusPet, handlePetRank, handlePets, handleCatalogoPersonagens, handleAbrigo,
+  handleAdoptarPet, handleRenomearPet, handleSelecionarPet,
+  handleBanharPet, handleVacinarPet, handleEquiparPet, handleDesequiparPet,
+  handlePassearPet, handleTreinarPet, handleVisitarPet, handleDueloPet, handleCorridaPet,
+  initPetScheduler, registerActiveGroup, handleCurarPet, handlePetToggle,
 } = require('./pets');
 
 // Roubo
@@ -277,6 +279,17 @@ initFilhosScheduler,
   handlePetRank,
   handlePets,
   handleAbrigo,
+  handleCatalogoPersonagens,
+  handleSelecionarPet,
+  handleBanharPet,
+  handleVacinarPet,
+  handleEquiparPet,
+  handleDesequiparPet,
+  handlePassearPet,
+  handleTreinarPet,
+  handleVisitarPet,
+  handleDueloPet,
+  handleCorridaPet,
   initPetScheduler,
   registerActiveGroup,
   handleRenomearPet,

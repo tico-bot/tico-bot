@@ -887,10 +887,10 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'alimentar') || matchCmd(cmdWord, 'alimentarpet'))
     { await diversaoHandler.handleAlimentarPet(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'brincar'))
-    { await diversaoHandler.handleBrincarPet(sock, msg, jid); return; }
+    { await diversaoHandler.handleBrincarPet(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'curar') || matchCmd(cmdWord, 'curarpet'))
     { await diversaoHandler.handleCurarPet(sock, msg, jid); return; }
-  if (matchCmd(cmdWord, 'pet') && /\s+(on|off|status)\s*$/i.test(cmd))
+  if (matchCmd(cmdWord, 'pet') && /\s+(on|off|status|spawn)\s*$/i.test(cmd))
     { await diversaoHandler.handlePetToggle(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'statuspet') || matchCmd(cmdWord, 'pet'))
     { await diversaoHandler.handleStatusPet(sock, msg, jid, caption); return; }
@@ -898,6 +898,28 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handlePetRank(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'pets'))
     { await diversaoHandler.handlePets(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'personagens'))
+    { await diversaoHandler.handleCatalogoPersonagens(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'petselecionar ') || matchCmd(cmdWord, 'petselecionar'))
+    { await diversaoHandler.handleSelecionarPet(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'banhar'))
+    { await diversaoHandler.handleBanharPet(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'vacinar'))
+    { await diversaoHandler.handleVacinarPet(sock, msg, jid); return; }
+  if (matchCmdStart(cmd, 'equiparpet ') || matchCmd(cmdWord, 'equiparpet'))
+    { await diversaoHandler.handleEquiparPet(sock, msg, jid, caption); return; }
+  if (matchCmdStart(cmd, 'desequiparpet ') || matchCmd(cmdWord, 'desequiparpet'))
+    { await diversaoHandler.handleDesequiparPet(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'passear'))
+    { await diversaoHandler.handlePassearPet(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'treinar'))
+    { await diversaoHandler.handleTreinarPet(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'visitarpet'))
+    { await diversaoHandler.handleVisitarPet(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'duelopet'))
+    { await diversaoHandler.handleDueloPet(sock, msg, jid, caption); return; }
+  if (matchCmd(cmdWord, 'corridapet'))
+    { await diversaoHandler.handleCorridaPet(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'abrigo') || matchCmd(cmdWord, 'shelter'))
     { await diversaoHandler.handleAbrigo(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'renomearpet ') || matchCmd(cmdWord, 'renomearpet') ||

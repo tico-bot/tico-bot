@@ -123,6 +123,19 @@ async function getCarteira(idWhatsApp, idGrupo) {
 
       const empAtivo   = carteiras.find(c => c.emprestimo?.ativo)?.emprestimo;
       const petAtivo   = carteiras.find(c => c.pet?.name)?.pet;
+      const petsMap = new Map();
+      for (const carteira of carteiras) {
+        for (const pet of [...(carteira.pets || []), ...(carteira.pet?.name ? [carteira.pet] : [])]) {
+          if (!pet?.name) continue;
+          const chave = pet.petId || `${pet.type || ''}|${pet.name}|${pet.capturedAt || ''}`;
+          if (!petsMap.has(chave)) petsMap.set(chave, pet);
+        }
+      }
+      const petsColecao = [...petsMap.values()];
+      const abrigoAtivo = carteiras
+        .filter(c => c.petShelter?.isSheltered && c.petShelter?.shelteredPet?.name)
+        .sort((a, b) => timestampOuZero(b.petShelter.leftAt) - timestampOuZero(a.petShelter.leftAt))[0]
+        ?.petShelter;
       const bancoAtivo = carteiras.find(c => (c.banco?.amount || 0) > 0)?.banco;
       const empregoEmpregado = carteiras.find(c => c.empregoAtual && c.empregoAtual !== 'desempregado');
 
@@ -154,8 +167,22 @@ async function getCarteira(idWhatsApp, idGrupo) {
         updateSet.lastRobbedAt = rouboRecente.lastRobbedAt || null;
       }
 
-      if (empAtivo)   updateSet.emprestimo = empAtivo;
-      if (petAtivo)   updateSet.pet = petAtivo;
+      if (empAtivo) updateSet.emprestimo = empAtivo;
+      if (petsColecao.length) updateSet.pets = petsColecao;
+      if (petAtivo) {
+        updateSet.pet = petAtivo;
+        const petGuardado = abrigoAtivo?.shelteredPet;
+        const mesmoPetNoAbrigo = petGuardado && (
+          (petAtivo.petId && petGuardado.petId && petAtivo.petId === petGuardado.petId) ||
+          (!petAtivo.petId && !petGuardado.petId && petAtivo.type === petGuardado.type && petAtivo.name === petGuardado.name && String(petAtivo.capturedAt || '') === String(petGuardado.capturedAt || ''))
+        );
+        updateSet.petShelter = abrigoAtivo && !mesmoPetNoAbrigo
+          ? abrigoAtivo
+          : { isSheltered: false, shelteredPet: null, leftAt: null };
+      } else if (abrigoAtivo) {
+        updateSet.pet = null;
+        updateSet.petShelter = abrigoAtivo;
+      }
       if (bancoAtivo) updateSet.banco = bancoAtivo;
       if (empregoEmpregado) {
         updateSet.empregoAtual             = empregoEmpregado.empregoAtual;

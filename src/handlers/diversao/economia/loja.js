@@ -271,19 +271,22 @@ async function handleComprar(sock, msg, jid, caption) {
 
   const preco   = itemInfo.preco;
   const ehPesca = !!(VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome]);
+  const ehPet = String(itemInfo.categoria || '').startsWith('pet');
 
   const resultado = await comprarComGold({
     idWhatsApp: userId,
     idGrupo,
     preco,
     descricaoGold: `Compra: ${itemInfo.nome}`,
-    modeloInventario: ehPesca ? CarteiraGrupo : Usuario,
-    filtroInventario: ehPesca
+    modeloInventario: (ehPesca || ehPet) ? CarteiraGrupo : Usuario,
+    filtroInventario: (ehPesca || ehPet)
       ? { idWhatsApp: userId, idGrupo }
       : { idWhatsApp: userId },
-    campoInventario: ehPesca
-      ? `itensPesca.${itemNome}`
-      : `inventory.${itemNome}`,
+    campoInventario: ehPet
+      ? `itensPets.${itemNome}`
+      : ehPesca
+        ? `itensPesca.${itemNome}`
+        : `inventory.${itemNome}`,
   });
 
   if (!resultado.ok) {
@@ -360,8 +363,15 @@ async function handleVender(sock, msg, jid, caption) {
   // gold do nada, quebrando toda a economia do bot.
   const preco = Math.min(precoDigitado, itemInfo.preco);
 
-  const user = await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
-  const qtdDisponivel = user?.inventory?.[itemKey] ?? 0;
+  const ehPet = String(itemInfo.categoria || '').startsWith('pet');
+  const inventarioAtual = ehPet
+    ? await CarteiraGrupo.findOne({ idWhatsApp: userId, idGrupo: jid }).select('itensPets').lean()
+    : await Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean();
+  const qtdDisponivel = ehPet
+    ? (inventarioAtual?.itensPets instanceof Map
+      ? (inventarioAtual.itensPets.get(itemKey) ?? 0)
+      : (inventarioAtual?.itensPets?.[itemKey] ?? 0))
+    : (inventarioAtual?.inventory?.[itemKey] ?? 0);
 
   if (qtdDisponivel < quantidade) {
     await sock.sendMessage(jid, {
@@ -379,9 +389,9 @@ async function handleVender(sock, msg, jid, caption) {
     idGrupo: jid,
     valorTotal: totalRecebido,
     descricaoGold: `Venda: ${itemInfo.nome} x${quantidade}`,
-    modeloInventario: Usuario,
-    filtroInventario: { idWhatsApp: userId },
-    campoInventario: `inventory.${itemKey}`,
+    modeloInventario: ehPet ? CarteiraGrupo : Usuario,
+    filtroInventario: ehPet ? { idWhatsApp: userId, idGrupo: jid } : { idWhatsApp: userId },
+    campoInventario: ehPet ? `itensPets.${itemKey}` : `inventory.${itemKey}`,
     quantidade,
   });
   if (!resultado.ok) {
@@ -428,46 +438,48 @@ const MSG_INVENTARIO_VAZIO =
 
 async function handleInventario(sock, msg, jid) {
   const userId = jidNormalizedUser(resolveUserFromMsg(msg));
-
   const [user, carteira] = await Promise.all([
     Usuario.findOne({ idWhatsApp: userId }).select('inventory').lean(),
     getCarteira(userId, jid),
   ]);
 
-  const itensValidos = Object.entries(user?.inventory ?? {})
-    .filter(([key, qtd]) => qtd > 0 && ITENS_LOJA[key])
-    .map(([key, qtd]) => ({ info: ITENS_LOJA[key], qtd }));
+  const globalItems = Object.entries(user?.inventory ?? {})
+    .filter(([key, qtd]) => qtd > 0 && ITENS_LOJA[key]);
+  const itensPetRaw = carteira?.itensPets instanceof Map
+    ? Object.fromEntries(carteira.itensPets.entries())
+    : (carteira?.itensPets || {});
+  const groupPetItems = Object.entries(itensPetRaw)
+    .filter(([key, qtd]) => qtd > 0 && ITENS_LOJA[key]);
+  const itensValidos = [...globalItems, ...groupPetItems];
 
-  if (itensValidos.length === 0) {
+  if (!itensValidos.length) {
     await sock.sendMessage(jid, { text: MSG_INVENTARIO_VAZIO }, { quoted: msg });
     return;
   }
 
-  const totalItens = itensValidos.reduce((acc, { qtd }) => acc + qtd, 0);
-
+  const totalItens = itensValidos.reduce((acc, [, qtd]) => acc + qtd, 0);
   const porCategoria = {};
-  for (const { info, qtd } of itensValidos) {
+  for (const [key, qtd] of itensValidos) {
+    const info = ITENS_LOJA[key];
     const cat = info.categoria || 'outros';
     if (!porCategoria[cat]) porCategoria[cat] = [];
     porCategoria[cat].push(`  • ${info.nome} × ${qtd}`);
   }
 
-  const EMOJI_CAT = {
+  const emojiCat = {
     comida: '🍔', petcomida: '🦴', petbrinquedo: '🎾', petcuidado: '💊',
     petacessorio: '🎀', especial: '⭐', casal: '💕', tec: '💻',
     estilo: '👗', pet: '🐾', outros: '📦',
   };
-
   const linhas = Object.entries(porCategoria)
-    .map(([cat, items]) => `${EMOJI_CAT[cat] ?? '📦'} *${cat.toUpperCase()}*\n${items.join('\n')}`)
+    .map(([cat, items]) => `${emojiCat[cat] ?? '📦'} *${cat.toUpperCase()}*\n${items.join('\n')}`)
     .join('\n\n');
 
   await sock.sendMessage(jid, {
     text:
-      `📦 *SEU INVENTÁRIO* 📦\n\n` +
-      `${linhas}\n\n` +
-      `━━━━━━━━━━━━━━━━\n` +
-      `*TOTAL:* ${totalItens} item(ns)\n\n` +
+      `📦 *SEU INVENTÁRIO* 📦\n\n${linhas}\n\n` +
+      `━━━━━━━━━━━━━━━━\n*TOTAL:* ${totalItens} item(ns)\n` +
+      `_Itens de pets comprados agora ficam vinculados a este grupo._\n\n` +
       `💰 *SALDO ${carteira?.walletLinked ? 'DA CONTA' : 'NESTE GRUPO'}:* *${formatWalletAmount(carteira?.gold ?? 0, carteira)}*`,
   }, { quoted: msg });
 }

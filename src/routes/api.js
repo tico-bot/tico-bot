@@ -3209,12 +3209,16 @@ router.get('/admin/pets', adminAuth, async (req, res) => {
         nome:      c.pet.name,
         tipo:      c.pet.type    || '?',
         rarity:    c.pet.rarity  || '?',
-        hp:        c.pet.energy  ?? 100,
+        hp:        c.pet.health  ?? 100,
         maxHp:     100,
+        energia:   c.pet.energy  ?? 0,
         fome:      c.pet.fullness ?? 0,
+        higiene:   c.pet.hygiene ?? 100,
         nivel:     c.pet.level   ?? 1,
         xp:        c.pet.xp      ?? 0,
         happiness: c.pet.happiness ?? 0,
+        estagio:   c.pet.level >= 50 ? 'Lendário' : c.pet.level >= 25 ? 'Adulto' : c.pet.level >= 10 ? 'Jovem' : 'Filhote',
+        acessorios: c.pet.accessories ?? [],
         idGrupo:   c.idGrupo,
         nomeGrupo: nomesGruposMap[c.idGrupo] || nomeGrupoFallback(c.idGrupo),
       };
@@ -3241,11 +3245,12 @@ router.post('/admin/pets/curar', adminAuth, async (req, res) => {
     const carteira = await CarteiraGrupo.findOne({ idWhatsApp: idDono, idGrupo });
     if (!carteira?.pet?.name) return res.status(404).json({ error: 'Pet não encontrado.' });
 
+    carteira.pet.health    = 100;
     carteira.pet.energy    = 100;
     carteira.pet.happiness = Math.min(100, (carteira.pet.happiness ?? 0) + 20);
     await carteira.save();
 
-    return res.json({ ok: true, energy: carteira.pet.energy });
+    return res.json({ ok: true, health: carteira.pet.health, energy: carteira.pet.energy });
   } catch (err) {
     console.error('[API] POST /admin/pets/curar:', err);
     return res.status(500).json({ error: 'Erro interno.' });

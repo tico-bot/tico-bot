@@ -218,7 +218,7 @@ async function handlePerfil(sock, msg, content, jid, contactNames, msgCount, cmd
     // aliases PN/LID para a carteira atual, enquanto Usuario.pet pode estar vazio.
     const petPerfil = walletInfo?.pet && (walletInfo.pet.name || walletInfo.pet.nome)
       ? walletInfo.pet
-      : userData?.pet;
+      : (jid?.endsWith('@g.us') ? null : userData?.pet);
     const nomePet = petPerfil?.name ?? petPerfil?.nome;
     if (nomePet) {
       const emoji = PET_EMOJIS[petPerfil.type] ?? '🐾';
