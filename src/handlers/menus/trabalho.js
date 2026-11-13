@@ -20,6 +20,8 @@ async function handleMenuWork(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'trabalhar — cumprir turno e receber salário',
     '  ▸ ' + P + 'work — alias de trabalhar',
     '',
+    '🔔 O Tico avisa no grupo 10 e 5 minutos antes de liberar o próximo turno.',
+    '⚠️ Durante a tolerância, também avisa no início e quando faltarem 10 e 5 minutos para o prazo de demissão.',
     'Confira as mensagens do sistema para ver o horário, cooldown e requisitos do cargo.',
     '━━━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n');

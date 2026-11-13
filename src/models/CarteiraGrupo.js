@@ -159,6 +159,7 @@ const carteiraGrupoSchema = new mongoose.Schema(
     empregoAtual:             { type: String,  default: null },
     totalTrabalhosComSucesso: { type: Number,  default: 0,   min: 0 },
     ultimoTrabalho:           { type: Date,    default: null },
+    avisosEmprego:            { type: [String], default: () => [] },
     historicoSujo:            { type: Boolean, default: false },
 
     // ── Roubo — ataque (isolado por grupo) ───────────────────────

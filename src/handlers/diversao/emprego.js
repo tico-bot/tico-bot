@@ -644,6 +644,7 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
           empregoAtual:             cargoEscolhido.slug,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
+          avisosEmprego:            [],
           historicoSujo:            false,
           demissaoVoluntariaAte:    null,
         },
@@ -735,6 +736,7 @@ async function handleTrabalhar(sock, msg, jid, caption = '') {
             totalTrabalhosComSucesso: 0,
             historicoSujo:            true,
             ultimoTrabalho:           null,
+            avisosEmprego:            [],
           },
         }
       );
@@ -768,7 +770,7 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
   await CarteiraGrupo.findOneAndUpdate(
     filtro(userId, groupId),
     {
-      $set: { ultimoTrabalho: new Date(agora) },
+      $set: { ultimoTrabalho: new Date(agora), avisosEmprego: [] },
       $inc: { totalTrabalhosComSucesso: 1 },
     }
   );
@@ -963,6 +965,7 @@ async function handleDemitir(sock, msg, jid) {
           empregoAtual:             null,
           totalTrabalhosComSucesso: 0,
           ultimoTrabalho:           null,
+          avisosEmprego:            [],
           demissaoVoluntariaAte:    bloqueioAte,
         },
       }
@@ -997,4 +1000,7 @@ module.exports = {
   handleMenuWork,
   CATALGO_EMPREGOS,
   CARGO_MAP,
+  TEMPO,
+  calcularTempoForaHorario,
+  dentroDoHorario,
 };

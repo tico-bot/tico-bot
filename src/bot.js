@@ -50,6 +50,7 @@ const { processarBemVindo }       = require('./handlers/grupo');
 const { initPetScheduler, registerActiveGroup, initFilhosScheduler } = require('./handlers/diversao');
 const { initQuizRankingScheduler }                                   = require('./handlers/quizRanking');
 const downloadsHandler                                               = require('./handlers/utilidade/downloads');
+const { iniciarAgendadorAvisosEmprego, pararAgendadorAvisosEmprego } = require('./handlers/diversao/empregoAvisos');
 
 // ─── Silenciar logs ruidosos ──────────────────────────────────────────────────
 const _log = console.log.bind(console);
@@ -340,6 +341,7 @@ async function startBot() {
     }
 
     if (connection === 'close') {
+      pararAgendadorAvisosEmprego();
       schedulersIniciados = false;
       _botSock = null;
 
@@ -391,6 +393,7 @@ async function startBot() {
         initPetScheduler(sock);
         initQuizRankingScheduler(sock, new Set());
         initFilhosScheduler();
+        iniciarAgendadorAvisosEmprego(sock);
 
         setInterval(() => downloadsHandler.limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
         downloadsHandler.limparTmpAntigos(10 * 60 * 1000);
