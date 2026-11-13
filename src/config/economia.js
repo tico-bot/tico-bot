@@ -82,43 +82,43 @@ const ITENS_LOJA = {
 // A raridade é explícita: não deve ser inferida apenas pela chance individual.
 const MINERIOS = [
   // ── MÍTICOS (0,30% no total) ───────────────────────────────────────────────
-  { nome: '🌌 Núcleo do Abismo',       emoji: '🌌', gold: 25000, chance: 0.05, xp: 520, raridade: 'mitico' },
-  { nome: '🐉 Coração de Dragão',      emoji: '🐉', gold: 22000, chance: 0.10, xp: 480, raridade: 'mitico' },
-  { nome: '☄️ Fragmento Celestial',    emoji: '☄️', gold: 19000, chance: 0.15, xp: 440, raridade: 'mitico' },
+  { nome: '🌌 Núcleo do Abismo',       emoji: '🌌', gold: 75000, chance: 0.05, xp: 520, raridade: 'mitico' },
+  { nome: '🐉 Coração de Dragão',      emoji: '🐉', gold: 66000, chance: 0.10, xp: 480, raridade: 'mitico' },
+  { nome: '☄️ Fragmento Celestial',    emoji: '☄️', gold: 57000, chance: 0.15, xp: 440, raridade: 'mitico' },
 
   // ── LENDÁRIOS (1,00% no total) ─────────────────────────────────────────────
-  { nome: '🌟 Cristal Estelar',        emoji: '🌟', gold: 15000, chance: 0.20, xp: 360, raridade: 'lendario' },
-  { nome: '🔱 Obsidiana Divina',       emoji: '🔱', gold: 10500, chance: 0.30, xp: 300, raridade: 'lendario' },
-  { nome: '💎 Diamante Negro',         emoji: '💎', gold: 7500,  chance: 0.50, xp: 255, raridade: 'lendario' },
+  { nome: '🌟 Cristal Estelar',        emoji: '🌟', gold: 45000, chance: 0.20, xp: 360, raridade: 'lendario' },
+  { nome: '🔱 Obsidiana Divina',       emoji: '🔱', gold: 31500, chance: 0.30, xp: 300, raridade: 'lendario' },
+  { nome: '💎 Diamante Negro',         emoji: '💎', gold: 22500,  chance: 0.50, xp: 255, raridade: 'lendario' },
 
   // ── ÉPICOS (6,50% no total) ────────────────────────────────────────────────
-  { nome: '🪬 Pedra do Destino',       emoji: '🪬', gold: 6500, chance: 0.75, xp: 235, raridade: 'epico' },
-  { nome: '💎 Diamante',               emoji: '💎', gold: 5400, chance: 1.00, xp: 195, raridade: 'epico' },
-  { nome: '🔮 Ametista Negra',         emoji: '🔮', gold: 4200, chance: 1.25, xp: 170, raridade: 'epico' },
-  { nome: '🔮 Ametista',               emoji: '🔮', gold: 3360, chance: 1.50, xp: 145, raridade: 'epico' },
-  { nome: '💠 Safira Real',            emoji: '💠', gold: 2800, chance: 2.00, xp: 120, raridade: 'epico' },
+  { nome: '🪬 Pedra do Destino',       emoji: '🪬', gold: 19500, chance: 0.75, xp: 235, raridade: 'epico' },
+  { nome: '💎 Diamante',               emoji: '💎', gold: 16200, chance: 1.00, xp: 195, raridade: 'epico' },
+  { nome: '🔮 Ametista Negra',         emoji: '🔮', gold: 12600, chance: 1.25, xp: 170, raridade: 'epico' },
+  { nome: '🔮 Ametista',               emoji: '🔮', gold: 10080, chance: 1.50, xp: 145, raridade: 'epico' },
+  { nome: '💠 Safira Real',            emoji: '💠', gold: 8400, chance: 2.00, xp: 120, raridade: 'epico' },
 
   // ── RAROS (15,00% no total) ────────────────────────────────────────────────
-  { nome: '💠 Safira',                 emoji: '💠', gold: 2380, chance: 2.00, xp: 106, raridade: 'raro' },
-  { nome: '❤️‍🔥 Rubi de Fogo',         emoji: '❤️‍🔥', gold: 1875, chance: 2.50, xp: 80, raridade: 'raro' },
-  { nome: '❤️ Rubi',                   emoji: '❤️', gold: 1500, chance: 3.00, xp: 70, raridade: 'raro' },
-  { nome: '🫧 Água-marinha',            emoji: '🫧', gold: 1300, chance: 3.50, xp: 60, raridade: 'raro' },
-  { nome: '🟣 Tanzanita',              emoji: '🟣', gold: 1125, chance: 4.00, xp: 55, raridade: 'raro' },
+  { nome: '💠 Safira',                 emoji: '💠', gold: 7140, chance: 2.00, xp: 106, raridade: 'raro' },
+  { nome: '❤️‍🔥 Rubi de Fogo',         emoji: '❤️‍🔥', gold: 5625, chance: 2.50, xp: 80, raridade: 'raro' },
+  { nome: '❤️ Rubi',                   emoji: '❤️', gold: 4500, chance: 3.00, xp: 70, raridade: 'raro' },
+  { nome: '🫧 Água-marinha',            emoji: '🫧', gold: 3900, chance: 3.50, xp: 60, raridade: 'raro' },
+  { nome: '🟣 Tanzanita',              emoji: '🟣', gold: 3375, chance: 4.00, xp: 55, raridade: 'raro' },
 
   // ── INCOMUNS (29,00% no total) ─────────────────────────────────────────────
-  { nome: '🔵 Turquesa',               emoji: '🔵', gold: 1000, chance: 4.50, xp: 50, raridade: 'incomum' },
-  { nome: '🟡 Topázio Dourado',         emoji: '🟡', gold: 770,  chance: 4.50, xp: 40, raridade: 'incomum' },
-  { nome: '🟡 Topázio',                emoji: '🟡', gold: 616,  chance: 5.00, xp: 33, raridade: 'incomum' },
-  { nome: '🟢 Esmeralda',              emoji: '🟢', gold: 506,  chance: 5.00, xp: 29, raridade: 'incomum' },
-  { nome: '🟠 Ônix Laranja',           emoji: '🟠', gold: 418,  chance: 5.00, xp: 24, raridade: 'incomum' },
-  { nome: '🪩 Opala',                  emoji: '🪩', gold: 352,  chance: 5.00, xp: 20, raridade: 'incomum' },
+  { nome: '🔵 Turquesa',               emoji: '🔵', gold: 3000, chance: 4.50, xp: 50, raridade: 'incomum' },
+  { nome: '🟡 Topázio Dourado',         emoji: '🟡', gold: 2310,  chance: 4.50, xp: 40, raridade: 'incomum' },
+  { nome: '🟡 Topázio',                emoji: '🟡', gold: 1848,  chance: 5.00, xp: 33, raridade: 'incomum' },
+  { nome: '🟢 Esmeralda',              emoji: '🟢', gold: 1518,  chance: 5.00, xp: 29, raridade: 'incomum' },
+  { nome: '🟠 Ônix Laranja',           emoji: '🟠', gold: 1254,  chance: 5.00, xp: 24, raridade: 'incomum' },
+  { nome: '🪩 Opala',                  emoji: '🪩', gold: 1056,  chance: 5.00, xp: 20, raridade: 'incomum' },
 
   // ── COMUNS (48,20% no total) ───────────────────────────────────────────────
-  { nome: '🌸 Quartzo Rosa',           emoji: '🌸', gold: 234,  chance: 7.00, xp: 13, raridade: 'comum' },
-  { nome: '⚪ Quartzo',                emoji: '⚪', gold: 180,  chance: 8.00, xp: 9,  raridade: 'comum' },
-  { nome: '🩶 Granito',                emoji: '🩶', gold: 135,  chance: 9.00, xp: 7,  raridade: 'comum' },
-  { nome: '🪨 Pedra Calcária',         emoji: '🪨', gold: 99,   chance: 10.00, xp: 5,  raridade: 'comum' },
-  { nome: '🪨 Pedra Comum',            emoji: '🪨', gold: 63,   chance: 14.20, xp: 4,  raridade: 'comum' },
+  { nome: '🌸 Quartzo Rosa',           emoji: '🌸', gold: 702,  chance: 7.00, xp: 13, raridade: 'comum' },
+  { nome: '⚪ Quartzo',                emoji: '⚪', gold: 540,  chance: 8.00, xp: 9,  raridade: 'comum' },
+  { nome: '🩶 Granito',                emoji: '🩶', gold: 405,  chance: 9.00, xp: 7,  raridade: 'comum' },
+  { nome: '🪨 Pedra Calcária',         emoji: '🪨', gold: 297,   chance: 10.00, xp: 5,  raridade: 'comum' },
+  { nome: '🪨 Pedra Comum',            emoji: '🪨', gold: 189,   chance: 14.20, xp: 4,  raridade: 'comum' },
 ];
 
 // ─── Acontecimentos aleatórios do garimpo (24,5% de chance combinada) ────────

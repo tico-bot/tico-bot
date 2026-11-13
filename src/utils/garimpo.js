@@ -34,6 +34,7 @@ function formatarCatalogoMinerios(prefix = '!') {
 
   const linhas = [
     '⛏️ *CATÁLOGO DE MINÉRIOS*',
+    '💰 Os valores-base em Pratas foram triplicados para todos os minérios.',
     '',
     `📚 Existem *${MINERIOS.length} minérios* para descobrir.`,
     '🎲 Cada tentativa sorteia um minério; as probabilidades individuais somam 100%.',

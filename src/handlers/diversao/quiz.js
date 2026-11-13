@@ -1041,14 +1041,13 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   recentQuizMap.set(resolvedJidNorm, recentes);
 
   // ── Timeout de 30s ────────────────────────────────────────────────────────
-  const authorSnapshot  = author;
-  const respostaCorreta = q.r;
+  const authorSnapshot = author;
 
   const timeout = setTimeout(() => {
     if (quizState.has(senderJid)) {
       quizState.delete(senderJid);
       sock.sendMessage(jid, {
-        text: `⏰ *Tempo esgotado*, *${authorSnapshot}*!\n\n✅ Resposta correta: *${respostaCorreta}* 😬`,
+        text: mensagemQuizTempoEsgotado(authorSnapshot),
       }, { quoted: msg }).catch(() => {});
     }
   }, 30_000);
@@ -1068,6 +1067,10 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }, { quoted: msg });
 }
 
+
+function mensagemQuizTempoEsgotado(author) {
+  return `⏰ *Tempo esgotado*, *${author}*! Você não conseguiu responder a tempo. 😬`;
+}
 
 // ─── !pontos ─────────────────────────────────────────────────────────────────
 
@@ -1172,6 +1175,7 @@ module.exports = {
   changeGold,
   registrarAcertoDiarioQuiz,
   respostaCorresponde,
+  mensagemQuizTempoEsgotado,
   registrarInicioQuiz,
   QUIZ_WINDOW_LIMIT,
   QUIZ_WINDOW_MS,

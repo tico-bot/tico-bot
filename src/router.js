@@ -456,7 +456,9 @@ async function handleMessage(sock, msg) {
   }
 
   // ── Quiz ativo ───────────────────────────────────────────────
-  if (diversaoHandler.quizState?.has(senderJid)) {
+  // Só mensagens sem prefixo são respostas. Comandos como /quizhelp e /menu
+  // devem continuar pelo roteador normal, mesmo enquanto houver quiz ativo.
+  if (diversaoHandler.quizState?.has(senderJid) && !isAnyCmd(raw)) {
     await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption);
     return;
   }

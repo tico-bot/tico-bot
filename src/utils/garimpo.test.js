@@ -17,6 +17,17 @@ const {
 
 const soma = (itens) => itens.reduce((total, item) => total + item.chance, 0);
 
+const RECOMPENSAS_ANTERIORES = [25000, 22000, 19000, 15000, 10500, 7500, 6500, 5400, 4200, 3360, 2800, 2380, 1875, 1500, 1300, 1125, 1000, 770, 616, 506, 418, 352, 234, 180, 135, 99, 63];
+
+test('triplica a recompensa em Pratas de todos os minérios sem alterar o XP', () => {
+  assert.equal(MINERIOS.length, RECOMPENSAS_ANTERIORES.length);
+  assert.deepEqual(
+    MINERIOS.map(minerio => minerio.gold),
+    RECOMPENSAS_ANTERIORES.map(valor => valor * 3)
+  );
+  assert.ok(MINERIOS.every(minerio => minerio.xp > 0));
+});
+
 test('as probabilidades dos minérios somam exatamente 100%', () => {
   assert.equal(Number(soma(MINERIOS).toFixed(8)), 100);
   assert.equal(new Set(MINERIOS.map((item) => item.nome)).size, MINERIOS.length);
@@ -85,8 +96,12 @@ test('o catálogo lista todos os minérios, raridades, probabilidades, valores e
   assert.match(texto, /CATÁLOGO DE MINÉRIOS/);
   assert.match(texto, /\?garimpar/);
   assert.match(texto, /24,5%/);
+  assert.match(texto, /valores-base em Pratas foram triplicados para todos os minérios/i);
+  const formatarNumero = valor => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(valor);
   for (const minerio of MINERIOS) {
     assert.ok(texto.includes(minerio.nome), `catálogo não contém ${minerio.nome}`);
+    assert.ok(texto.includes(`${formatarNumero(minerio.gold)} Prata`), `catálogo não mostra a nova recompensa de ${minerio.nome}`);
+    assert.ok(texto.includes(`${formatarNumero(minerio.xp)} XP`), `catálogo não mostra o XP de ${minerio.nome}`);
     const chanceExibida = minerio.chance < 1
       ? minerio.chance.toFixed(2).replace('.', ',')
       : String(minerio.chance).replace('.', ',');
