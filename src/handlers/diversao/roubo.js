@@ -1,5 +1,7 @@
 'use strict';
 
+const { formatarNumeroBR } = require('../../utils/numberFormat');
+
 /**
  * Sistema de Roubo — Tico Bot
  * Comandos: !menuroubar, !roubar, !roubarbanco, !menusec, !equiparroubo, !equiparsec
@@ -285,7 +287,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     text:
       `✅ *COMPRA REALIZADA!*\n\n` +
       `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${itemInfo.preco} Prata\n` +
+      `💵 *Preço:* ${formatarNumeroBR(itemInfo.preco)} Prata\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
       `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
       `💡 Use *!equiparroubo ${itemInfo.nome.replace(/^[^\p{L}\p{N}]+/u, '')}* para equipar!`,

@@ -1274,6 +1274,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'jogos') || matchCmd(cmdWord, 'partidas')) { await futebolApiHandler.handleMatches(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'clubes') || matchCmd(cmdWord, 'times')) { await futebolApiHandler.handleTeams(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'artilheiros') || matchCmd(cmdWord, 'goleadores')) { await futebolApiHandler.handleScorers(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
+  if (matchCmd(cmdWord, 'quizhelp')) { await diversaoHandler.handleQuizHelp(sock, msg, jid, getPrefix(jid)); return; }
   if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz') ||
       matchCmd(cmdWord, 'quizfut') || matchCmd(cmdWord, 'quizctec') ||
       matchCmd(cmdWord, 'quizgeo') || matchCmd(cmdWord, 'quizmat') ||

@@ -1,6 +1,7 @@
 'use strict';
 
 const LidMapping = require('../../models/LidMapping');
+const { formatarNumeroBR } = require('../numberFormat');
 
 function normalizeJid(jid) {
   const [user, server] = String(jid || '').trim().toLowerCase().split('@');
@@ -36,7 +37,7 @@ async function resolvePhoneJid(jid) {
 }
 
 function formatWalletAmount(amount) {
-  return `${Number(amount)} Prata`;
+  return `${formatarNumeroBR(amount)} Prata`;
 }
 
 function getWalletBalance() { return Promise.resolve({ linked: false }); }

@@ -14,11 +14,14 @@ const { prepareDailyMissionState } = require('./missoes');
 const { resolveDisplayName } = require('../../utils/identity');
 const carteiraService = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { resolverJidCarteira } = carteiraService;
+const { hojeStr } = require('../../utils/tempo');
+const { formatarNumeroBR } = require('../../utils/numberFormat');
+const QUIZ_DAILY_BONUS_TARGET = 3;
+const QUIZ_DAILY_BONUS_PRATA = 500;
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
 const pontosMap      = new Map(); // senderJid → pts (cache)
-const quizDailyCount = new Map(); // "senderJid_YYYY-MM-DD" → número de quizzes jogados hoje (cache)
 
 // ✅ recentQuizMap substitui global.recentQuiz: escopo de módulo, sem vazamento
 // entre workers, sem crescimento ilimitado de global
@@ -26,19 +29,9 @@ const recentQuizMap  = new Map(); // senderJid → string[] (últimas perguntas 
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
-// ✅ Limite diário de quizzes — alterar aqui caso queira mudar futuramente
-const DAILY_QUIZ_LIMIT = 15;
-
-// ✅ Limpeza periódica de quizDailyCount — remove entradas de dias anteriores
-// para evitar crescimento ilimitado da Map em processos de longa duração
-const _dailyCleanup = setInterval(() => {
-  const hoje = new Date().toISOString().split('T')[0];
-  for (const key of quizDailyCount.keys()) {
-    if (!key.endsWith(hoje)) quizDailyCount.delete(key);
-  }
-}, 60 * 60 * 1_000); // a cada hora
-
-if (_dailyCleanup.unref) _dailyCleanup.unref();
+// Limite por janela móvel, persistido no MongoDB para sobreviver a reinícios.
+const QUIZ_WINDOW_LIMIT = 30;
+const QUIZ_WINDOW_MS = 30 * 60 * 1000;
 
 // ─── UTILITÁRIOS ─────────────────────────────────────────────────────────────
 
@@ -47,16 +40,254 @@ function somenteGrupo(jid) {
 }
 
 function normalize(str) {
-  return str
+  return String(str ?? '')
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-function getTodayKey(senderJid) {
-  const today = new Date().toISOString().split('T')[0];
-  return `${senderJid}_${today}`;
+const ABREVIACOES_GEOGRAFICAS = Object.freeze({
+  // Capitais e cidades brasileiras frequentemente abreviadas.
+  'sao paulo': ['sp'],
+  'rio de janeiro': ['rj'],
+  'belo horizonte': ['bh'],
+  'brasilia': ['bsb', 'df'],
+  'porto alegre': ['poa'],
+  'curitiba': ['cwb'],
+  'salvador': ['ssa'],
+  'recife': ['rec'],
+  'fortaleza': ['for'],
+  'manaus': ['mao'],
+  'goiania': ['gyn'],
+  'belem': ['bel'],
+  'vitoria': ['vix'],
+  'florianopolis': ['fln'],
+  'natal': ['nat'],
+  'joao pessoa': ['jpa'],
+  'maceio': ['mcz'],
+  'teresina': ['the'],
+  'campo grande': ['cgr'],
+  'cuiaba': ['cgb'],
+  'porto velho': ['pvh'],
+  'rio branco': ['rbr'],
+  'macapa': ['mcp'],
+  'palmas': ['pmw'],
+  'aracaju': ['aju'],
+  'new york': ['nyc'],
+  'nova york': ['nyc'],
+  'los angeles': ['la'],
+  'washington dc': ['dc'],
+  'cidade do mexico': ['cdmx'],
+  'mexico city': ['cdmx'],
+  // Formas internacionais frequentes dos nomes de capitais.
+  'helsinque': ['helsinki', 'hel'],
+  'reiquiavique': ['reykjavik', 'rek'],
+  'bruxelas': ['brussels', 'bru'],
+  'varsovia': ['warsaw', 'waw'],
+  'atenas': ['athens', 'ath'],
+  'ancara': ['ankara', 'esb'],
+  'dacar': ['dakar', 'dss'],
+  'catmandu': ['kathmandu', 'ktm'],
+  'teera': ['tehran', 'thr', 'ika'],
+  'adis abeba': ['addis ababa', 'add'],
+  'montevideu': ['montevideo', 'mvd'],
+  'assuncao': ['asuncion', 'asu'],
+  'bogota': ['bogota', 'bog'],
+  'quito': ['ui o', 'uio'],
+  'caracas': ['ccs'],
+  'riade': ['riyadh', 'ruh'],
+  'bagda': ['baghdad', 'bgw'],
+  'jacarta': ['jakarta', 'cgk'],
+  'kuala lumpur': ['kul'],
+  'bangkok': ['bkk'],
+  'hanoi': ['han'],
+  'manila': ['mnl'],
+  'islamabad': ['isb'],
+  'nairobi': ['nbo'],
+  'luanda': ['lad'],
+  'maputo': ['mpm'],
+  'rabat': ['rba'],
+  'abuja': ['abv'],
+  'cairo': ['cai'],
+  'oslo': ['osl'],
+  'estocolmo': ['stockholm', 'sto'],
+  'berna': ['bern', 'brn'],
+  'viena': ['vienna', 'vie'],
+  'budapeste': ['budapest', 'bud'],
+  'helsinki': ['hel'],
+  'dublin': ['dub'],
+  'nairobi': ['nbo'],
+
+  // Unidades federativas brasileiras.
+  'acre': ['ac'],
+  'alagoas': ['al'],
+  'amapa': ['ap'],
+  'amazonas': ['am'],
+  'bahia': ['ba'],
+  'ceara': ['ce'],
+  'distrito federal': ['df'],
+  'espirito santo': ['es'],
+  'goias': ['go'],
+  'maranhao': ['ma'],
+  'mato grosso': ['mt'],
+  'mato grosso do sul': ['ms'],
+  'minas gerais': ['mg'],
+  'para': ['pa'],
+  'paraiba': ['pb'],
+  'parana': ['pr'],
+  'pernambuco': ['pe'],
+  'piaui': ['pi'],
+  'rio de janeiro estado': ['rj'],
+  'rio grande do norte': ['rn'],
+  'rio grande do sul': ['rs'],
+  'rondonia': ['ro'],
+  'roraima': ['rr'],
+  'santa catarina': ['sc'],
+  'sao paulo estado': ['sp'],
+  'sergipe': ['se'],
+  'tocantins': ['to'],
+
+  // Países: siglas comuns e códigos internacionais.
+  'brasil': ['br', 'bra'],
+  'estados unidos': ['eua', 'usa', 'us'],
+  'reino unido': ['uk', 'gb', 'gbr'],
+  'uniao sovietica': ['urss', 'ussr'],
+  'alemanha': ['de', 'deu', 'ger'],
+  'argentina': ['ar', 'arg'],
+  'uruguai': ['uy', 'ury'],
+  'paraguai': ['py', 'pry'],
+  'chile': ['cl', 'chl'],
+  'bolivia': ['bo', 'bol'],
+  'peru': ['pe', 'per'],
+  'colombia': ['co', 'col'],
+  'venezuela': ['ve', 'ven'],
+  'equador': ['ec', 'ecu'],
+  'portugal': ['pt', 'prt'],
+  'espanha': ['es', 'esp'],
+  'franca': ['fr', 'fra'],
+  'italia': ['it', 'ita'],
+  'grecia': ['gr', 'grc'],
+  'turquia': ['tr', 'tur'],
+  'russia': ['ru', 'rus'],
+  'ucrania': ['ua', 'ukr'],
+  'polonia': ['pl', 'pol'],
+  'noruega': ['no', 'nor'],
+  'suecia': ['se', 'swe'],
+  'finlandia': ['fi', 'fin'],
+  'irlanda': ['ie', 'irl'],
+  'belgica': ['be', 'bel'],
+  'suica': ['ch', 'che'],
+  'austria': ['at', 'aut'],
+  'hungria': ['hu', 'hun'],
+  'islandia': ['is', 'isl'],
+  'dinamarca': ['dk', 'dnk'],
+  'paises baixos': ['nl', 'nld'],
+  'republica tcheca': ['cz', 'cze'],
+  'china': ['cn', 'chn'],
+  'japao': ['jp', 'jpn'],
+  'coreia do sul': ['kr', 'kor'],
+  'coreia do norte': ['kp', 'prk'],
+  'india': ['in', 'ind'],
+  'paquistao': ['pk', 'pak'],
+  'nepal': ['np', 'npl'],
+  'vietna': ['vn', 'vnm'],
+  'tailandia': ['th', 'tha'],
+  'indonesia': ['id', 'idn'],
+  'malasia': ['my', 'mys'],
+  'filipinas': ['ph', 'phl'],
+  'singapura': ['sg', 'sgp'],
+  'arabia saudita': ['sa', 'sau'],
+  'ira': ['ir', 'irn'],
+  'iraque': ['iq', 'irq'],
+  'emirados arabes unidos': ['eau', 'uae', 'ae'],
+  'catar': ['qa', 'qat'],
+  'egito': ['eg', 'egy'],
+  'marrocos': ['ma', 'mar'],
+  'nigeria': ['ng', 'nga'],
+  'angola': ['ao', 'ago'],
+  'mocambique': ['mz', 'moz'],
+  'senegal': ['sn', 'sen'],
+  'quenia': ['ke', 'ken'],
+  'etiopia': ['et', 'eth'],
+  'africa do sul': ['za', 'zaf'],
+  'canada': ['ca', 'can'],
+  'mexico': ['mx', 'mex'],
+  'australia': ['au', 'aus'],
+  'nova zelandia': ['nz', 'nzl'],
+  'franca': ['fr', 'fra'],
+  'estados unidos da america': ['eua', 'usa', 'us'],
+});
+
+function aliasesGeograficos(valor) {
+  return ABREVIACOES_GEOGRAFICAS[normalize(valor)] || [];
+}
+
+function distanciaEdicao(a, b, limite) {
+  if (Math.abs(a.length - b.length) > limite) return limite + 1;
+  let anterior = Array.from({ length: b.length + 1 }, (_, i) => i);
+
+  for (let i = 1; i <= a.length; i++) {
+    const atual = [i];
+    let minimoLinha = i;
+    for (let j = 1; j <= b.length; j++) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+      atual[j] = Math.min(
+        anterior[j] + 1,
+        atual[j - 1] + 1,
+        anterior[j - 1] + custo
+      );
+      minimoLinha = Math.min(minimoLinha, atual[j]);
+    }
+    if (minimoLinha > limite) return limite + 1;
+    anterior = atual;
+  }
+
+  return anterior[b.length];
+}
+
+function tokenCorresponde(token, esperado) {
+  if (token === esperado) return true;
+  // Evita aceitar fragmentos curtos; tolera apenas pequenos erros em palavras longas.
+  if (token.length < 5 || esperado.length < 5) return false;
+  const limite = Math.max(token.length, esperado.length) >= 10 ? 2 : 1;
+  return distanciaEdicao(token, esperado, limite) <= limite;
+}
+
+function respostaCorresponde(respostaUsuario, respostaCorreta, aliases = []) {
+  const entrada = normalize(respostaUsuario);
+  if (!entrada) return false;
+
+  const candidatosBase = [respostaCorreta, ...aliases]
+    .flatMap(valor => {
+      const texto = String(valor ?? '');
+      // Mantém frações como 1/4 e 3/4; nos demais casos, a barra pode separar sinônimos.
+      if (/^\s*[-+]?\d+\s*\/\s*[-+]?\d+\s*$/.test(texto)) return [texto];
+      return texto.split(/[\/|]/);
+    })
+    .map(normalize)
+    .filter(Boolean);
+  const candidatos = candidatosBase.flatMap(candidato => [
+    candidato,
+    ...aliasesGeograficos(candidato).map(normalize),
+  ]);
+
+  return candidatos.some(candidato => {
+    if (entrada === candidato || entrada.replace(/\s/g, '') === candidato.replace(/\s/g, '')) {
+      return true;
+    }
+
+    const tokensEntrada = entrada.split(' ');
+    const tokensCorretos = candidato.split(' ');
+    // Aceita nomes incompletos, palavras em outra ordem e pequenos erros de digitação,
+    // mas exige que todas as palavras enviadas correspondam à resposta esperada.
+    return tokensEntrada.every(token =>
+      tokensCorretos.some(esperado => tokenCorresponde(token, esperado))
+    );
+  });
 }
 
 // ─── BANCO DE DADOS ──────────────────────────────────────────────────────────
@@ -102,6 +333,61 @@ async function saveQuizPointsToDB(userId, groupJid) {
   }
 }
 
+async function registrarAcertoDiarioQuiz(userId, groupJid) {
+  if (!userId || !groupJid) return null;
+  // O chamador já fornece o JID PN/LID resolvido e normalizado.
+  const idNorm = userId;
+  const hoje = hojeStr();
+  const progresso = await CarteiraGrupo.findOneAndUpdate(
+    { idWhatsApp: idNorm, idGrupo: groupJid },
+    [{
+      $set: {
+        quizDailyCorrectDate: hoje,
+        quizDailyCorrect: {
+          $cond: [
+            { $eq: ['$quizDailyCorrectDate', hoje] },
+            { $add: [{ $ifNull: ['$quizDailyCorrect', 0] }, 1] },
+            1,
+          ],
+        },
+      },
+    }],
+    { new: true }
+  );
+  const acertos = Number(progresso?.quizDailyCorrect) || 0;
+  let bonusConcedido = false;
+
+  if (acertos >= QUIZ_DAILY_BONUS_TARGET) {
+    const credito = await CarteiraGrupo.updateOne(
+      {
+        idWhatsApp: idNorm,
+        idGrupo: groupJid,
+        quizDailyCorrectDate: hoje,
+        quizDailyCorrect: { $gte: QUIZ_DAILY_BONUS_TARGET },
+        quizDailyBonusDate: { $ne: hoje },
+      },
+      {
+        $inc: { gold: QUIZ_DAILY_BONUS_PRATA },
+        $set: { quizDailyBonusDate: hoje },
+        $push: {
+          goldHistory: {
+            $each: [{
+              type: 'recebido',
+              item: 'Bônus diário de participação no Quiz',
+              amount: QUIZ_DAILY_BONUS_PRATA,
+              date: new Date(),
+            }],
+            $slice: -50,
+          },
+        },
+      }
+    );
+    bonusConcedido = (credito.modifiedCount ?? credito.nModified ?? 0) === 1;
+  }
+
+  return { acertos, meta: QUIZ_DAILY_BONUS_TARGET, bonusConcedido };
+}
+
 async function changeGold(userId, amount, groupJid) {
   if (!userId) {
     console.warn('⚠️ changeGold ignorado: jid vazio:', userId);
@@ -139,7 +425,7 @@ async function changeGold(userId, amount, groupJid) {
     if (groupJid) {
       const carteira = await carteiraService.getCarteira(idNorm, groupJid);
       console.log(`✅ Saldo do quiz alterado: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (saldo: ${carteira.gold})`);
-      return carteira;
+      return Number(carteira?.gold) || 0;
     }
 
     console.log(`✅ Prata alterada: ${idNorm} → ${amount >= 0 ? '+' : ''}${amount} (sem grupo)`);
@@ -151,51 +437,83 @@ async function changeGold(userId, amount, groupJid) {
   }
 }
 
-// ─── CONTAGEM DIÁRIA DE QUIZ (persistente) ──────────────────────────────────
+// ─── LIMITE DE QUIZZES POR JANELA DE 30 MINUTOS ───────────────────────────────
 
-// ✅ Lê a contagem diária. Usa o cache em memória se disponível; caso
-// contrário (ex: logo após reiniciar o bot), consulta o MongoDB e
-// repopula o cache — evitando que o limite "resete" sozinho ao reiniciar.
-async function getQuizCountToday(userId) {
-  const todayKey = getTodayKey(userId);
+async function registrarInicioQuiz(userId, agora = new Date()) {
+  if (!userId) throw new TypeError('Identificador do jogador ausente.');
 
-  if (quizDailyCount.has(todayKey)) {
-    return quizDailyCount.get(todayKey);
-  }
+  const inicioJanelaMaisAntiga = new Date(agora.getTime() - QUIZ_WINDOW_MS);
+  const reiniciarJanela = {
+    $or: [
+      { $eq: [{ $ifNull: ['$quizDaily.windowStartedAt', null] }, null] },
+      { $lte: ['$quizDaily.windowStartedAt', inicioJanelaMaisAntiga] },
+    ],
+  };
 
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const user = await Usuario.findOne(
+    // Garante a existência da conta; a atualização seguinte é condicional e atômica.
+    await Usuario.updateOne(
+      { idWhatsApp: userId },
+      { $setOnInsert: { idWhatsApp: userId } },
+      { upsert: true }
+    );
+
+    const usuario = await Usuario.findOneAndUpdate(
+      {
+        idWhatsApp: userId,
+        $or: [
+          { 'quizDaily.windowStartedAt': null },
+          { 'quizDaily.windowStartedAt': { $lte: inicioJanelaMaisAntiga } },
+          {
+            'quizDaily.windowStartedAt': { $gt: inicioJanelaMaisAntiga },
+            'quizDaily.count': { $lt: QUIZ_WINDOW_LIMIT },
+          },
+        ],
+      },
+      [{
+        $set: {
+          'quizDaily.windowStartedAt': {
+            $cond: [reiniciarJanela, agora, '$quizDaily.windowStartedAt'],
+          },
+          'quizDaily.count': {
+            $cond: [
+              reiniciarJanela,
+              1,
+              { $add: [{ $ifNull: ['$quizDaily.count', 0] }, 1] },
+            ],
+          },
+        },
+      }],
+      { new: true }
+    );
+
+    if (usuario) {
+      const iniciadoEm = usuario.quizDaily?.windowStartedAt || agora;
+      const restante = Math.max(0, QUIZ_WINDOW_MS - (agora.getTime() - new Date(iniciadoEm).getTime()));
+      return {
+        permitido: true,
+        count: Number(usuario.quizDaily?.count) || 1,
+        restanteMs: restante,
+        windowStartedAt: new Date(iniciadoEm),
+      };
+    }
+
+    const atual = await Usuario.findOne(
       { idWhatsApp: userId },
       { quizDaily: 1 }
     ).lean();
+    const count = Number(atual?.quizDaily?.count) || 0;
+    const iniciouEm = atual?.quizDaily?.windowStartedAt
+      ? new Date(atual.quizDaily.windowStartedAt)
+      : agora;
+    const restanteMs = Math.max(0, QUIZ_WINDOW_MS - (agora.getTime() - iniciouEm.getTime()));
 
-    const count = (user?.quizDaily?.date === today) ? (user.quizDaily.count || 0) : 0;
-    quizDailyCount.set(todayKey, count);
-    return count;
-  } catch (e) {
-    console.error('⚠️ Erro ao sincronizar contagem diária de quiz:', e.message);
-    return 0;
+    return { permitido: false, count, restanteMs, windowStartedAt: iniciouEm };
+  } catch (erro) {
+    console.error('⚠️ Erro ao validar limite de quizzes:', erro.message);
+    return { permitido: false, indisponivel: true, count: 0, restanteMs: 0 };
   }
 }
-
-// ✅ Atualiza o cache em memória e persiste no MongoDB (quizDaily.date / quizDaily.count)
-async function incrementQuizCountToday(userId, newCount) {
-  const todayKey = getTodayKey(userId);
-  quizDailyCount.set(todayKey, newCount);
-
-  const today = new Date().toISOString().split('T')[0];
-  try {
-    await Usuario.findOneAndUpdate(
-      { idWhatsApp: userId },
-      { $set: { 'quizDaily.date': today, 'quizDaily.count': newCount } },
-      { upsert: true }
-    );
-  } catch (e) {
-    console.error('⚠️ Erro ao salvar contagem diária de quiz no MongoDB:', e.message);
-  }
-}
-
 
 // ─── PERGUNTAS ────────────────────────────────────────────────────────────────
 
@@ -211,7 +529,7 @@ const perguntasQuiz = [
   { p: '⚽ Qual jogador é conhecido como "O Rei"?', r: 'pele', d: 'Futebol' },
   { p: '⚽ Em que clube Zidane encerrou a carreira como jogador?', r: 'real madrid', d: 'Futebol' },
   { p: '⚽ Qual seleção foi campeã da Eurocopa de 2016?', r: 'portugal', d: 'Futebol' },
-  { p: '⚽ Qual jogador marcou o gol de bicicleta mais famoso da história do futebol em 2018?', r: 'cristiano ronaldo', d: 'Futebol' },
+  { p: '⚽ Qual jogador marcou o gol de bicicleta mais famoso da história do futebol em 2018?', r: 'cristiano ronaldo', aliases: ['CR7'], d: 'Futebol' },
   { p: '⚽ Em que ano o Flamengo venceu sua primeira Copa Libertadores?', r: '1981', d: 'Futebol' },
   { p: '⚽ Qual clube tem mais títulos do Campeonato Brasileiro?', r: 'flamengo', d: 'Futebol' },
   { p: '⚽ Quantas vezes Messi ganhou a Bola de Ouro?', r: '8', d: 'Futebol' },
@@ -224,7 +542,7 @@ const perguntasQuiz = [
   { p: '⚽ Qual jogador ganhou a Chuteira de Ouro na Copa de 2014?', r: 'james rodriguez', d: 'Futebol' },
   { p: '⚽ Qual clube italiano tem o apelido de "La Vecchia Signora"?', r: 'juventus', d: 'Futebol' },
   { p: '⚽ Em que ano o São Paulo venceu sua última Copa Libertadores?', r: '1994', d: 'Futebol' },
-  { p: '⚽ Qual jogador é conhecido como "CR7"?', r: 'cristiano ronaldo', d: 'Futebol' },
+  { p: '⚽ Qual jogador é conhecido como "CR7"?', r: 'cristiano ronaldo', aliases: ['CR7'], d: 'Futebol' },
   { p: '⚽ Quantos títulos da Eurocopa a Espanha tem?', r: '3', d: 'Futebol' },
   { p: '⚽ Qual jogador levou o Liverpool ao título da Premier League em 2020?', r: 'jordan henderson', d: 'Futebol' },
   { p: '⚽ Qual foi o primeiro país africano a chegar às semifinais de uma Copa?', r: 'camaroes', d: 'Futebol' },
@@ -243,10 +561,10 @@ const perguntasQuiz = [
   { p: '⚽ Qual seleção venceu a Copa das Confederações de 2017?', r: 'alemanha', d: 'Futebol' },
   { p: '⚽ Qual time italiano foi campeão da Champions League em 2003?', r: 'milan', d: 'Futebol' },
   { p: '⚽ Qual é o apelido do estádio do Corinthians?', r: 'neo quimica arena', d: 'Futebol' },
-  { p: '⚽ Qual jogador é o maior artilheiro da história da Champions League?', r: 'cristiano ronaldo', d: 'Futebol' },
+  { p: '⚽ Qual jogador é o maior artilheiro da história da Champions League?', r: 'cristiano ronaldo', aliases: ['CR7'], d: 'Futebol' },
   { p: '⚽ Em que ano Ronaldinho Gaúcho venceu a Copa do Mundo?', r: '2002', d: 'Futebol' },
   { p: '⚽ Qual seleção venceu a Copa do Mundo de 1998?', r: 'franca', d: 'Futebol' },
-  { p: '⚽ Qual jogador tem mais títulos na história do futebol europeu?', r: 'cristiano ronaldo', d: 'Futebol' },
+  { p: '⚽ Qual jogador tem mais títulos na história do futebol europeu?', r: 'cristiano ronaldo', aliases: ['CR7'], d: 'Futebol' },
   { p: '⚽ Qual clube ganhou a Libertadores de 2022?', r: 'flamengo', d: 'Futebol' },
   { p: '⚽ Em que ano o Grêmio ganhou sua última Copa Libertadores?', r: '1995', d: 'Futebol' },
   { p: '⚽ Qual jogador ficou conhecido como "O Fenômeno"?', r: 'ronaldo', d: 'Futebol' },
@@ -587,6 +905,16 @@ const perguntasQuiz = [
   { p: '🧠 Em Code Geass, qual poder permite a Lelouch dar ordens absolutas?', r: 'geass', d: 'Anime' },
 ];
 
+// Perguntas adicionais: 50 novas entradas para cada tema existente.
+perguntasQuiz.push(...require('./quiz.extra-questions.json'));
+
+// Registra abreviações explícitas de nomes consagrados em perguntas antigas.
+for (const pergunta of perguntasQuiz) {
+  if (normalize(pergunta.r || '') === 'cristiano ronaldo') {
+    pergunta.aliases = [...new Set([...(pergunta.aliases || []), 'CR7'])];
+  }
+}
+
 // handleQuiz
 async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
@@ -611,7 +939,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
     const resposta = normalize(textoRaw);
 
-    if (!resposta.trim()) {
+    if (!resposta) {
       await sock.sendMessage(jid, {
         text: `❌ Você deve enviar uma *resposta em texto*! 😅`,
       }, { quoted: msg });
@@ -624,17 +952,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     // Usa o JID resolvido salvo no state (garante que veio do LidMapping correto)
     const effectiveJid = state.resolvedJid ?? resolvedJidNorm;
 
-    const correta = normalize(state.r);
-    const respostasValidas = correta
-      .split(/[\/|]/)
-      .map(r => r.trim())
-      .filter(Boolean);
-
-    const acertou = resposta.length >= 2 && respostasValidas.some(rv =>
-      resposta === rv ||
-      resposta.includes(rv) ||
-      rv.includes(resposta)
-    );
+    const acertou = respostaCorresponde(textoRaw, state.r, state.aliases || []);
 
     if (acertou) {
       const pts = (pontosMap.get(effectiveJid) || 0) + 10;
@@ -649,14 +967,21 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
           { $inc: { 'dailyMissions.progress.quiz5': 1 } }
         ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
       ]);
+      const incentivoDiario = await registrarAcertoDiarioQuiz(effectiveJid, jid).catch(e => {
+        console.error('⚠️ Erro ao atualizar bônus diário do Quiz:', e.message);
+        return null;
+      });
 
-      const linhaGold = `💵 *+${goldReward} Prata!* Saldo: *${novoSaldoGold} Prata*`;
+      const linhaGold = `💵 *+${formatarNumeroBR(goldReward)} Prata!* Saldo: *${formatarNumeroBR(novoSaldoGold)} Prata*`;
+      const linhaIncentivo = !incentivoDiario ? '' : incentivoDiario.bonusConcedido
+        ? `\n🎁 *BÔNUS DIÁRIO!* Você completou ${QUIZ_DAILY_BONUS_TARGET} acertos e recebeu *+${QUIZ_DAILY_BONUS_PRATA} Pratas extras!*`
+        : `\n🎯 *Meta diária:* ${incentivoDiario.acertos}/${QUIZ_DAILY_BONUS_TARGET} acertos — complete a meta e ganhe *+${QUIZ_DAILY_BONUS_PRATA} Pratas!*`;
 
       await sock.sendMessage(jid, {
         text:
           `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
           `💰 *+10 pontos!* Total: *${pts} pts*\n` +
-          linhaGold,
+          linhaGold + linhaIncentivo,
       }, { quoted: msg });
 
     } else {
@@ -664,16 +989,6 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
         text: `❌ *ERROU!* *${author}*! Tente novamente no próximo quiz. 😬`,
       }, { quoted: msg });
     }
-    return;
-  }
-
-  // ── Verificar limite diário ───────────────────────────────────────────────
-  const quizCount = await getQuizCountToday(resolvedJidNorm);
-
-  if (quizCount >= DAILY_QUIZ_LIMIT) {
-    await sock.sendMessage(jid, {
-      text: `⚠️ *${author}*, você atingiu o limite de *${DAILY_QUIZ_LIMIT} quiz por dia*! Volte amanhã! 😴`,
-    }, { quoted: msg });
     return;
   }
 
@@ -701,8 +1016,18 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
     return;
   }
 
-  // ── Incrementar contador diário ───────────────────────────────────────────
-  await incrementQuizCountToday(resolvedJidNorm, quizCount + 1);
+  // Registra a tentativa atomicamente para impedir que comandos simultâneos
+  // ultrapassem o limite de 30 quizzes na mesma janela de 30 minutos.
+  const tentativaQuiz = await registrarInicioQuiz(resolvedJidNorm);
+  if (!tentativaQuiz.permitido) {
+    const minutos = Math.max(1, Math.ceil((tentativaQuiz.restanteMs || 0) / 60_000));
+    const texto = tentativaQuiz.indisponivel
+      ? '⚠️ Não consegui verificar seu limite de quizzes agora. Tente novamente em instantes.'
+      : `⚠️ *${author}*, você atingiu o limite de *${QUIZ_WINDOW_LIMIT} quizzes a cada 30 minutos*! Tente novamente em aproximadamente *${minutos} minuto(s)*. 😴`;
+    await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+    return;
+  }
+  const quizCount = tentativaQuiz.count - 1;
 
   // ── Sortear pergunta sem repetir recentemente ─────────────────────────────
   const recentes    = recentQuizMap.get(resolvedJidNorm) ?? [];
@@ -729,16 +1054,17 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }, 30_000);
 
   // Salva resolvedJidNorm para usar na correção da resposta
-  quizState.set(senderJid, { r: q.r, resolvedJid: resolvedJidNorm, timeout });
+  quizState.set(senderJid, { r: q.r, aliases: q.aliases || [], resolvedJid: resolvedJidNorm, timeout });
 
-  const restantes = DAILY_QUIZ_LIMIT - quizCount - 1;
+  const restantes = QUIZ_WINDOW_LIMIT - tentativaQuiz.count;
 
   await sock.sendMessage(jid, {
     text:
       `🧠 *QUIZ — ${q.d.toUpperCase()}*\n\n` +
       `❓ *${q.p}*\n\n` +
       `⏱️ _Você tem 30 segundos!_\n` +
-      `📊 _Quiz ${quizCount + 1}/${DAILY_QUIZ_LIMIT} hoje · ${restantes} restante(s)_`,
+      `📊 _Quiz ${tentativaQuiz.count}/${QUIZ_WINDOW_LIMIT} na janela de 30 min · ${restantes} restante(s)_\n` +
+      `🎁 _Acerte ${QUIZ_DAILY_BONUS_TARGET} perguntas no dia e ganhe +${QUIZ_DAILY_BONUS_PRATA.toLocaleString('pt-BR')} Pratas extras!_`,
   }, { quoted: msg });
 }
 
@@ -844,6 +1170,11 @@ module.exports = {
   handlePontos,
   handleRankJogos,
   changeGold,
+  registrarAcertoDiarioQuiz,
+  respostaCorresponde,
+  registrarInicioQuiz,
+  QUIZ_WINDOW_LIMIT,
+  QUIZ_WINDOW_MS,
   quizState,
   perguntasQuiz,
 };

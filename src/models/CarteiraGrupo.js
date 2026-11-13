@@ -114,6 +114,10 @@ const carteiraGrupoSchema = new mongoose.Schema(
     // ── Economia local do grupo ──────────────────────────────────
     gold:       { type: Number, default: 0, min: 0 },
     quizPoints: { type: Number, default: 0, min: 0 },
+    quizPrizeDate: { type: String, default: null },
+    quizDailyCorrectDate: { type: String, default: null },
+    quizDailyCorrect: { type: Number, default: 0, min: 0 },
+    quizDailyBonusDate: { type: String, default: null },
     mensagens:  { type: Number, default: 0, min: 0 },
     // Bio exclusiva deste usuário neste grupo (não compartilhada entre grupos).
     bio:        { type: String, default: null, trim: true, maxlength: 150 },

@@ -1,0 +1,3758 @@
+[
+  {
+    "p": "Qual seleção venceu a Copa do Mundo de 1986?",
+    "r": "argentina",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção conquistou a Copa do Mundo de 1990?",
+    "r": "alemanha",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país venceu a Copa do Mundo de 1970?",
+    "r": "brasil",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção foi campeã mundial em 1966?",
+    "r": "inglaterra",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país venceu a Copa do Mundo de 1982?",
+    "r": "italia",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção conquistou o Mundial de 1994?",
+    "r": "brasil",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção venceu a Copa do Mundo de 2002?",
+    "r": "brasil",
+    "d": "Futebol"
+  },
+  {
+    "p": "Quem venceu a Copa do Mundo de 2014?",
+    "r": "alemanha",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país conquistou a Copa do Mundo de 2022?",
+    "r": "argentina",
+    "d": "Futebol"
+  },
+  {
+    "p": "Em qual cidade foi disputada a final da Copa do Mundo de 2006?",
+    "r": "berlim",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual estádio recebeu a final da Copa do Mundo de 2018?",
+    "r": "luzhniki",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção venceu a primeira edição da Eurocopa, em 1960?",
+    "r": "uniao sovietica",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país venceu a primeira edição da Copa América, em 1916?",
+    "r": "uruguai",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção venceu a Copa América de 2019?",
+    "r": "brasil",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país conquistou a Eurocopa de 2020, disputada em 2021?",
+    "r": "italia",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção venceu a Eurocopa de 2024?",
+    "r": "espanha",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual país venceu a primeira Copa do Mundo feminina, em 1991?",
+    "r": "estados unidos",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção foi campeã da Copa do Mundo feminina de 2019?",
+    "r": "estados unidos",
+    "d": "Futebol"
+  },
+  {
+    "p": "Em qual país foi realizada a primeira Copa do Mundo masculina?",
+    "r": "uruguai",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção é conhecida pelo apelido Seleção das Quinas?",
+    "r": "portugal",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção europeia é conhecida como Azzurra?",
+    "r": "italia",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o apelido tradicional da seleção dos Países Baixos?",
+    "r": "oranje",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual seleção europeia é frequentemente chamada de La Roja?",
+    "r": "espanha",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual entidade organiza a Copa Libertadores da América?",
+    "r": "conmebol",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual entidade organiza a Liga dos Campeões da Europa?",
+    "r": "uefa",
+    "d": "Futebol"
+  },
+  {
+    "p": "Como é conhecido o clássico entre Real Madrid e Barcelona?",
+    "r": "el classico",
+    "d": "Futebol"
+  },
+  {
+    "p": "Como é chamado o clássico entre Boca Juniors e River Plate?",
+    "r": "superclasico",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio do Boca Juniors conhecido como La Bombonera?",
+    "r": "la bombonera",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio do Arsenal, em Londres?",
+    "r": "emirates stadium",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio histórico do Liverpool?",
+    "r": "anfield",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio do Manchester United?",
+    "r": "old trafford",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o nome do estádio da Juventus, em Turim?",
+    "r": "allianz stadium",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual estádio recebe os jogos do Bayern de Munique?",
+    "r": "allianz arena",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio do Paris Saint-Germain?",
+    "r": "parc des princes",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o estádio do Chelsea, em Londres?",
+    "r": "stamford bridge",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube brasileiro é conhecido pelo apelido Peixe?",
+    "r": "santos",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube brasileiro é conhecido como Imortal Tricolor?",
+    "r": "gremio",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube carioca é chamado de Mengão?",
+    "r": "flamengo",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube mineiro é conhecido como Galo?",
+    "r": "atletico mineiro",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube mineiro é conhecido como Raposa?",
+    "r": "cruzeiro",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual clube paranaense é conhecido como Furacão?",
+    "r": "athletico paranaense",
+    "d": "Futebol"
+  },
+  {
+    "p": "A quantos metros da linha do gol fica a marca do pênalti?",
+    "r": "11 metros",
+    "d": "Futebol"
+  },
+  {
+    "p": "Quantos minutos dura cada tempo regulamentar de uma partida profissional?",
+    "r": "45 minutos",
+    "d": "Futebol"
+  },
+  {
+    "p": "Como se chama a reposição feita com as mãos depois que a bola sai pela linha lateral?",
+    "r": "arremesso lateral",
+    "d": "Futebol"
+  },
+  {
+    "p": "Como se chama a cobrança que reinicia o jogo após a bola sair pela linha de fundo tocada por um defensor?",
+    "r": "escanteio",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual cartão determina a expulsão imediata de um jogador?",
+    "r": "cartao vermelho",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual cartão representa uma advertência formal ao jogador?",
+    "r": "cartao amarelo",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o nome da tecnologia usada para auxiliar a arbitragem em lances de vídeo?",
+    "r": "var",
+    "d": "Futebol"
+  },
+  {
+    "p": "Como se chama a jogada em que um jogador fica em posição irregular em relação à defesa adversária no momento do passe?",
+    "r": "impedimento",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual é o nome da entidade máxima do futebol mundial, conhecida pela sigla FIFA?",
+    "r": "fifa",
+    "d": "Futebol"
+  },
+  {
+    "p": "Qual povo construiu as pirâmides de Gizé?",
+    "r": "egipcios",
+    "d": "História"
+  },
+  {
+    "p": "Qual era a capital do Império Bizantino?",
+    "r": "constantinopla",
+    "d": "História"
+  },
+  {
+    "p": "Quem foi o primeiro imperador de Roma?",
+    "r": "augusto",
+    "d": "História"
+  },
+  {
+    "p": "Qual cidade-Estado da Grécia Antiga é associada ao nascimento da democracia?",
+    "r": "atenas",
+    "d": "História"
+  },
+  {
+    "p": "Qual povo antigo fundou a cidade de Cartago?",
+    "r": "fenicios",
+    "d": "História"
+  },
+  {
+    "p": "Qual rainha egípcia se aliou a Júlio César e Marco Antônio?",
+    "r": "cleopatra",
+    "d": "História"
+  },
+  {
+    "p": "Qual general cartaginês atravessou os Alpes com elefantes?",
+    "r": "anibal",
+    "d": "História"
+  },
+  {
+    "p": "Qual batalha marcou a derrota final de Napoleão Bonaparte em 1815?",
+    "r": "waterloo",
+    "d": "História"
+  },
+  {
+    "p": "Em qual ilha Napoleão morreu no exílio?",
+    "r": "santa helena",
+    "d": "História"
+  },
+  {
+    "p": "Quem liderou a Revolução Haitiana e se tornou uma de suas figuras centrais?",
+    "r": "toussaint louverture",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano começou a Guerra Civil dos Estados Unidos?",
+    "r": "1861",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano terminou a Guerra Civil dos Estados Unidos?",
+    "r": "1865",
+    "d": "História"
+  },
+  {
+    "p": "Qual documento proclamou a independência das Treze Colônias em 1776?",
+    "r": "declaracao de independencia",
+    "d": "História"
+  },
+  {
+    "p": "Quem foi o primeiro presidente dos Estados Unidos?",
+    "r": "george washington",
+    "d": "História"
+  },
+  {
+    "p": "Qual revolução derrubou a monarquia francesa em 1789?",
+    "r": "revolucao francesa",
+    "d": "História"
+  },
+  {
+    "p": "Qual era o nome da prisão tomada pelos revolucionários em Paris em 14 de julho de 1789?",
+    "r": "bastilha",
+    "d": "História"
+  },
+  {
+    "p": "Quem foi o líder da independência da Índia conhecido como Mahatma?",
+    "r": "gandhi",
+    "d": "História"
+  },
+  {
+    "p": "Qual líder sul-africano passou décadas preso antes do fim do apartheid?",
+    "r": "nelson mandela",
+    "d": "História"
+  },
+  {
+    "p": "Qual movimento político e social derrubou o czarismo na Rússia em 1917?",
+    "r": "revolucao russa",
+    "d": "História"
+  },
+  {
+    "p": "Qual tratado encerrou formalmente a guerra entre Alemanha e Aliados em 1919?",
+    "r": "tratado de versalhes",
+    "d": "História"
+  },
+  {
+    "p": "Qual país foi invadido pela Alemanha em setembro de 1939, iniciando a Segunda Guerra Mundial na Europa?",
+    "r": "polonia",
+    "d": "História"
+  },
+  {
+    "p": "Qual conferência de 1945 reuniu Roosevelt, Churchill e Stalin na Crimeia?",
+    "r": "yalta",
+    "d": "História"
+  },
+  {
+    "p": "Qual cidade japonesa foi atingida pela primeira bomba atômica usada em guerra?",
+    "r": "hiroshima",
+    "d": "História"
+  },
+  {
+    "p": "Qual cidade japonesa foi atingida pela segunda bomba atômica em agosto de 1945?",
+    "r": "nagasaki",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano foi fundada a Organização das Nações Unidas?",
+    "r": "1945",
+    "d": "História"
+  },
+  {
+    "p": "Qual muro dividiu uma capital europeia durante a Guerra Fria?",
+    "r": "muro de berlim",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano ocorreu a queda do Muro de Berlim?",
+    "r": "1989",
+    "d": "História"
+  },
+  {
+    "p": "Qual foi o primeiro satélite artificial colocado em órbita da Terra?",
+    "r": "sputnik 1",
+    "d": "História"
+  },
+  {
+    "p": "Qual foi o nome da nave utilizada por Yuri Gagarin em seu primeiro voo espacial?",
+    "r": "vostok 1",
+    "d": "História"
+  },
+  {
+    "p": "Quem foi a primeira mulher a viajar para o espaço?",
+    "r": "valentina tereshkova",
+    "d": "História"
+  },
+  {
+    "p": "Qual civilização mesoamericana construiu a cidade de Chichén Itzá?",
+    "r": "maia",
+    "d": "História"
+  },
+  {
+    "p": "Qual império sul-americano tinha Cusco como capital?",
+    "r": "inca",
+    "d": "História"
+  },
+  {
+    "p": "Qual povo fundou Tenochtitlán, capital do Império Asteca?",
+    "r": "astecas",
+    "d": "História"
+  },
+  {
+    "p": "Qual navegador português chegou à Índia por via marítima em 1498?",
+    "r": "vasco da gama",
+    "d": "História"
+  },
+  {
+    "p": "Qual navegador comandou a expedição que chegou ao Brasil em 1500?",
+    "r": "pedro alvares cabral",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano foi abolida a escravidão no Brasil?",
+    "r": "1888",
+    "d": "História"
+  },
+  {
+    "p": "Qual lei brasileira aboliu oficialmente a escravidão?",
+    "r": "lei aurea",
+    "d": "História"
+  },
+  {
+    "p": "Quem foi o primeiro presidente do Brasil?",
+    "r": "deodoro da fonseca",
+    "d": "História"
+  },
+  {
+    "p": "Qual movimento brasileiro proclamou a República em 1889?",
+    "r": "proclamacao da republica",
+    "d": "História"
+  },
+  {
+    "p": "Qual cidade foi a primeira capital do Brasil colonial?",
+    "r": "salvador",
+    "d": "História"
+  },
+  {
+    "p": "Em que ano a capital do Brasil foi transferida do Rio de Janeiro para Brasília?",
+    "r": "1960",
+    "d": "História"
+  },
+  {
+    "p": "Qual movimento de 1789 em Minas Gerais defendia a separação de Portugal?",
+    "r": "inconfidencia mineira",
+    "d": "História"
+  },
+  {
+    "p": "Qual líder ficou conhecido como Tiradentes?",
+    "r": "joaquim jose da silva xavier",
+    "d": "História"
+  },
+  {
+    "p": "Qual revolta ocorreu na Bahia entre 1835 e ficou conhecida pela participação de africanos muçulmanos?",
+    "r": "revolta dos males",
+    "d": "História"
+  },
+  {
+    "p": "Qual guerra brasileira do século XIX envolveu Brasil, Argentina e Uruguai contra o Paraguai?",
+    "r": "guerra do paraguai",
+    "d": "História"
+  },
+  {
+    "p": "Quem proclamou a Independência do Brasil às margens do Ipiranga?",
+    "r": "dom pedro i",
+    "d": "História"
+  },
+  {
+    "p": "Qual imperador brasileiro abdicou do trono em 1831?",
+    "r": "dom pedro i",
+    "d": "História"
+  },
+  {
+    "p": "Qual imperador governou o Brasil durante grande parte do Segundo Reinado?",
+    "r": "dom pedro ii",
+    "d": "História"
+  },
+  {
+    "p": "Qual presidente brasileiro instituiu o Estado Novo em 1937?",
+    "r": "getulio vargas",
+    "d": "História"
+  },
+  {
+    "p": "Qual movimento popular de 1932 exigiu uma Constituição para São Paulo?",
+    "r": "revolucao constitucionalista",
+    "d": "História"
+  },
+  {
+    "p": "Qual é a capital da Noruega?",
+    "r": "oslo",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Suécia?",
+    "r": "estocolmo",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Finlândia?",
+    "r": "helsinque",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Islândia?",
+    "r": "reiquiavique",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Irlanda?",
+    "r": "dublin",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Bélgica?",
+    "r": "bruxelas",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Suíça?",
+    "r": "berna",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Áustria?",
+    "r": "viena",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Polônia?",
+    "r": "varsovia",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Hungria?",
+    "r": "budapeste",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Grécia?",
+    "r": "atenas",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Turquia?",
+    "r": "ancara",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Marrocos?",
+    "r": "rabat",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Quênia?",
+    "r": "nairobi",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Etiópia?",
+    "r": "adis abeba",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Nigéria?",
+    "r": "abuja",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital de Angola?",
+    "r": "luanda",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital de Moçambique?",
+    "r": "maputo",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Senegal?",
+    "r": "dacar",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Egito?",
+    "r": "cairo",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Tailândia?",
+    "r": "bangkok",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Vietnã?",
+    "r": "hanoi",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Indonésia?",
+    "r": "jacarta",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Malásia?",
+    "r": "kuala lumpur",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital das Filipinas?",
+    "r": "manila",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Nepal?",
+    "r": "catmandu",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Paquistão?",
+    "r": "islamabad",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Irã?",
+    "r": "teera",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Iraque?",
+    "r": "bagda",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Arábia Saudita?",
+    "r": "riade",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Peru?",
+    "r": "lima",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Chile?",
+    "r": "santiago",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Uruguai?",
+    "r": "montevideu",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Paraguai?",
+    "r": "assuncao",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Colômbia?",
+    "r": "bogota",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do Equador?",
+    "r": "quito",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Venezuela?",
+    "r": "caracas",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital da Bolívia, sede do governo?",
+    "r": "la paz",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Mato Grosso?",
+    "r": "cuiaba",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Mato Grosso do Sul?",
+    "r": "campo grande",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Minas Gerais?",
+    "r": "belo horizonte",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro do Paraná?",
+    "r": "curitiba",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro do Rio Grande do Sul?",
+    "r": "porto alegre",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Santa Catarina?",
+    "r": "florianopolis",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro do Pará?",
+    "r": "belem",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro do Amazonas?",
+    "r": "manaus",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro da Bahia?",
+    "r": "salvador",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Pernambuco?",
+    "r": "recife",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro do Ceará?",
+    "r": "fortaleza",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a capital do estado brasileiro de Goiás?",
+    "r": "goiania",
+    "d": "Geografia"
+  },
+  {
+    "p": "Qual é a unidade básica de organização dos seres vivos?",
+    "r": "celula",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual instrumento é usado para observar objetos muito pequenos?",
+    "r": "microscopio",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual instrumento permite observar objetos muito distantes no céu?",
+    "r": "telescopio",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a explicação científica sustentada por muitas evidências e testes?",
+    "r": "teoria cientifica",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome do processo de testar uma hipótese por meio de observações ou experiências?",
+    "r": "experimento",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual estado da matéria tem volume definido, mas assume a forma do recipiente?",
+    "r": "liquido",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual estado da matéria não tem forma nem volume fixos?",
+    "r": "gasoso",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a passagem do estado sólido diretamente para o gasoso?",
+    "r": "sublimacao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a passagem do estado gasoso para o líquido?",
+    "r": "condensacao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a temperatura de ebulição da água ao nível do mar, em Celsius?",
+    "r": "100",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a temperatura aproximada de congelamento da água pura, em Celsius?",
+    "r": "0",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual escala de temperatura começa no zero absoluto?",
+    "r": "kelvin",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual cientista formulou as leis do movimento e a lei da gravitação universal?",
+    "r": "isaac newton",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual cientista propôs a teoria da relatividade?",
+    "r": "albert einstein",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual cientista desenvolveu a teoria microbiana da fermentação e ajudou a criar a pasteurização?",
+    "r": "louis pasteur",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual cientista é associado à descoberta da radioatividade natural do urânio?",
+    "r": "henri becquerel",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual cientista descobriu a penicilina em 1928?",
+    "r": "alexander fleming",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da energia associada ao movimento de um corpo?",
+    "r": "energia cinetica",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da energia armazenada devido à posição ou configuração?",
+    "r": "energia potencial",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual princípio afirma que a energia total se conserva em um sistema isolado?",
+    "r": "conservacao da energia",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da mudança química que libera calor para o ambiente?",
+    "r": "reacao exotermica",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da mudança química que absorve calor do ambiente?",
+    "r": "reacao endotermica",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a mistura uniforme de duas ou mais substâncias?",
+    "r": "mistura homogenea",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama uma mistura que apresenta mais de uma fase visível?",
+    "r": "mistura heterogenea",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual método separa um sólido insolúvel de um líquido usando um filtro?",
+    "r": "filtracao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual método separa líquidos com diferentes pontos de ebulição?",
+    "r": "destilacao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a quantidade de matéria presente em um corpo?",
+    "r": "massa",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual grandeza mede a quantidade de espaço ocupado por um corpo?",
+    "r": "volume",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual grandeza física relaciona massa e volume?",
+    "r": "densidade",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para medir força?",
+    "r": "newton",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para medir energia?",
+    "r": "joule",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para medir potência?",
+    "r": "watt",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para medir pressão?",
+    "r": "pascal",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a região do espaço em que uma força magnética pode atuar?",
+    "r": "campo magnetico",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual tipo de lente é mais espessa no centro e converge raios de luz?",
+    "r": "lente convergente",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a separação da luz branca em várias cores?",
+    "r": "dispersao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual fenômeno faz a luz mudar de direção ao passar de um meio para outro?",
+    "r": "refracao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual fenômeno faz a luz retornar ao meio de origem ao atingir uma superfície?",
+    "r": "reflexao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da ciência que estuda os fósseis?",
+    "r": "paleontologia",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a ciência que estuda os terremotos?",
+    "r": "sismologia",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a ciência que estuda o clima?",
+    "r": "climatologia",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a ciência que estuda os oceanos?",
+    "r": "oceanografia",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome dado à hipótese testável usada como ponto de partida de uma investigação?",
+    "r": "hipotese",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é a etapa em que pesquisadores interpretam os resultados obtidos?",
+    "r": "analise dos resultados",
+    "d": "Ciência"
+  },
+  {
+    "p": "Como se chama a repetição de um estudo para verificar se seus resultados se mantêm?",
+    "r": "replicacao",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome do conjunto de procedimentos usado para investigar uma questão científica?",
+    "r": "metodo cientifico",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o termo para uma substância formada por átomos de elementos diferentes unidos quimicamente?",
+    "r": "composto",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da partícula que constitui a unidade de um elemento químico?",
+    "r": "atomo",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da região central e densa de um átomo?",
+    "r": "nucleo",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual é o nome da partícula subatômica sem carga elétrica?",
+    "r": "neutron",
+    "d": "Ciência"
+  },
+  {
+    "p": "Qual planeta do Sistema Solar tem o dia mais longo em relação ao seu período de rotação?",
+    "r": "venus",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é conhecido por sua grande mancha vermelha?",
+    "r": "jupiter",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é conhecido por possuir um sistema de anéis especialmente destacado e visível?",
+    "r": "saturno",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta possui a maior montanha conhecida do Sistema Solar, o Monte Olimpo?",
+    "r": "marte",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da galáxia em que está o Sistema Solar?",
+    "r": "via lactea",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é a galáxia grande mais próxima da Via Láctea?",
+    "r": "andromeda",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o caminho aparente do Sol no céu ao longo do ano?",
+    "r": "ecliptica",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da teoria cosmológica predominante sobre a origem e expansão do Universo?",
+    "r": "big bang",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama uma explosão estelar extremamente brilhante que pode ocorrer no fim da evolução de uma estrela massiva?",
+    "r": "supernova",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do objeto extremamente denso que pode se formar após o colapso de uma estrela massiva?",
+    "r": "buraco negro",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da fronteira de um buraco negro além da qual nem a luz pode escapar?",
+    "r": "horizonte de eventos",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é a estrela mais próxima da Terra depois do Sol?",
+    "r": "proxima centauri",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual constelação contém as estrelas conhecidas como Três Marias?",
+    "r": "orion",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da estrela que indica aproximadamente o norte no hemisfério Norte?",
+    "r": "estrela polar",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do satélite natural da Terra?",
+    "r": "lua",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual fase lunar ocorre quando a face visível aparece totalmente iluminada?",
+    "r": "lua cheia",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual fase lunar ocorre quando a Lua fica entre a Terra e o Sol?",
+    "r": "lua nova",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o alinhamento que pode bloquear a luz do Sol vista da Terra?",
+    "r": "eclipse solar",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o fenômeno em que a Terra projeta sua sombra sobre a Lua?",
+    "r": "eclipse lunar",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o mais próximo do Sol?",
+    "r": "mercurio",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o segundo a partir do Sol?",
+    "r": "venus",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o terceiro a partir do Sol?",
+    "r": "terra",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o quarto a partir do Sol?",
+    "r": "marte",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o quinto a partir do Sol?",
+    "r": "jupiter",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o sexto a partir do Sol?",
+    "r": "saturno",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o sétimo a partir do Sol?",
+    "r": "urano",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta é o oitavo a partir do Sol?",
+    "r": "netuno",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da região do Sistema Solar situada além de Netuno e que contém muitos corpos gelados?",
+    "r": "cinturao de kuiper",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta anão está localizado no cinturão de asteroides entre Marte e Júpiter?",
+    "r": "ceres",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual planeta anão ficou conhecido por ter sido reclassificado em 2006?",
+    "r": "plutao",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o conjunto de milhões ou bilhões de estrelas unidas pela gravidade?",
+    "r": "galaxia",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do agrupamento de estrelas que forma um desenho aparente no céu?",
+    "r": "constelacao",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama uma rocha espacial que chega à superfície da Terra?",
+    "r": "meteorito",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o pequeno corpo rochoso que orbita o Sol, geralmente entre Marte e Júpiter?",
+    "r": "asteroide",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do corpo gelado que pode formar uma cauda ao se aproximar do Sol?",
+    "r": "cometa",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do ponto da órbita de um planeta mais próximo do Sol?",
+    "r": "periélio",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome do ponto da órbita de um planeta mais distante do Sol?",
+    "r": "afelio",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual missão levou os primeiros seres humanos à superfície da Lua?",
+    "r": "apollo 11",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Quem foi o primeiro ser humano a pisar na Lua?",
+    "r": "neil armstrong",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual astronauta acompanhou Neil Armstrong na primeira caminhada lunar?",
+    "r": "buzz aldrin",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual agência espacial dos Estados Unidos realizou o programa Apollo?",
+    "r": "nasa",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual telescópio espacial foi lançado em 2021 e observa principalmente no infravermelho?",
+    "r": "james webb",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual telescópio espacial ficou famoso por imagens profundas do Universo e foi lançado em 1990?",
+    "r": "hubble",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama a explosão inicial de uma estrela que aumenta muito seu brilho, sem ser necessariamente uma supernova?",
+    "r": "nova",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da região ao redor de uma estrela onde água líquida poderia existir na superfície de um planeta?",
+    "r": "zona habitavel",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o movimento da Terra ao redor do próprio eixo?",
+    "r": "rotacao",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o movimento da Terra ao redor do Sol?",
+    "r": "translacao",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual fenômeno astronômico explica a alternância entre dia e noite?",
+    "r": "rotacao da terra",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Qual é o nome da camada visível da atmosfera solar, de onde vem a maior parte da luz que vemos?",
+    "r": "fotosfera",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Como se chama o estudo científico dos corpos celestes e do Universo?",
+    "r": "astronomia",
+    "d": "Astronomia"
+  },
+  {
+    "p": "Quem criou a World Wide Web no final da década de 1980?",
+    "r": "tim berners lee",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "O que significa a sigla WWW?",
+    "r": "world wide web",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "O que significa a sigla HTTP?",
+    "r": "hypertext transfer protocol",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual protocolo acrescenta uma camada de segurança criptografada ao HTTP?",
+    "r": "https",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "O que significa a sigla URL?",
+    "r": "uniform resource locator",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema traduz nomes de domínio em endereços IP?",
+    "r": "dns",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "O que significa a sigla IP no contexto das redes de computadores?",
+    "r": "internet protocol",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual componente guarda temporariamente dados usados pelos programas em execução?",
+    "r": "memoria ram",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual tipo de memória mantém os dados mesmo quando o computador é desligado?",
+    "r": "memoria rom",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual componente é especializado no processamento de gráficos?",
+    "r": "gpu",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual placa conecta e permite a comunicação entre os componentes de um computador?",
+    "r": "placa mae",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual dispositivo de armazenamento usa memória flash e não possui discos giratórios?",
+    "r": "ssd",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual dispositivo de armazenamento tradicional utiliza pratos magnéticos?",
+    "r": "hd",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema operacional de código aberto tem o pinguim Tux como mascote?",
+    "r": "linux",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema operacional para computadores é desenvolvido pela Microsoft?",
+    "r": "windows",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema operacional móvel é desenvolvido principalmente pelo Google?",
+    "r": "android",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual empresa desenvolve o macOS?",
+    "r": "apple",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual linguagem é muito utilizada para análise de dados e automação e tem sintaxe legível?",
+    "r": "python",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual linguagem criada por Dennis Ritchie no Bell Labs é tradicionalmente usada no desenvolvimento do Unix?",
+    "r": "c",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual linguagem é usada para consultar e manipular bancos de dados relacionais?",
+    "r": "sql",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama um conjunto organizado de dados armazenados para consulta?",
+    "r": "banco de dados",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama um programa que oferece recursos ou serviços a outros programas por meio de uma interface?",
+    "r": "api",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema de controle de versão distribuído é muito usado por programadores?",
+    "r": "git",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual plataforma de hospedagem de repositórios popularizou o uso colaborativo do Git?",
+    "r": "github",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama o código cujo funcionamento e desenvolvimento podem ser examinados e modificados conforme sua licença?",
+    "r": "codigo aberto",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual é o nome do sistema que permite conectar dispositivos próximos sem cabos usando ondas de rádio de curto alcance?",
+    "r": "bluetooth",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual tecnologia de rede sem fio é conhecida pelo nome Wi-Fi?",
+    "r": "wifi",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual conector tornou-se comum para carregar dispositivos e transferir dados em computadores e celulares?",
+    "r": "usb",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual tecnologia permite pagamentos por aproximação a poucos centímetros?",
+    "r": "nfc",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama o equipamento que encaminha pacotes entre redes diferentes?",
+    "r": "roteador",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual equipamento converte sinais para permitir a conexão com um provedor de internet?",
+    "r": "modem",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual serviço permite armazenar arquivos em servidores acessíveis pela internet?",
+    "r": "armazenamento em nuvem",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama a prática de transformar dados em formato ilegível sem a chave adequada?",
+    "r": "criptografia",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual golpe digital tenta enganar usuários para obter senhas ou dados pessoais?",
+    "r": "phishing",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama um programa malicioso criado para prejudicar ou explorar um sistema?",
+    "r": "malware",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual ferramenta de segurança controla o tráfego de rede permitido e bloqueado?",
+    "r": "firewall",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual método de autenticação exige duas formas diferentes de comprovar a identidade?",
+    "r": "autenticacao de dois fatores",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual teste apresenta desafios simples para diferenciar pessoas de programas automatizados?",
+    "r": "captcha",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama uma falha ou defeito no funcionamento de um programa?",
+    "r": "bug",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama o processo de localizar e corrigir erros em um programa?",
+    "r": "depuracao",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual é o nome de uma sequência finita de instruções para resolver um problema?",
+    "r": "algoritmo",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual sistema numérico usa apenas os dígitos zero e um?",
+    "r": "binario",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Quantos bits formam um byte?",
+    "r": "8",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual unidade é normalmente usada para medir a velocidade de transferência de dados em uma rede?",
+    "r": "bits por segundo",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama o computador que fornece recursos ou serviços a outros computadores?",
+    "r": "servidor",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama o dispositivo ou programa que solicita serviços a um servidor?",
+    "r": "cliente",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual tecnologia representa informações por uma matriz quadrada de módulos que pode ser lida por uma câmera?",
+    "r": "qr code",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual formato de arquivo é amplamente utilizado para documentos com layout preservado?",
+    "r": "pdf",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual tipo de software permite navegar por páginas da Web?",
+    "r": "navegador",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Como se chama a rede mundial de redes de computadores?",
+    "r": "internet",
+    "d": "Tecnologia"
+  },
+  {
+    "p": "Qual organela é responsável pela produção da maior parte do ATP nas células eucarióticas?",
+    "r": "mitocondria",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual organela contém a maior parte do DNA de uma célula eucariótica?",
+    "r": "nucleo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual organela realiza a fotossíntese em células vegetais?",
+    "r": "cloroplasto",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual estrutura celular seleciona a entrada e a saída de substâncias?",
+    "r": "membrana plasmatica",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual estrutura celular realiza a montagem de proteínas?",
+    "r": "ribossomo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a divisão celular que forma duas células-filhas geneticamente semelhantes?",
+    "r": "mitose",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a divisão celular que produz gametas com metade dos cromossomos?",
+    "r": "meiose",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual molécula leva instruções do DNA aos ribossomos durante a produção de proteínas?",
+    "r": "rna mensageiro",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a unidade funcional da hereditariedade?",
+    "r": "gene",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a estrutura formada por DNA associado a proteínas que carrega genes?",
+    "r": "cromossomo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual molécula transporta oxigênio no interior das hemácias?",
+    "r": "hemoglobina",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como são chamadas as células sanguíneas responsáveis principalmente pela defesa do organismo?",
+    "r": "leucocitos",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como são chamadas as células sanguíneas que transportam oxigênio?",
+    "r": "hemacias",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual célula especializada transmite impulsos nervosos?",
+    "r": "neuronio",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a comunicação entre neurônios ou entre um neurônio e outra célula?",
+    "r": "sinapse",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual órgão do sistema respiratório contém os alvéolos pulmonares?",
+    "r": "pulmao",
+    "d": "Biologia"
+  },
+  {
+    "p": "Em qual estrutura dos pulmões ocorre a troca gasosa com o sangue?",
+    "r": "alveolos",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual órgão filtra o sangue e produz a urina?",
+    "r": "rins",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual órgão produz a bile?",
+    "r": "figado",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual órgão produz insulina e também libera enzimas digestivas?",
+    "r": "pancreas",
+    "d": "Biologia"
+  },
+  {
+    "p": "Em qual parte do sistema digestório ocorre a maior parte da absorção de nutrientes?",
+    "r": "intestino delgado",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual estrutura impede que o alimento entre na traqueia durante a deglutição?",
+    "r": "epiglote",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual é o maior órgão do corpo humano?",
+    "r": "pele",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual tecido conecta os músculos aos ossos?",
+    "r": "tendao",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual tecido conecta um osso a outro em uma articulação?",
+    "r": "ligamento",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual tecido reveste as extremidades dos ossos nas articulações e reduz o atrito?",
+    "r": "cartilagem",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama o processo de manutenção de condições internas relativamente estáveis?",
+    "r": "homeostase",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama o processo pelo qual a água atravessa uma membrana semipermeável?",
+    "r": "osmose",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual tipo de reprodução envolve a união de gametas?",
+    "r": "reproducao sexuada",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama o organismo que produz seu próprio alimento a partir de fontes inorgânicas de energia ou carbono?",
+    "r": "autotrofo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama o organismo que obtém matéria orgânica alimentando-se de outros seres?",
+    "r": "heterotrofo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual grupo de organismos decompõe matéria orgânica e inclui muitos mofos e leveduras?",
+    "r": "fungos",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual grupo de organismos não possui núcleo delimitado por membrana?",
+    "r": "procariontes",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual estrutura bacteriana pode permitir locomoção em meio líquido?",
+    "r": "flagelo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a relação ecológica em que ambos os organismos se beneficiam?",
+    "r": "mutualismo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a relação ecológica em que um organismo se beneficia e o outro não é significativamente afetado?",
+    "r": "comensalismo",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a sequência de organismos em que cada um serve de alimento ao próximo?",
+    "r": "cadeia alimentar",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual nível trófico é ocupado por organismos que produzem matéria orgânica a partir de substâncias inorgânicas?",
+    "r": "produtores",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual gás é absorvido pelas plantas na fotossíntese?",
+    "r": "dioxido de carbono",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual pigmento verde captura energia luminosa nas plantas?",
+    "r": "clorofila",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual é o nome do processo pelo qual os organismos liberam energia dos nutrientes nas células?",
+    "r": "respiracao celular",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a teoria que explica a diversidade das espécies por ancestralidade comum e mudança ao longo das gerações?",
+    "r": "evolucao",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual cientista é conhecido por formular a seleção natural como mecanismo da evolução?",
+    "r": "charles darwin",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual naturalista desenvolveu ideias sobre evolução independentemente de Darwin e enviou um ensaio a ele?",
+    "r": "alfred russel wallace",
+    "d": "Biologia"
+  },
+  {
+    "p": "Como se chama a variedade de espécies, genes e ecossistemas em uma região?",
+    "r": "biodiversidade",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual ramo da biologia estuda a relação dos seres vivos entre si e com o ambiente?",
+    "r": "ecologia",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual ramo da biologia estuda os tecidos?",
+    "r": "histologia",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual ramo da biologia estuda as células?",
+    "r": "citologia",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual ramo da biologia estuda os animais?",
+    "r": "zoologia",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual ramo da biologia estuda as plantas?",
+    "r": "botanica",
+    "d": "Biologia"
+  },
+  {
+    "p": "Qual é o símbolo químico do ouro?",
+    "r": "au",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do ferro?",
+    "r": "fe",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do cobre?",
+    "r": "cu",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do mercúrio?",
+    "r": "hg",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do potássio?",
+    "r": "k",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do cálcio?",
+    "r": "ca",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do oxigênio?",
+    "r": "o",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do hidrogênio?",
+    "r": "h",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do hélio?",
+    "r": "he",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o símbolo químico do nitrogênio?",
+    "r": "n",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o número atômico do hidrogênio?",
+    "r": "1",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o número atômico do hélio?",
+    "r": "2",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o número atômico do oxigênio?",
+    "r": "8",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o número atômico do ferro?",
+    "r": "26",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o número atômico do ouro?",
+    "r": "79",
+    "d": "Química"
+  },
+  {
+    "p": "Quem organizou uma versão pioneira da tabela periódica por propriedades e massas atômicas?",
+    "r": "dmitri mendeleev",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a escala que indica a acidez ou basicidade de uma solução aquosa?",
+    "r": "ph",
+    "d": "Química"
+  },
+  {
+    "p": "Qual valor de pH é considerado neutro a aproximadamente 25 graus Celsius?",
+    "r": "7",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do sal de cozinha?",
+    "r": "nacl",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do gás carbônico?",
+    "r": "co2",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do gás oxigênio molecular?",
+    "r": "o2",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do ozônio?",
+    "r": "o3",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do metano?",
+    "r": "ch4",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química da amônia?",
+    "r": "nh3",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do ácido clorídrico?",
+    "r": "hcl",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a fórmula química do hidróxido de sódio?",
+    "r": "naoh",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama um átomo ou grupo de átomos que possui carga elétrica?",
+    "r": "ion",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama um íon com carga elétrica positiva?",
+    "r": "cation",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama um íon com carga elétrica negativa?",
+    "r": "anion",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a variação de um elemento que possui número diferente de nêutrons?",
+    "r": "isotopo",
+    "d": "Química"
+  },
+  {
+    "p": "Qual ligação química envolve o compartilhamento de pares de elétrons?",
+    "r": "ligacao covalente",
+    "d": "Química"
+  },
+  {
+    "p": "Qual ligação química é formada pela atração entre íons de cargas opostas?",
+    "r": "ligacao ionica",
+    "d": "Química"
+  },
+  {
+    "p": "Qual ligação ocorre entre átomos metálicos com elétrons deslocalizados?",
+    "r": "ligacao metalica",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a substância que aumenta a velocidade de uma reação sem ser consumida no balanço global?",
+    "r": "catalisador",
+    "d": "Química"
+  },
+  {
+    "p": "Qual família da tabela periódica inclui hélio, neônio e argônio?",
+    "r": "gases nobres",
+    "d": "Química"
+  },
+  {
+    "p": "Qual família da tabela periódica inclui flúor, cloro e bromo?",
+    "r": "halogenios",
+    "d": "Química"
+  },
+  {
+    "p": "Qual família da tabela periódica inclui lítio, sódio e potássio?",
+    "r": "metais alcalinos",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a região da tabela periódica formada pelos elementos do grupo 2?",
+    "r": "metais alcalinoterrosos",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o nome da menor unidade de um elemento que conserva suas propriedades químicas?",
+    "r": "atomo",
+    "d": "Química"
+  },
+  {
+    "p": "Qual partícula subatômica possui carga elétrica negativa?",
+    "r": "eletron",
+    "d": "Química"
+  },
+  {
+    "p": "Qual partícula subatômica possui carga elétrica positiva?",
+    "r": "proton",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a quantidade de matéria presente cuja unidade no SI é o mol?",
+    "r": "quantidade de substancia",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a unidade de quantidade de substância no Sistema Internacional?",
+    "r": "mol",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a transformação de uma substância em outras substâncias?",
+    "r": "reacao quimica",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a substância que existe antes de uma reação química?",
+    "r": "reagente",
+    "d": "Química"
+  },
+  {
+    "p": "Como se chama a substância formada durante uma reação química?",
+    "r": "produto",
+    "d": "Química"
+  },
+  {
+    "p": "Qual princípio afirma que a massa total se conserva em uma reação química em sistema fechado?",
+    "r": "lei de lavoisier",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o nome comum do ácido acético diluído presente no vinagre?",
+    "r": "acido acetico",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é o nome do processo de separação de componentes de uma mistura por sua diferente afinidade com fases?",
+    "r": "cromatografia",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é a forma sólida do carbono usada em lápis?",
+    "r": "grafite",
+    "d": "Química"
+  },
+  {
+    "p": "Qual é aproximadamente a aceleração da gravidade na superfície da Terra?",
+    "r": "9,8 metros por segundo ao quadrado",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a velocidade da luz no vácuo, aproximadamente em quilômetros por segundo?",
+    "r": "300 mil",
+    "d": "Física",
+    "aliases": [
+      "300000",
+      "300000 km por segundo",
+      "300 mil quilometros por segundo",
+      "299792458 metros por segundo"
+    ]
+  },
+  {
+    "p": "Qual lei de Newton relaciona força resultante, massa e aceleração?",
+    "r": "segunda lei de newton",
+    "d": "Física"
+  },
+  {
+    "p": "Qual lei de Newton é conhecida pelo princípio da inércia?",
+    "r": "primeira lei de newton",
+    "d": "Física"
+  },
+  {
+    "p": "Qual lei de Newton afirma que toda ação tem uma reação de mesma intensidade e direção oposta?",
+    "r": "terceira lei de newton",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a tendência de um corpo manter seu estado de repouso ou movimento uniforme?",
+    "r": "inercia",
+    "d": "Física"
+  },
+  {
+    "p": "Qual grandeza mede a variação da velocidade por unidade de tempo?",
+    "r": "aceleracao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual grandeza física mede a distância percorrida por unidade de tempo?",
+    "r": "velocidade",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para aceleração?",
+    "r": "metro por segundo ao quadrado",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para frequência?",
+    "r": "hertz",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para carga elétrica?",
+    "r": "coulomb",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para tensão elétrica?",
+    "r": "volt",
+    "d": "Física"
+  },
+  {
+    "p": "Qual lei relaciona tensão, corrente e resistência em um circuito ôhmico?",
+    "r": "lei de ohm",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a fórmula da potência elétrica em um circuito usando tensão e corrente?",
+    "r": "tensao vezes corrente",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a energia associada à altura de um corpo em um campo gravitacional?",
+    "r": "energia potencial gravitacional",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a energia associada à deformação de uma mola?",
+    "r": "energia potencial elastica",
+    "d": "Física"
+  },
+  {
+    "p": "Qual princípio explica o empuxo exercido por um fluido sobre um corpo imerso?",
+    "r": "principio de arquimedes",
+    "d": "Física"
+  },
+  {
+    "p": "Qual princípio explica a transmissão da pressão aplicada a um fluido confinado?",
+    "r": "principio de pascal",
+    "d": "Física"
+  },
+  {
+    "p": "Qual grandeza corresponde à força aplicada por unidade de área?",
+    "r": "pressao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual grandeza mede a quantidade de massa por unidade de volume?",
+    "r": "densidade",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a força de resistência exercida entre superfícies em contato?",
+    "r": "atrito",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a força que um fluido exerce para cima sobre um corpo nele imerso?",
+    "r": "empuxo",
+    "d": "Física"
+  },
+  {
+    "p": "Qual tipo de onda precisa de um meio material para se propagar?",
+    "r": "onda mecanica",
+    "d": "Física"
+  },
+  {
+    "p": "Quais ondas são percebidas pelo ouvido humano como som?",
+    "r": "ondas sonoras",
+    "d": "Física"
+  },
+  {
+    "p": "Qual propriedade da onda corresponde à distância entre duas cristas consecutivas?",
+    "r": "comprimento de onda",
+    "d": "Física"
+  },
+  {
+    "p": "Qual propriedade da onda indica o número de oscilações por segundo?",
+    "r": "frequencia",
+    "d": "Física"
+  },
+  {
+    "p": "Qual fenômeno explica a mudança aparente da frequência de uma onda devido ao movimento relativo entre fonte e observador?",
+    "r": "efeito doppler",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama o retorno de uma onda após atingir uma superfície?",
+    "r": "reflexao",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a mudança de direção de uma onda ao passar de um meio para outro?",
+    "r": "refracao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual fenômeno ocorre quando ondas se sobrepõem e combinam seus efeitos?",
+    "r": "interferencia",
+    "d": "Física"
+  },
+  {
+    "p": "Qual fenômeno permite que ondas contornem obstáculos ou passem por aberturas?",
+    "r": "difracao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual tipo de espelho possui superfície refletora curva para dentro?",
+    "r": "espelho concavo",
+    "d": "Física"
+  },
+  {
+    "p": "Qual tipo de espelho possui superfície refletora curva para fora?",
+    "r": "espelho convexo",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para trabalho e energia?",
+    "r": "joule",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para potência?",
+    "r": "watt",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para força?",
+    "r": "newton",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é a unidade do Sistema Internacional para pressão?",
+    "r": "pascal",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a transferência de energia térmica que ocorre pelo movimento de um fluido?",
+    "r": "conveccao",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a transferência de calor por ondas eletromagnéticas?",
+    "r": "irradiacao",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a transferência de calor por contato direto entre partículas?",
+    "r": "conducao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual escala de temperatura tem o zero absoluto como origem?",
+    "r": "kelvin",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome do processo em que um líquido passa para o estado gasoso em sua superfície?",
+    "r": "evaporacao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome do processo em que um sólido passa para o estado líquido?",
+    "r": "fusao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome do processo em que um líquido passa para o estado sólido?",
+    "r": "solidificacao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome do processo em que um gás passa diretamente para o estado sólido?",
+    "r": "ressublimacao",
+    "d": "Física"
+  },
+  {
+    "p": "Qual fenômeno produz corrente elétrica em um circuito quando o fluxo magnético varia?",
+    "r": "inducao eletromagnetica",
+    "d": "Física"
+  },
+  {
+    "p": "Como se chama a região ao redor de um ímã em que forças magnéticas podem atuar?",
+    "r": "campo magnetico",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome do fenômeno em que a luz branca se separa em diferentes cores?",
+    "r": "dispersao da luz",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome da grandeza que mede a quantidade de calor necessária para elevar a temperatura de uma substância?",
+    "r": "capacidade termica",
+    "d": "Física"
+  },
+  {
+    "p": "Qual é o nome da grandeza que relaciona calor recebido, massa e variação de temperatura?",
+    "r": "calor especifico",
+    "d": "Física"
+  },
+  {
+    "p": "Quanto é 18 × 7?",
+    "r": "126",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 225 dividido por 15?",
+    "r": "15",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a raiz quadrada de 169?",
+    "r": "13",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a raiz cúbica de 125?",
+    "r": "5",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 2 elevado à quinta potência?",
+    "r": "32",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 3 elevado à quarta potência?",
+    "r": "81",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de 0,25 escrito como fração irredutível?",
+    "r": "1/4",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual fração representa 75%?",
+    "r": "3/4",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 30% de 150?",
+    "r": "45",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 12,5% de 80?",
+    "r": "10",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o mínimo múltiplo comum de 6 e 8?",
+    "r": "24",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o máximo divisor comum de 18 e 24?",
+    "r": "6",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o próximo número da sequência 2, 4, 8, 16?",
+    "r": "32",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o próximo número da sequência 1, 4, 9, 16?",
+    "r": "25",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de x na equação x + 17 = 42?",
+    "r": "25",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de x na equação 5x = 45?",
+    "r": "9",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de x na equação 2x + 6 = 20?",
+    "r": "7",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de x na equação 4x − 8 = 12?",
+    "r": "5",
+    "d": "Matemática"
+  },
+  {
+    "p": "Se um produto custa 120 reais e recebe desconto de 25%, qual é o preço final?",
+    "r": "90",
+    "d": "Matemática"
+  },
+  {
+    "p": "Se 3 cadernos custam 24 reais, quanto custam 5 cadernos pelo mesmo preço unitário?",
+    "r": "40",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 1,5 + 2,75?",
+    "r": "4,25",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 9,2 − 3,85?",
+    "r": "5,35",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 0,6 × 0,5?",
+    "r": "0,3",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 4,8 dividido por 0,6?",
+    "r": "8",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor absoluto de −17?",
+    "r": "17",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o oposto aditivo de −23?",
+    "r": "23",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o inverso multiplicativo de 5?",
+    "r": "1/5",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de −8 + 13?",
+    "r": "5",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de −6 × 7?",
+    "r": "−42",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de 48 dividido por −6?",
+    "r": "−8",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é a soma dos ângulos internos de um triângulo?",
+    "r": "180 graus",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de 2/3 + 1/3?",
+    "r": "1",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de 5/6 − 1/3?",
+    "r": "1/2",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de 3/4 × 2/5?",
+    "r": "3/10",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o resultado de 2/3 dividido por 4/5?",
+    "r": "5/6",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto é 10 elevado a zero?",
+    "r": "1",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de 7 ao quadrado?",
+    "r": "49",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de 11 ao quadrado?",
+    "r": "121",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a soma dos cinco primeiros números naturais positivos?",
+    "r": "15",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a soma dos números inteiros de −3 até 3?",
+    "r": "0",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a mediana do conjunto ordenado 2, 5, 7, 9, 12?",
+    "r": "7",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o número que corresponde a 0,2 em porcentagem?",
+    "r": "20%",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quanto representa 3 horas em minutos?",
+    "r": "180",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quantos segundos existem em 5 minutos?",
+    "r": "300",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quantos metros correspondem a 2,5 quilômetros?",
+    "r": "2500",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quantos mililitros correspondem a 1,75 litro?",
+    "r": "1750",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de x no sistema x + y = 10 e x − y = 2?",
+    "r": "6",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o valor de y no sistema x + y = 10 e x − y = 2?",
+    "r": "4",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é o número que, multiplicado por 8, resulta em 72?",
+    "r": "9",
+    "d": "Matemática"
+  },
+  {
+    "p": "Qual é a soma dos ângulos de uma volta completa?",
+    "r": "360 graus",
+    "d": "Matemática"
+  },
+  {
+    "p": "Quantos lados tem um pentágono?",
+    "r": "5",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos lados tem um hexágono?",
+    "r": "6",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos lados tem um heptágono?",
+    "r": "7",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos lados tem um nonágono?",
+    "r": "9",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos lados tem um dodecágono?",
+    "r": "12",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a medida de cada ângulo interno de um triângulo equilátero?",
+    "r": "60 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a medida de cada ângulo interno de um quadrado?",
+    "r": "90 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a soma dos ângulos internos de um pentágono?",
+    "r": "540 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a soma dos ângulos internos de um hexágono?",
+    "r": "720 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da soma dos ângulos internos de um polígono de n lados?",
+    "r": "(n − 2) × 180 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o segmento que liga o centro de um círculo à sua borda?",
+    "r": "raio",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o segmento que atravessa o centro e liga dois pontos da circunferência?",
+    "r": "diametro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é o comprimento de uma circunferência de raio r?",
+    "r": "2 pi r",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um círculo de raio r?",
+    "r": "pi r ao quadrado",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um retângulo?",
+    "r": "base vezes altura",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um paralelogramo?",
+    "r": "base vezes altura",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um trapézio?",
+    "r": "soma das bases vezes altura dividido por dois",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um losango usando suas diagonais?",
+    "r": "diagonal maior vezes diagonal menor dividido por dois",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula do perímetro de um quadrado de lado a?",
+    "r": "4a",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área de um quadrado de lado a?",
+    "r": "a ao quadrado",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula do volume de um cubo de aresta a?",
+    "r": "a ao cubo",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula do volume de um paralelepípedo retângulo?",
+    "r": "comprimento vezes largura vezes altura",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula do volume de um cilindro?",
+    "r": "pi vezes raio ao quadrado vezes altura",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula do volume de uma esfera?",
+    "r": "quatro terços de pi r ao cubo",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a fórmula da área da superfície de um cubo de aresta a?",
+    "r": "6a ao quadrado",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o lado oposto ao ângulo reto em um triângulo retângulo?",
+    "r": "hipotenusa",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual teorema relaciona os lados de um triângulo retângulo?",
+    "r": "teorema de pitagoras",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um triângulo que possui os três lados iguais?",
+    "r": "equilatero",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um triângulo que possui dois lados iguais?",
+    "r": "isosceles",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um triângulo que possui os três lados diferentes?",
+    "r": "escaleno",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um triângulo que possui um ângulo de 90 graus?",
+    "r": "retangulo",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um quadrilátero com apenas um par de lados paralelos na definição escolar usual?",
+    "r": "trapezio",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o quadrilátero que tem quatro lados iguais e quatro ângulos retos?",
+    "r": "quadrado",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o quadrilátero que tem lados opostos paralelos e iguais?",
+    "r": "paralelogramo",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama a reta que toca uma circunferência em um único ponto?",
+    "r": "tangente",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama a reta que corta uma circunferência em dois pontos?",
+    "r": "secante",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o ponto equidistante de todos os pontos de uma circunferência?",
+    "r": "centro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o ângulo cujo vértice está no centro de uma circunferência?",
+    "r": "angulo central",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama o ângulo cujo vértice está sobre a circunferência e cujos lados são cordas?",
+    "r": "angulo inscrito",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos graus mede um ângulo completo?",
+    "r": "360 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos graus mede um ângulo agudo?",
+    "r": "menos de 90 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos graus mede um ângulo obtuso?",
+    "r": "mais de 90 e menos de 180 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Quantos graus mede um ângulo reto?",
+    "r": "90 graus",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um polígono de dez lados?",
+    "r": "decagono",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um polígono de doze lados?",
+    "r": "dodecagono",
+    "d": "Geometria"
+  },
+  {
+    "p": "Como se chama um polígono em que todos os lados e ângulos internos são iguais?",
+    "r": "poligono regular",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é o nome do ponto de encontro das medianas de um triângulo?",
+    "r": "baricentro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é o nome do ponto de encontro das bissetrizes internas de um triângulo?",
+    "r": "incentro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é o nome do ponto de encontro das mediatrizes dos lados de um triângulo?",
+    "r": "circuncentro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é o nome do ponto de encontro das alturas de um triângulo?",
+    "r": "ortocentro",
+    "d": "Geometria"
+  },
+  {
+    "p": "Qual é a derivada de x² em relação a x?",
+    "r": "2x",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Para f(x) = x³, qual expressão representa f'(x)?",
+    "r": "3x ao quadrado",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 5x em relação a x?",
+    "r": "5",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de uma constante?",
+    "r": "0",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de tan(x), quando cos(x) é diferente de zero?",
+    "r": "secante ao quadrado de x",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de cos(x)?",
+    "r": "menos sen(x)",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de e elevado a x?",
+    "r": "e elevado a x",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de ln(x), para x positivo?",
+    "r": "1 dividido por x",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 1/x, para x diferente de zero?",
+    "r": "menos 1 dividido por x ao quadrado",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a regra usada para derivar o produto de duas funções?",
+    "r": "regra do produto",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a regra usada para derivar o quociente de duas funções?",
+    "r": "regra do quociente",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a regra usada para derivar uma função composta?",
+    "r": "regra da cadeia",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se interpreta geometricamente a derivada de uma função em um ponto?",
+    "r": "inclinacao da reta tangente",
+    "d": "Cálculo"
+  },
+  {
+    "p": "O que representa uma derivada positiva em um intervalo?",
+    "r": "funcao crescente",
+    "d": "Cálculo"
+  },
+  {
+    "p": "O que representa uma derivada negativa em um intervalo?",
+    "r": "funcao decrescente",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a antiderivada mais geral de 1 em relação a x?",
+    "r": "x mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de x em relação a x?",
+    "r": "x ao quadrado dividido por dois mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de 2x em relação a x?",
+    "r": "x ao quadrado mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de cos(x) em relação a x?",
+    "r": "sen(x) mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de sen(x) em relação a x?",
+    "r": "menos cos(x) mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de e elevado a x em relação a x?",
+    "r": "e elevado a x mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de 1/x em relação a x, para x positivo?",
+    "r": "ln(x) mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual símbolo é usado para representar uma integral?",
+    "r": "integral",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama a integral que possui limites inferior e superior?",
+    "r": "integral definida",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama a integral sem limites de integração?",
+    "r": "integral indefinida",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual teorema relaciona derivação e integração?",
+    "r": "teorema fundamental do calculo",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o valor de limite de x quando x tende a 3?",
+    "r": "3",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o limite de 1/x quando x tende ao infinito positivo?",
+    "r": "0",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o limite de sen(x)/x quando x tende a zero, em radianos?",
+    "r": "1",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o limite de (x² − 1)/(x − 1) quando x tende a 1?",
+    "r": "2",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama o valor de uma função em um ponto ao qual ela se aproxima?",
+    "r": "limite",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama uma função cuja derivada é zero em um ponto?",
+    "r": "ponto estacionario",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama o ponto em que uma função pode mudar de crescente para decrescente?",
+    "r": "ponto critico",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o nome do máximo de uma função em uma vizinhança do ponto?",
+    "r": "maximo local",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o nome do mínimo de uma função em uma vizinhança do ponto?",
+    "r": "minimo local",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 7x⁴?",
+    "r": "28x ao cubo",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 3x² + 2x + 1?",
+    "r": "6x mais 2",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 4x³ − 5x?",
+    "r": "12x ao quadrado menos 5",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral indefinida de 3x²?",
+    "r": "x ao cubo mais c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral definida de 1 entre x igual a 0 e x igual a 4?",
+    "r": "4",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral definida de x entre x igual a 0 e x igual a 2?",
+    "r": "2",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a integral definida de 2x entre x igual a 0 e x igual a 3?",
+    "r": "9",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de uma função constante igual a 12?",
+    "r": "0",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de 10x + 7?",
+    "r": "10",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de x⁵?",
+    "r": "5x elevado a 4",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é a derivada de raiz quadrada de x?",
+    "r": "1 dividido por 2 raiz de x",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual é o resultado da integral indefinida de 0?",
+    "r": "c",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Como se chama a área algébrica obtida ao considerar os sinais positivo e negativo de uma função em uma integral definida?",
+    "r": "area algebrica",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual conceito mede a taxa instantânea de variação de uma função?",
+    "r": "derivada",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual conceito pode calcular a acumulação de uma grandeza ao longo de um intervalo?",
+    "r": "integral",
+    "d": "Cálculo"
+  },
+  {
+    "p": "Qual medida de tendência central corresponde ao valor que aparece com maior frequência?",
+    "r": "moda",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida de tendência central divide os dados ordenados em duas metades?",
+    "r": "mediana",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a soma dos valores dividida pela quantidade de observações?",
+    "r": "media aritmetica",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a diferença entre o maior e o menor valor de um conjunto?",
+    "r": "amplitude",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida indica o quanto os dados tendem a se afastar da média, em unidades ao quadrado?",
+    "r": "variancia",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida corresponde à raiz quadrada da variância?",
+    "r": "desvio padrao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama um gráfico que representa frequências por meio de barras contíguas para intervalos numéricos?",
+    "r": "histograma",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual gráfico usa setores de um círculo para representar partes de um todo?",
+    "r": "grafico de setores",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a tabela que organiza valores e suas contagens?",
+    "r": "distribuicao de frequencias",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de obter 6 ao lançar um dado honesto de seis faces?",
+    "r": "1/6",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de obter um número par ao lançar um dado honesto de seis faces?",
+    "r": "1/2",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de obter um número maior que 4 em um dado honesto de seis faces?",
+    "r": "1/3",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de obter duas caras em dois lançamentos independentes de uma moeda honesta?",
+    "r": "1/4",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de obter pelo menos uma cara em dois lançamentos de uma moeda honesta?",
+    "r": "3/4",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o conjunto de todos os resultados possíveis de um experimento aleatório?",
+    "r": "espaco amostral",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama cada resultado possível de um experimento aleatório?",
+    "r": "evento elementar",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a seleção de uma parte de uma população para análise?",
+    "r": "amostragem",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o conjunto completo de indivíduos ou elementos que se deseja estudar?",
+    "r": "populacao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o subconjunto de uma população observado em uma pesquisa?",
+    "r": "amostra",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual tipo de variável apresenta categorias sem ordem natural?",
+    "r": "qualitativa nominal",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual tipo de variável apresenta categorias com uma ordem natural?",
+    "r": "qualitativa ordinal",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual tipo de variável pode assumir qualquer valor em um intervalo?",
+    "r": "quantitativa continua",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual tipo de variável assume valores contáveis, como números inteiros?",
+    "r": "quantitativa discreta",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o valor que divide os dados em 100 partes iguais?",
+    "r": "percentil",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o valor que divide os dados em quatro partes iguais?",
+    "r": "quartil",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual quartil corresponde à mediana?",
+    "r": "segundo quartil",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o valor abaixo do qual se encontra uma porcentagem determinada das observações?",
+    "r": "percentil",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama um valor muito distante da maioria das observações?",
+    "r": "valor atipico",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a média de 2, 4 e 6?",
+    "r": "4",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a mediana de 1, 3, 8, 10 e 12?",
+    "r": "8",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a moda do conjunto 2, 2, 3, 4, 4, 4, 5?",
+    "r": "4",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a amplitude do conjunto 4, 7, 9 e 15?",
+    "r": "11",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de tirar um ás de um baralho padrão de 52 cartas?",
+    "r": "1/13",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de tirar uma carta vermelha de um baralho padrão de 52 cartas?",
+    "r": "1/2",
+    "d": "Estatística"
+  },
+  {
+    "p": "Quantas cartas há em um baralho padrão sem coringas?",
+    "r": "52",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a medida de associação linear entre duas variáveis, que varia de −1 a 1?",
+    "r": "coeficiente de correlacao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é o valor de correlação linear que indica associação positiva perfeita?",
+    "r": "1",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é o valor de correlação linear que indica ausência de associação linear?",
+    "r": "0",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é o valor de correlação linear que indica associação negativa perfeita?",
+    "r": "−1",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a representação visual de uma relação entre duas variáveis usando pontos?",
+    "r": "grafico de dispersao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a tendência de uma variável mudar conforme outra variável muda?",
+    "r": "correlacao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o procedimento de usar dados de uma amostra para tirar conclusões sobre a população?",
+    "r": "inferencia estatistica",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a diferença entre uma estimativa amostral e o parâmetro verdadeiro?",
+    "r": "erro amostral",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama o viés que ocorre quando a amostra não representa adequadamente a população?",
+    "r": "vies de selecao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida é menos sensível a valores extremos: média ou mediana?",
+    "r": "mediana",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida de dispersão é expressa na mesma unidade dos dados originais?",
+    "r": "desvio padrao",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual medida de dispersão é expressa em unidades ao quadrado?",
+    "r": "variancia",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a média calculada atribuindo pesos diferentes aos valores?",
+    "r": "media ponderada",
+    "d": "Estatística"
+  },
+  {
+    "p": "Como se chama a chance de um evento ocorrer, expressa entre zero e um?",
+    "r": "probabilidade",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual é a probabilidade de um evento impossível?",
+    "r": "0",
+    "d": "Estatística"
+  },
+  {
+    "p": "Qual país inventou o basquete?",
+    "r": "estados unidos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Em qual estado norte-americano foi inventado o basquete?",
+    "r": "massachusetts",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quem inventou o basquete em 1891?",
+    "r": "james naismith",
+    "d": "Basquete"
+  },
+  {
+    "p": "Em qual cidade foi criado o basquete?",
+    "r": "springfield",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual é a altura regulamentar do aro de basquete em relação ao piso?",
+    "r": "3,05 metros",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual é o diâmetro aproximado do aro de uma cesta de basquete?",
+    "r": "45 centimetros",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos períodos tem uma partida olímpica de basquete?",
+    "r": "4",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos minutos dura cada período em uma partida FIBA?",
+    "r": "10 minutos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos minutos dura cada período de uma partida regular da NBA?",
+    "r": "12 minutos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos segundos uma equipe tem para tentar um arremesso na NBA?",
+    "r": "24 segundos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos segundos uma equipe tem para cruzar a linha central na NBA?",
+    "r": "8 segundos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a infração de caminhar com a bola sem driblar?",
+    "r": "andada",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a infração de voltar a driblar depois de segurar a bola com as duas mãos?",
+    "r": "duplo drible",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama o passe que quica uma vez no chão antes de chegar ao companheiro?",
+    "r": "passe picado",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama o passe feito diretamente por cima da cabeça?",
+    "r": "passe sobre a cabeca",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama o arremesso realizado com uma das mãos próximo à cesta, geralmente após dois passos?",
+    "r": "bandeja",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama o arremesso em que o jogador salta e lança a bola no ponto mais alto?",
+    "r": "arremesso em suspensao",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a ação de bloquear um arremesso adversário?",
+    "r": "toco",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a recuperação da bola após um arremesso errado?",
+    "r": "rebote",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a assistência que precede diretamente uma cesta de um companheiro?",
+    "r": "assistencia",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual posição tradicionalmente organiza as jogadas e conduz a bola?",
+    "r": "armador",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual posição costuma atuar próximo à cesta e disputar rebotes?",
+    "r": "pivo",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual posição tradicional do basquete é conhecida em inglês como shooting guard?",
+    "r": "ala armador",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual é o nome da linha que delimita a área de três pontos?",
+    "r": "linha de tres pontos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos pontos vale uma cesta feita em um lance livre?",
+    "r": "1",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos pontos vale uma cesta feita dentro da linha de três pontos?",
+    "r": "2",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos pontos vale uma cesta feita de fora da linha de três pontos?",
+    "r": "3",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantos jogadores de cada equipe ficam em quadra ao mesmo tempo?",
+    "r": "5",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantas faltas pessoais desqualificam um jogador em uma partida FIBA?",
+    "r": "5",
+    "d": "Basquete"
+  },
+  {
+    "p": "Quantas faltas pessoais desqualificam um jogador em uma partida da NBA?",
+    "r": "6",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a disputa inicial em que o árbitro lança a bola ao alto entre dois adversários?",
+    "r": "bola ao alto",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual é o nome do campeonato mundial de seleções organizado pela FIBA?",
+    "r": "copa do mundo de basquete",
+    "d": "Basquete"
+  },
+  {
+    "p": "O que significa a sigla FIBA?",
+    "r": "federacao internacional de basquetebol",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual seleção masculina conquistou o ouro olímpico no basquete em Barcelona 1992?",
+    "r": "estados unidos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual seleção feminina conquistou o ouro olímpico no basquete em 1996?",
+    "r": "estados unidos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual jogador é conhecido pelo apelido Air Jordan?",
+    "r": "michael jordan",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual jogador é conhecido como The King?",
+    "r": "lebron james",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual jogador é conhecido como Black Mamba?",
+    "r": "kobe bryant",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual jogador ficou conhecido pelo apelido The Dream?",
+    "r": "hakeem olajuwon",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual jogador brasileiro ganhou o apelido de Mão Santa?",
+    "r": "oscar schmidt",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual brasileiro foi o primeiro a disputar uma partida da NBA?",
+    "r": "rolando ferreira",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual franquia da NBA tem sede em Chicago?",
+    "r": "chicago bulls",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual franquia da NBA tem sede em Boston?",
+    "r": "boston celtics",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual franquia da NBA tem sede em San Antonio?",
+    "r": "san antonio spurs",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual franquia da NBA tem sede em Miami?",
+    "r": "miami heat",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual franquia da NBA tem sede em Toronto?",
+    "r": "toronto raptors",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual torneio universitário masculino de basquete dos Estados Unidos é conhecido como March Madness?",
+    "r": "ncaa tournament",
+    "d": "Basquete"
+  },
+  {
+    "p": "Qual é o nome da liga profissional feminina de basquete dos Estados Unidos?",
+    "r": "wnba",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a infração em que um jogador permanece tempo excessivo no garrafão adversário na NBA?",
+    "r": "tres segundos ofensivos",
+    "d": "Basquete"
+  },
+  {
+    "p": "Como se chama a infração de contato físico ilegal contra um adversário?",
+    "r": "falta pessoal",
+    "d": "Basquete"
+  },
+  {
+    "p": "Em One Piece, qual é o nome do navio dos Chapéus de Palha depois do Going Merry?",
+    "r": "thousand sunny",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual cozinheiro dos Chapéus de Palha luta principalmente com as pernas?",
+    "r": "sanji",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome da arqueóloga que procura os Poneglyphs?",
+    "r": "nico robin",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome do médico da tripulação de Luffy?",
+    "r": "tony tony chopper",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual pirata entregou seu chapéu de palha a Luffy?",
+    "r": "shanks",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome verdadeiro da fruta cujo poder ficou conhecido como Gomu Gomu no Mi?",
+    "r": "hito hito no mi modelo nika",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome do pai de Monkey D. Luffy?",
+    "r": "monkey d dragon",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome do irmão de Luffy que usa o poder do fogo?",
+    "r": "portgas d ace",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome do primeiro navio dos Chapéus de Palha?",
+    "r": "going merry",
+    "d": "Anime"
+  },
+  {
+    "p": "Em One Piece, qual é o nome da navegadora da tripulação de Luffy?",
+    "r": "nami",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do protagonista que usa a respiração da água e do sol?",
+    "r": "tanjiro kamado",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do Hashira do Som?",
+    "r": "tengen uzui",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do Hashira da Água?",
+    "r": "giyu tomioka",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do demônio que transformou Nezuko?",
+    "r": "muzan kibutsuji",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do companheiro de Tanjiro que usa a respiração do trovão?",
+    "r": "zenitsu agatsuma",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Demon Slayer, qual é o nome do companheiro de Tanjiro que usa uma máscara de javali?",
+    "r": "inosuke hashibira",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Jujutsu Kaisen, qual é o nome do protagonista que engole um dedo amaldiçoado?",
+    "r": "yuji itadori",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Jujutsu Kaisen, qual feiticeiro é conhecido por usar uma venda nos olhos?",
+    "r": "satoru gojo",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Jujutsu Kaisen, qual é o nome da maldição conhecida como Rei das Maldições?",
+    "r": "sukuna",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Jujutsu Kaisen, qual é o nome da escola de feiticeiros frequentada por Yuji em Tóquio?",
+    "r": "colegio tecnico de jujutsu de tokyo",
+    "d": "Anime"
+  },
+  {
+    "p": "Em My Hero Academia, qual é o nome verdadeiro de Deku?",
+    "r": "izuku midoriya",
+    "d": "Anime"
+  },
+  {
+    "p": "Em My Hero Academia, qual é o nome da escola onde Deku treina para se tornar herói?",
+    "r": "ua",
+    "d": "Anime"
+  },
+  {
+    "p": "Em My Hero Academia, qual colega de Deku possui uma individualidade de explosão?",
+    "r": "katsuki bakugo",
+    "d": "Anime"
+  },
+  {
+    "p": "Em My Hero Academia, qual é o nome da individualidade de Shoto Todoroki?",
+    "r": "meio frio meio quente",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Fullmetal Alchemist, qual irmão perdeu o corpo inteiro em uma tentativa de transmutação humana?",
+    "r": "alphonse elric",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Fullmetal Alchemist, qual irmão é conhecido como Alquimista de Aço?",
+    "r": "edward elric",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Fullmetal Alchemist, qual objeto lendário os irmãos Elric procuram?",
+    "r": "pedra filosofal",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Hunter x Hunter, qual é o nome do protagonista de cabelo espetado?",
+    "r": "gon freecss",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Hunter x Hunter, qual é o nome do amigo de Gon que vem de uma família de assassinos?",
+    "r": "killua zoldyck",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Hunter x Hunter, como se chama a energia vital usada pelos personagens?",
+    "r": "nen",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Pokémon, qual é o nome do parceiro Pokémon mais conhecido de Ash?",
+    "r": "pikachu",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Pokémon, qual é o tipo do Pokémon Charmander?",
+    "r": "fogo",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Pokémon, em qual Pokémon Bulbasaur evolui primeiro?",
+    "r": "ivysaur",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Pokémon, qual é o nome da organização criminosa liderada por Giovanni?",
+    "r": "equipe rocket",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Bleach, qual é o nome do protagonista que se torna Ceifeiro de Almas?",
+    "r": "ichigo kurosaki",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Bleach, qual é o nome da espada de um Ceifeiro de Almas?",
+    "r": "zanpakuto",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Spy x Family, qual é o nome da menina que consegue ler pensamentos?",
+    "r": "anya forger",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Spy x Family, qual é a profissão secreta de Loid Forger?",
+    "r": "espi ao",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Spy x Family, qual é a profissão secreta de Yor Forger?",
+    "r": "assassina",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Haikyuu!!, qual é a posição de Shoyo Hinata no time?",
+    "r": "central",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Haikyuu!!, qual é o nome do levantador alto do Karasuno conhecido como Rei da Quadra?",
+    "r": "tobio kageyama",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Sailor Moon, qual é a identidade civil da protagonista?",
+    "r": "usagi tsukino",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Sailor Moon, qual é o nome do gato que orienta Usagi?",
+    "r": "luna",
+    "d": "Anime"
+  },
+  {
+    "p": "Em JoJo's Bizarre Adventure, qual é o nome da família central da série?",
+    "r": "joestar",
+    "d": "Anime"
+  },
+  {
+    "p": "Em JoJo's Bizarre Adventure, como se chama a manifestação sobrenatural de poder que aparece a partir da terceira parte?",
+    "r": "stand",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Chainsaw Man, qual é o nome do protagonista que faz um contrato com Pochita?",
+    "r": "denji",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Chainsaw Man, qual é a forma de demônio que Pochita representa?",
+    "r": "motosserra",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Tokyo Ghoul, qual é o nome do protagonista que se torna meio ghoul?",
+    "r": "ken kaneki",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Mob Psycho 100, qual é o apelido do protagonista Shigeo Kageyama?",
+    "r": "mob",
+    "d": "Anime"
+  },
+  {
+    "p": "Em Dr. Stone, qual é o nome do protagonista que tenta reconstruir a civilização pela ciência?",
+    "r": "senku ishigami",
+    "d": "Anime"
+  }
+]

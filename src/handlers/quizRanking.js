@@ -1,11 +1,20 @@
-const { createHash } = require('crypto');
+'use strict';
+
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const CarteiraGrupo = require('../models/CarteiraGrupo');
+const ExtraState = require('../models/ExtraState');
 const { resolveDisplayName } = require('../utils/identity');
+const { TZ, agoraLocal } = require('../utils/tempo');
 
-const PREMIOS_PRATA = [1000, 500, 350];
+const PREMIOS_PRATA = [10000, 5000, 3500];
+const PARTICIPATION_TARGET = 3;
+const PARTICIPATION_REWARD = 500;
+const HORA = 18;
+const MINUTO = 30;
 
-// Aceita Set/Array. Se vier vazio (o bot.js passa new Set()), descobre os grupos pelo banco.
+const MEDALS = ['🥇', '🥈', '🥉'];
+let activeTimeouts = [];
+
 async function resolverGruposAtivos(gruposAtivos, filtro = {}) {
   const informados = gruposAtivos instanceof Set
     ? [...gruposAtivos]
@@ -13,7 +22,6 @@ async function resolverGruposAtivos(gruposAtivos, filtro = {}) {
   if (informados.length > 0) return informados;
   return CarteiraGrupo.distinct('idGrupo', { idGrupo: { $regex: /@g\.us$/ }, ...filtro });
 }
-const MEDALS  = ['🥇', '🥈', '🥉'];
 
 function formatarPremiosPrata() {
   return PREMIOS_PRATA.map((valor, i) =>
@@ -21,219 +29,253 @@ function formatarPremiosPrata() {
   ).join('\n');
 }
 
-const DOMINGO   = 0;   // 0 = domingo
-const HORA      = 15;
-const MINUTO    = 30;
-
-// ─── Controle de avisos já enviados ──────────────────────────────────────────
-// Chave: `${anoSemana}` → Set de avisos já disparados ('60min','10min','5min','premio')
-const avisosEnviados = new Map();
-let activeTimeouts   = [];
-
-function getWeekKey() {
-  const now = new Date();
-  const jan1 = new Date(now.getFullYear(), 0, 1);
-  const week = Math.ceil(((now - jan1) / 86400000 + jan1.getDay() + 1) / 7);
-  return `${now.getFullYear()}-W${week}`;
+function obterOffsetMinutos(instante) {
+  const nome = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    timeZoneName: 'longOffset',
+  }).formatToParts(instante).find(parte => parte.type === 'timeZoneName')?.value || 'GMT';
+  const match = nome.match(/^GMT(?:(\+|-)0?(\d{1,2}):?(\d{2})?)?$/);
+  if (!match || !match[1]) return 0;
+  const sinal = match[1] === '-' ? -1 : 1;
+  return sinal * (Number(match[2] || 0) * 60 + Number(match[3] || 0));
 }
 
-function getAvisosSet() {
-  const key = getWeekKey();
-  // Limpeza de chaves antigas (> 2 semanas) para evitar vazamento de memória
-  if (avisosEnviados.size > 10) {
-    const keys = Array.from(avisosEnviados.keys());
-    for (let i = 0; i < keys.length - 2; i++) {
-      avisosEnviados.delete(keys[i]);
-    }
+function converterHorarioLocalParaDate(dataLocal, hora, minuto) {
+  const [ano, mes, dia] = dataLocal.split('-').map(Number);
+  const horarioSemFuso = Date.UTC(ano, mes - 1, dia, hora, minuto, 0, 0);
+  let instante = horarioSemFuso;
+  // Itera para aplicar o offset da zona de destino, sem depender do TZ do host.
+  for (let i = 0; i < 3; i++) {
+    instante = horarioSemFuso - obterOffsetMinutos(new Date(instante)) * 60_000;
   }
-  if (!avisosEnviados.has(key)) avisosEnviados.set(key, new Set());
-  return avisosEnviados.get(key);
+  return new Date(instante);
 }
 
-function clearSchedulerTimeouts() {
-  for (const t of activeTimeouts) clearTimeout(t);
-  activeTimeouts = [];
+function adicionarDiaLocal(dataLocal) {
+  const data = new Date(`${dataLocal}T00:00:00.000Z`);
+  data.setUTCDate(data.getUTCDate() + 1);
+  return data.toISOString().slice(0, 10);
 }
 
-// ─── Calcula quantos ms faltam para o próximo domingo 15:30 ──────────────────
-function msParaProximoDomingo() {
-  const now  = new Date();
-  const alvo = new Date();
-
-  alvo.setDate(now.getDate() + ((DOMINGO - now.getDay() + 7) % 7));
-  alvo.setHours(HORA, MINUTO, 0, 0);
-
-  if (alvo <= now) alvo.setDate(alvo.getDate() + 7);
-  return alvo - now;
+function calcularProximaPremiacao(agora = new Date()) {
+  let data = agoraLocal(agora).iso;
+  let instante = converterHorarioLocalParaDate(data, HORA, MINUTO);
+  if (instante <= agora) {
+    data = adicionarDiaLocal(data);
+    instante = converterHorarioLocalParaDate(data, HORA, MINUTO);
+  }
+  return { data, instante, msRestantes: Math.max(0, instante.getTime() - agora.getTime()) };
 }
 
-// ─── Premiação ────────────────────────────────────────────────────────────────
-async function executarPremiacao(sock, gruposAtivos) {
-  console.log('[QuizRanking] Executando premiação semanal...');
-  const activeGroups = await resolverGruposAtivos(gruposAtivos, { quizPoints: { $gt: 0 } });
+function chaveEvento(groupJid, data) {
+  return `quiz_premiacao_diaria:${data}:${encodeURIComponent(groupJid)}`;
+}
 
-  for (const groupJid of activeGroups) {
+async function obterEvento(groupJid, data) {
+  const eventId = chaveEvento(groupJid, data);
+  let documento = await ExtraState.findById(eventId).lean();
+  if (documento?.value) return { eventId, evento: documento.value };
+
+  const top3 = await CarteiraGrupo.find({ idGrupo: groupJid, quizPoints: { $gt: 0 } })
+    .sort({ quizPoints: -1, createdAt: 1, idWhatsApp: 1 })
+    .limit(3)
+    .lean();
+  const vencedores = top3
+    .map((usuario, indice) => ({
+      idWhatsApp: usuario?.idWhatsApp,
+      pontos: Number(usuario?.quizPoints) || 0,
+      colocacao: indice + 1,
+      premio: PREMIOS_PRATA[indice],
+    }))
+    .filter(vencedor => vencedor.idWhatsApp);
+
+  if (!vencedores.length) return { eventId, evento: null };
+
+  const eventoInicial = { data, status: 'processing', vencedores };
+  await ExtraState.updateOne(
+    { _id: eventId },
+    { $setOnInsert: { value: eventoInicial } },
+    { upsert: true }
+  );
+  documento = await ExtraState.findById(eventId).lean();
+  return { eventId, evento: documento?.value || eventoInicial };
+}
+
+async function executarPremiacao(sock, gruposAtivos, data = agoraLocal().iso) {
+  console.log(`[QuizRanking] Executando premiação diária de ${data}...`);
+  const chaveGlobal = `quiz_premiacao_diaria_global:${data}`;
+  let estadoGlobal = await ExtraState.findById(chaveGlobal).lean();
+  if (estadoGlobal?.value?.status === 'completed') {
+    console.log(`[QuizRanking] A premiação de ${data} já foi concluída.`);
+    return;
+  }
+
+  // Congela a lista de grupos no início da apuração. Em uma retomada após
+  // reinício, grupos que começaram a pontuar depois das 18h30 não entram retroativamente.
+  if (!estadoGlobal?.value) {
+    const gruposDoDia = await resolverGruposAtivos(gruposAtivos, { quizPoints: { $gt: 0 } });
+    const inicial = { data, status: 'processing', grupos: gruposDoDia };
+    await ExtraState.updateOne(
+      { _id: chaveGlobal },
+      { $setOnInsert: { value: inicial } },
+      { upsert: true }
+    );
+    estadoGlobal = await ExtraState.findById(chaveGlobal).lean();
+    if (!estadoGlobal?.value) estadoGlobal = { value: inicial };
+  }
+
+  const grupos = Array.isArray(estadoGlobal.value.grupos) ? estadoGlobal.value.grupos : [];
+  let falhas = 0;
+  for (const groupJid of grupos) {
     if (!groupJid) continue;
     try {
-      const top3 = await CarteiraGrupo.find({ idGrupo: groupJid, quizPoints: { $gt: 0 } })
-        .sort({ quizPoints: -1 })
-        .limit(3)
-        .lean();
+      const { eventId, evento } = await obterEvento(groupJid, data);
+      if (!evento || evento.status === 'completed') continue;
 
-      if (!top3.length) continue;
-
-      let texto = `🏆 *PREMIAÇÃO SEMANAL DE QUIZ!* 🏆\n\n`;
-      texto += `Parabéns aos campeões desta semana!\n\n`;
-
-
-      for (let i = 0; i < top3.length; i++) {
-        const u = top3[i];
-        if (!u || !u.idWhatsApp) continue;
-        const premioPrata = PREMIOS_PRATA[i];
-        const jidNorm = jidNormalizedUser(u.idWhatsApp);
-
-        const pagaPrata = true;
-
-        await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp: u.idWhatsApp, idGrupo: groupJid },
-          {
-            ...(pagaPrata ? {
-              $inc: { gold: premioPrata },
+      if (evento.status === 'processing') {
+        for (const vencedor of evento.vencedores) {
+          const jid = jidNormalizedUser(vencedor.idWhatsApp);
+          // A data no documento torna o crédito idempotente: reiniciar o processo
+          // durante a apuração não paga o mesmo jogador duas vezes no mesmo dia.
+          await CarteiraGrupo.updateOne(
+            { idWhatsApp: vencedor.idWhatsApp, idGrupo: groupJid, quizPrizeDate: { $ne: data } },
+            {
+              $inc: { gold: vencedor.premio },
+              $set: { quizPrizeDate: data, quizPoints: 0 },
               $push: {
                 goldHistory: {
                   $each: [{
                     type: 'recebido',
-                    item: `Premiação semanal de quiz — ${i + 1}º lugar`,
-                    amount: premioPrata,
+                    item: `Premiação diária de quiz — ${vencedor.colocacao}º lugar`,
+                    amount: vencedor.premio,
                     date: new Date(),
                   }],
                   $slice: -50,
                 },
               },
-            } : {}),
-            $set: { quizPoints: 0 },
-          },
-          { upsert: true }
+            }
+          );
+          // Resolve o nome mais tarde, na mensagem, para manter o snapshot enxuto.
+          vencedor.jidNormalizado = jid;
+        }
+
+        await CarteiraGrupo.updateMany(
+          { idGrupo: groupJid, quizPoints: { $gt: 0 } },
+          { $set: { quizPoints: 0 } }
         );
 
-        const nome = await resolveDisplayName(jidNorm, sock, {}, { fallback: 'Participante' });
-        texto += pagaPrata
-          ? MEDALS[i] + ' *' + nome + '* — ' + u.quizPoints + ' pts → *+' + premioPrata.toLocaleString('pt-BR') + ' Prata!*\n'
-          : MEDALS[i] + ' *' + nome + '* — ' + u.quizPoints + ' pts → _sem Prata (conta vinculada ao app)_\n';
+        evento.status = 'paid';
+        await ExtraState.updateOne({ _id: eventId }, { $set: { value: evento } }, { upsert: true });
       }
 
-      // Zera todos os outros do grupo também
-      await CarteiraGrupo.updateMany(
-        { idGrupo: groupJid, quizPoints: { $gt: 0 } },
-        { $set: { quizPoints: 0 } }
-      );
+      if (evento.status === 'paid') {
+        let texto = `🏆 *PREMIAÇÃO DIÁRIA DE QUIZ!* 🏆\n\n`;
+        texto += `Parabéns aos campeões de hoje!\n\n`;
+        for (const vencedor of evento.vencedores) {
+          const nome = await resolveDisplayName(
+            vencedor.jidNormalizado || jidNormalizedUser(vencedor.idWhatsApp),
+            sock,
+            {},
+            { fallback: 'Participante' }
+          );
+          texto += `${MEDALS[vencedor.colocacao - 1]} *${nome}* — ${vencedor.pontos} pts → *+${vencedor.premio.toLocaleString('pt-BR')} Prata!*\n`;
+        }
+        texto += `\n_O placar diário foi zerado. Amanhã haverá uma nova disputa às 18h30!_ 🍀\n`;
+        texto += `_Use */quiz* para participar e conquistar o bônus diário de 500 Pratas ao acertar 3 perguntas!_`;
 
-      texto += `\n_Os pontos foram resetados. Boa sorte na próxima semana!_ 🍀\n`;
-      texto += `_Use *!quiz* para acumular pontos!_`;
-
-      await sock.sendMessage(groupJid, { text: texto });
-      console.log(`[QuizRanking] Premiação enviada para ${groupJid}`);
-
-    } catch (e) {
-      console.error(`[QuizRanking] Erro no grupo ${groupJid}:`, e.message);
+        await sock.sendMessage(groupJid, { text: texto });
+        evento.status = 'completed';
+        await ExtraState.updateOne({ _id: eventId }, { $set: { value: evento } }, { upsert: true });
+        console.log(`[QuizRanking] Premiação diária enviada para ${groupJid}`);
+      }
+    } catch (erro) {
+      falhas++;
+      console.error(`[QuizRanking] Erro no grupo ${groupJid}:`, erro?.message || erro);
     }
+  }
+
+  if (falhas === 0) {
+    const concluido = { ...estadoGlobal.value, data, status: 'completed' };
+    await ExtraState.updateOne(
+      { _id: chaveGlobal },
+      { $set: { value: concluido } },
+      { upsert: true }
+    );
+  } else {
+    console.warn(`[QuizRanking] ${falhas} grupo(s) com falha; a apuração de ${data} poderá ser retomada.`);
   }
 }
 
-// ─── Aviso ────────────────────────────────────────────────────────────────────
 async function enviarAviso(sock, gruposAtivos, tipo) {
   const textos = {
-    '60min': `⏰ *ATENÇÃO!* A premiação semanal de quiz começa em *1 hora!*\n\n🏆 Top 3 ganham:\n${formatarPremiosPrata()}\n\n_Joga *!quiz* agora pra subir no ranking!_`,
-    '10min': `🔔 *Faltam apenas 10 minutos* para a premiação semanal de quiz!\n\n_Use *!rankjogos* para ver sua posição!_`,
-    '5min':  `🚨 *ÚLTIMOS 5 MINUTOS!* A premiação começa já já!\n\n_Última chance de jogar *!quiz* e subir no ranking!_ 🏃`,
+    '60min': `⏰ *HOJE TEM PREMIAÇÃO DE QUIZ!*\n\nÀs *18h30*, os três primeiros do ranking diário recebem:\n${formatarPremiosPrata()}\n\n🎁 E qualquer jogador que acertar *3 perguntas* no dia ganha mais *+500 Pratas*!\n\n_Jogue */quiz* para participar!_`,
+    '10min': `🔔 *FALTAM 10 MINUTOS!*\n\nÀs *18h30* sai a premiação diária do Quiz. O Top 3 ganha até *10.000 Pratas* e quem acertar 3 perguntas recebe *+500 Pratas* de bônus.\n\n_Use */quiz* e */rankjogos*!_`,
+    '5min': `🚨 *ÚLTIMOS 5 MINUTOS!*\n\nA premiação diária começa às *18h30*! Ainda dá tempo de jogar */quiz*, subir no ranking e completar a meta de 3 acertos para ganhar *+500 Pratas*!`,
   };
+  if (!textos[tipo]) return;
 
-  const activeGroups = await resolverGruposAtivos(gruposAtivos, { quizPoints: { $gt: 0 } });
-
-  for (const groupJid of activeGroups) {
+  // Os avisos também alcançam grupos com carteira mesmo que ainda ninguém tenha pontuado.
+  const grupos = await resolverGruposAtivos(gruposAtivos);
+  for (const groupJid of grupos) {
     if (!groupJid) continue;
     try {
       await sock.sendMessage(groupJid, { text: textos[tipo] });
-    } catch (e) {
-      console.error(`[QuizRanking] Erro ao enviar aviso ${tipo} para ${groupJid}:`, e.message);
+    } catch (erro) {
+      console.error(`[QuizRanking] Erro ao enviar aviso ${tipo} para ${groupJid}:`, erro?.message || erro);
     }
   }
 }
 
-// ─── Scheduler principal ──────────────────────────────────────────────────────
-function initQuizRankingScheduler(sock, gruposAtivos) {
-  console.log('[QuizRanking] Scheduler iniciado.');
-  clearSchedulerTimeouts();
+function limparTimeouts() {
+  for (const timeout of activeTimeouts) clearTimeout(timeout);
+  activeTimeouts = [];
+}
 
-  function agendar() {
-    const msTotal   = msParaProximoDomingo();
-    const ms60min   = msTotal - 60 * 60 * 1000;
-    const ms10min   = msTotal - 10 * 60 * 1000;
-    const ms5min    = msTotal -  5 * 60 * 1000;
+function agendarProximaPremiacao(sock, gruposAtivos) {
+  limparTimeouts();
+  const { data, instante, msRestantes } = calcularProximaPremiacao();
+  const agoraMs = Date.now();
 
-    const avisos = getAvisosSet();
-
-    if (ms60min > 0 && !avisos.has('60min')) {
-      const t = setTimeout(async () => {
-        try {
-          if (avisos.has('60min')) return;
-          avisos.add('60min');
-          await enviarAviso(sock, gruposAtivos, '60min');
-        } catch (err) {
-          console.error('[QuizRanking] Erro no aviso de 60min:', err);
-        }
-      }, ms60min);
-      activeTimeouts.push(t);
-    }
-
-    if (ms10min > 0 && !avisos.has('10min')) {
-      const t = setTimeout(async () => {
-        try {
-          if (avisos.has('10min')) return;
-          avisos.add('10min');
-          await enviarAviso(sock, gruposAtivos, '10min');
-        } catch (err) {
-          console.error('[QuizRanking] Erro no aviso de 10min:', err);
-        }
-      }, ms10min);
-      activeTimeouts.push(t);
-    }
-
-    if (ms5min > 0 && !avisos.has('5min')) {
-      const t = setTimeout(async () => {
-        try {
-          if (avisos.has('5min')) return;
-          avisos.add('5min');
-          await enviarAviso(sock, gruposAtivos, '5min');
-        } catch (err) {
-          console.error('[QuizRanking] Erro no aviso de 5min:', err);
-        }
-      }, ms5min);
-      activeTimeouts.push(t);
-    }
-
-    if (!avisos.has('premio')) {
-      const t = setTimeout(async () => {
-        try {
-          if (avisos.has('premio')) return;
-          avisos.add('premio');
-          await executarPremiacao(sock, gruposAtivos);
-          // Agenda para a próxima semana
-          const nextT = setTimeout(agendar, 60 * 1000);
-          activeTimeouts.push(nextT);
-        } catch (err) {
-          console.error('[QuizRanking] Erro na premiação:', err);
-        }
-      }, msTotal);
-      activeTimeouts.push(t);
-    }
-
-    const horas = Math.floor(msTotal / 3600000);
-    const mins  = Math.floor((msTotal % 3600000) / 60000);
-    console.log(`[QuizRanking] Próxima premiação em ${horas}h ${mins}min`);
+  for (const aviso of [
+    { tipo: '60min', antes: 60 * 60 * 1000 },
+    { tipo: '10min', antes: 10 * 60 * 1000 },
+    { tipo: '5min', antes: 5 * 60 * 1000 },
+  ]) {
+    const atraso = instante.getTime() - aviso.antes - agoraMs;
+    if (atraso <= 0) continue; // Não dispara lembretes cujo horário já passou após um reinício.
+    activeTimeouts.push(setTimeout(() => {
+      enviarAviso(sock, gruposAtivos, aviso.tipo).catch(erro =>
+        console.error(`[QuizRanking] Erro no aviso ${aviso.tipo}:`, erro?.message || erro)
+      );
+    }, atraso));
   }
 
-  agendar();
+  activeTimeouts.push(setTimeout(async () => {
+    try {
+      await executarPremiacao(sock, gruposAtivos, data);
+    } catch (erro) {
+      console.error('[QuizRanking] Erro na premiação diária:', erro?.message || erro);
+    } finally {
+      agendarProximaPremiacao(sock, gruposAtivos);
+    }
+  }, msRestantes));
+
+  const localHora = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(instante);
+  console.log(`[QuizRanking] Próxima premiação diária: ${data} às ${localHora} (${TZ}).`);
+}
+
+function initQuizRankingScheduler(sock, gruposAtivos) {
+  console.log('[QuizRanking] Agendador diário iniciado.');
+  const agora = agoraLocal();
+  if (agora.hora > HORA || (agora.hora === HORA && agora.minuto >= MINUTO)) {
+    // Se o bot ficou offline após 18h30, tenta recuperar a apuração de hoje.
+    executarPremiacao(sock, gruposAtivos, agora.iso).catch(erro =>
+      console.error('[QuizRanking] Erro ao recuperar premiação diária:', erro?.message || erro)
+    );
+  }
+  agendarProximaPremiacao(sock, gruposAtivos);
 }
 
 module.exports = {
@@ -241,4 +283,8 @@ module.exports = {
   executarPremiacao,
   enviarAviso,
   PREMIOS_PRATA,
+  PARTICIPATION_TARGET,
+  PARTICIPATION_REWARD,
+  calcularProximaPremiacao,
+  converterHorarioLocalParaDate,
 };

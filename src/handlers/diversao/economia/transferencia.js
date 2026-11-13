@@ -1,5 +1,7 @@
 'use strict';
 
+const { formatarNumeroBR } = require('../../../utils/numberFormat');
+
 const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira, transferirGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
@@ -283,7 +285,7 @@ async function handlePixMulti(sock, msg, jid, caption) {
       `${obterStatusPixMulti(enviados, falhas) === 'success' ? '✅ *PIX MÚLTIPLO CONCLUÍDO!*' : obterStatusPixMulti(enviados, falhas) === 'partial' ? '⚠️ *PIX MÚLTIPLO PARCIALMENTE CONCLUÍDO*' : '❌ *PIX MÚLTIPLO NÃO CONCLUÍDO*'}\n\n` +
       `🎁 *${enviados}* pessoa(s) receberam *${quantiaPorPessoa} Prata* cada!\n` +
       `💸 Total distribuído: *${enviados * quantiaPorPessoa} Prata*\n` +
-      `💰 Seu novo saldo: *${carteiraFinal?.gold ?? 0}* Prata` +
+      `💰 Seu novo saldo: *${formatarNumeroBR(carteiraFinal?.gold ?? 0)}* Prata` +
       (falhas > 0 ? `\n\n⚠️ ${falhas} transferência(s) não foram concluídas.` : '') +
       (transferenciasRestritas ? '\nAlgumas transferências exigiam que ambas as contas estivessem vinculadas ao app.' : ''),
     mentions: mentionsList,

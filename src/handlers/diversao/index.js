@@ -75,6 +75,7 @@ registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });
 const {
   handleQuiz, handlePontos, handleRankJogos, quizState
 } = require('./quiz');
+const { handleQuizHelp } = require('./quizHelp');
 
 // Economia - Banco do Quiz
 const { handleBanco, handleResgatar, handleHistoricoBanco } = require('./banco');
@@ -235,6 +236,7 @@ module.exports = {
 
   // ── Quiz (6 itens) ────────────────────────────────────────────────────────
   handleQuiz,
+  handleQuizHelp,
   handlePontos,
   handleRankJogos,
   handleForca,

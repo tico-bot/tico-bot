@@ -106,6 +106,10 @@ const usuarioSchema = new mongoose.Schema({
     select: false,
   },
   quizPoints: { type: Number, default: 0,   min: 0 },
+  quizDaily: {
+    windowStartedAt: { type: Date, default: null },
+    count: { type: Number, default: 0, min: 0 },
+  },
   mensagens:  { type: Number, default: 0,   min: 0 },
 
   // ── Histórico diário de XP (chave: "YYYY-MM-DD", valor: XP ganho no dia) ──

@@ -4,10 +4,11 @@ const { getCarteira, alterarGold, alterarGoldSeguro } = require('./prata');
 const { rankingGold, rankingXp }                       = require('./ranking');
 const { transferirGold }                               = require('./transferencia');
 const { comprarComGold, venderComGold }                = require('./compras');
+const { formatarNumeroBR } = require('../numberFormat');
 const { resolveJidComLid }                             = require('../identity');
 
-function formatarSaldo(centavos, carteira) {
-  return `${Number(centavos)} prata`;
+function formatarSaldo(valor, carteira) {
+  return `${formatarNumeroBR(valor)} prata`;
 }
 
 module.exports = {
