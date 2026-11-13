@@ -20,6 +20,7 @@ const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils'
 const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMapping'));
 const { normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids, getParticipantJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
+const { normalizarNomeComando, resolverChaveCatalogo, extrairArgumentosComando } = require(path.join(__dirname, '..', '..', 'utils', 'commandItem'));
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
@@ -368,7 +369,7 @@ async function handlePescar(sock, msg, jid) {
       return reply(sock, jid, msg,
         `🎣 *VOCÊ PRECISA DE UMA VARA!*\n\n` +
         `Sem vara de pesca não dá pra pescar neste grupo!\n\n` +
-        `🛒 Compre uma na loja: *!buypesca vara_bambu*\n` +
+        `🛒 Compre uma na loja: *!buypesca Vara de Bambu*\n` +
         `📋 Ver varas disponíveis: *!varas*`
       );
     }
@@ -509,7 +510,7 @@ async function handlePescar(sock, msg, jid) {
     else          resultado += `\n📥 _Item guardado com sucesso no inventário do grupo._\n`;
 
     if (precoVenda && !ehLixo && !ehDesc) {
-      resultado += `💵 _Venda rápida por: *${formatarSaldo(precoVenda, carteiraRecompensa)}* → !sellpesca ${item.key}_\n`;
+      resultado += `💵 _Venda rápida por: *${formatarSaldo(precoVenda, carteiraRecompensa)}* → !sellpesca ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}_\n`;
     }
 
     const reacao = reacoes[item.raridade] ?? '';
@@ -542,7 +543,7 @@ async function handleVaras(sock, msg, jid) {
         `   💵 Preço: *${formatarSaldo(vara.preco)}*\n` +
         `   📈 Bônus raridade: *+${vara.bonus_raridade}*\n` +
         `   🎯 Reduz falha: *-${vara.reduce_falha}%*\n` +
-        `   🛒 \`!buypesca ${key}\`\n\n`;
+        `   🛒 \`!buypesca ${vara.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
     }
 
     texto +=
@@ -572,7 +573,7 @@ async function handleIscas(sock, msg, jid) {
         `   💵 Preço: *${formatarSaldo(isca.preco)}*\n` +
         `   📈 Bônus raridade: *+${isca.bonus_raridade}*\n` +
         `   🎯 Reduz falha: *-${isca.reduce_falha}%*\n` +
-        `   🛒 \`!buypesca ${key}\`\n\n`;
+        `   🛒 \`!buypesca ${isca.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
     }
 
     texto +=
@@ -608,16 +609,20 @@ async function handleComprarPesca(sock, msg, jid, caption) {
   userId = await resolverJidCarteira(userId, groupId);
   // ── Remove o prefixo do comando antes de parsear os argumentos ──
   // Sem isso, partes[0] capturaria "!buypesca" como nome do item.
-  const args     = (caption ?? '').replace(/^[!.,\/]buypesca\s*/i, '').trim().split(/\s+/);
-  const buscaRaw = (args[0] ?? '').toLowerCase();
-  const qtd      = parseQuantidade(args[1]);
+  const argumentos = extrairArgumentosComando(caption ?? '', 'buypesca');
+  const partes = argumentos.split(/\s+/).filter(Boolean);
+  let qtd = 1;
+  if (partes.length && /^\d+$/.test(partes[partes.length - 1])) {
+    qtd = parseQuantidade(partes.pop());
+  }
+  const buscaRaw = partes.join(' ').trim();
 
   if (!buscaRaw) {
     return reply(sock, jid, msg,
       `🛒 *COMPRAR EQUIPAMENTO DE PESCA*\n\n` +
       `Uso: *!buypesca <item> [quantidade]*\n` +
-      `Exemplo: *!buypesca vara_bambu*\n` +
-      `Exemplo: *!buypesca isca_minhoca 5*\n\n` +
+      `Exemplo: *!buypesca Vara de Bambu*\n` +
+      `Exemplo: *!buypesca Minhoca 5*\n\n` +
       `📋 Ver varas: *!varas*\n` +
       `📋 Ver iscas: *!iscas*`
     );
@@ -627,17 +632,19 @@ async function handleComprarPesca(sock, msg, jid, caption) {
     return reply(sock, jid, msg, '⚠️ Quantidade inválida. Use um número inteiro entre 1 e 1000.');
   }
 
-  // ── Resolve o item: tenta chave exata primeiro, depois busca parcial por nome ──
+  // Chave técnica e nome apresentado são aceitos com espaços/underscores,
+  // acentos ou sem acentos (ex.: "Vara Amaldiçoada" e "vara amaldicoada").
   const catalogoCompleto = { ...VARAS_PESCA, ...ISCAS };
+  let itemKey = resolverChaveCatalogo(buscaRaw, catalogoCompleto);
 
-  let itemKey = catalogoCompleto[buscaRaw] ? buscaRaw : null;
-
+  // Mantém a busca parcial antiga apenas quando identifica um único item.
   if (!itemKey) {
-    const encontrado = Object.entries(catalogoCompleto).find(([key, item]) =>
-      key.includes(buscaRaw) ||
-      item.nome.toLowerCase().includes(buscaRaw)
+    const buscaNormalizada = normalizarNomeComando(buscaRaw);
+    const candidatos = Object.entries(catalogoCompleto).filter(([key, item]) =>
+      normalizarNomeComando(key).includes(buscaNormalizada) ||
+      normalizarNomeComando(item.nome).includes(buscaNormalizada)
     );
-    itemKey = encontrado?.[0] ?? null;
+    if (candidatos.length === 1) itemKey = candidatos[0][0];
   }
 
   if (!itemKey) {
@@ -741,8 +748,8 @@ async function handleInventarioPesca(sock, msg, jid) {
     const semItens =
       `🎣 *SEU INVENTÁRIO DE PESCA ESTÁ VAZIO*\n\n` +
       `Para começar:\n` +
-      `  🪝 Compre uma vara: *!buypesca vara_bambu*\n` +
-      `  🪱 Compre uma isca: *!buypesca isca_minhoca* _(opcional)_\n` +
+      `  🪝 Compre uma vara: *!buypesca Vara de Bambu*\n` +
+      `  🪱 Compre uma isca: *!buypesca Minhoca* _(opcional)_\n` +
       `  🎣 Então pesque: *!pescar*\n\n` +
       `📋 Ver varas disponíveis: *!varas*\n` +
       `📋 Ver iscas disponíveis: *!iscas*`;
@@ -771,7 +778,7 @@ async function handleInventarioPesca(sock, msg, jid) {
         const precoVenda = Math.floor(info.preco * 0.50);
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
-        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
+        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${info.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
       }
     }
 
@@ -786,7 +793,7 @@ async function handleInventarioPesca(sock, msg, jid) {
 const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.70
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
-        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
+        texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${info.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
       }
     }
 
@@ -803,7 +810,7 @@ const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.
 
         texto += `   ${nome} × ${inv[k]} ${rarLabel}\n`;
         if (precoVenda) {
-          texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${k}\`\n\n`;
+          texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${info.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
         } else {
           texto += `   └ _(sem valor de mercado)_\n\n`;
         }
@@ -847,18 +854,24 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   if (!groupId) return reply(sock, jid, msg, '🎣 Venda de pesca só funciona em grupos!');
 
   userId = await resolverJidCarteira(userId, groupId);
-  const args    = (caption ?? '').replace(/^[!.,\/]sellpesca\s*/i, '').trim().split(/\s+/);
-  const itemKey = (args[0] ?? '').toLowerCase() || null;
-  const qtd     = parseQuantidade(args[1]);
+  const argumentos = extrairArgumentosComando(caption ?? '', 'sellpesca');
+  const partes = argumentos.split(/\s+/).filter(Boolean);
+  let qtd = 1;
+  if (partes.length && /^\d+$/.test(partes[partes.length - 1])) {
+    qtd = parseQuantidade(partes.pop());
+  }
+  const itemDigitado = partes.join(' ').trim();
+  const catalogoCompleto = { ...VARAS_PESCA, ...ISCAS, ...CATALOGO_PESCA };
+  const itemKey = resolverChaveCatalogo(itemDigitado, catalogoCompleto);
 
-  if (!itemKey) {
+  if (!itemDigitado) {
     return reply(sock, jid, msg,
       `💵 *VENDER ITEM DE PESCA*\n\n` +
       `Uso: *!sellpesca <item> [quantidade]*\n` +
       `Exemplos:\n` +
-      `  • *!sellpesca peixe_pequeno 5*\n` +
-      `  • *!sellpesca vara_bambu*\n` +
-      `  • *!sellpesca isca_minhoca 3*\n\n` +
+      `  • *!sellpesca Peixe Pequeno 5*\n` +
+      `  • *!sellpesca Vara de Bambu*\n` +
+      `  • *!sellpesca Minhoca 3*\n\n` +
       `📦 Ver seus itens: *!inventariopesca*`
     );
   }
@@ -880,7 +893,7 @@ async function handleVenderPesca(sock, msg, jid, caption) {
 
   if (!info) {
     return reply(sock, jid, msg,
-      `⚠️ Item *${itemKey}* não encontrado.\n\n` +
+      `⚠️ Item *${itemDigitado}* não encontrado.\n\n` +
       `📦 Veja seus itens usando: *!inventariopesca*`
     );
   }
@@ -1120,7 +1133,7 @@ async function handleStatsPesca(sock, msg, jid) {
     if (!carteira) {
       return reply(sock, jid, msg,
         `🎣 *STATS DE PESCA*\n\nVocê ainda não tem uma carteira neste grupo.\n\n` +
-        `Compre uma vara usando: *!buypesca vara_bambu*`
+        `Compre uma vara usando: *!buypesca Vara de Bambu*`
       );
     }
 
@@ -1214,9 +1227,9 @@ async function handleGivePesca(sock, msg, jid, caption) {
       `Marque quem vai receber!\n\n` +
       `Uso: *!givepesca @fulano <item> [quantidade]*\n` +
       `Exemplos:\n` +
-      `  • *!givepesca @João vara_bambu*\n` +
-      `  • *!givepesca @João isca_minhoca 5*\n` +
-      `  • *!givepesca @João peixe_dourado 2*\n\n` +
+      `  • *!givepesca @João Vara de Bambu*\n` +
+      `  • *!givepesca @João Minhoca 5*\n` +
+      `  • *!givepesca @João Peixe Dourado 2*\n\n` +
       `📦 Ver seus itens: *!inventariopesca*`
     );
   }
@@ -1232,34 +1245,37 @@ async function handleGivePesca(sock, msg, jid, caption) {
   // ── Extrai item e quantidade da caption ──────────────────────────────────────
   // Remove o prefixo do comando e todas as menções (@numero ou @numero@dominio)
   // antes de parsear, para aceitar tanto:
-  //   !givepesca @João vara_bambu 2
-  //   !givepesca vara_bambu 2 @João   (ordem alternativa)
-  const semPrefixo = (caption ?? '').replace(/^[!.,\/]givepesca\s*/i, '').trim();
+  //   !givepesca @João Vara de Bambu 2
+  //   !givepesca Vara de Bambu 2 @João   (ordem alternativa)
+  const semPrefixo = extrairArgumentosComando(caption ?? '', 'givepesca');
   const semMencao  = semPrefixo.replace(/@\S+/g, '').replace(/\s{2,}/g, ' ').trim();
-  const partes     = semMencao.split(/\s+/);
-  const itemKey    = partes[0]?.toLowerCase() || null;
-  const qtd        = parseQuantidade(partes[1]);
+  const partes     = semMencao.split(/\s+/).filter(Boolean);
+  let qtd = 1;
+  if (partes.length && /^\d+$/.test(partes[0])) qtd = parseQuantidade(partes.shift());
+  else if (partes.length && /^\d+$/.test(partes[partes.length - 1])) qtd = parseQuantidade(partes.pop());
+  const itemDigitado = partes.join(' ').trim();
 
   if (qtd === null) {
     return reply(sock, jid, msg, '⚠️ Quantidade inválida. Use um número inteiro entre 1 e 1000.');
   }
 
-  if (!itemKey) {
+  if (!itemDigitado) {
     return reply(sock, jid, msg,
       `⚠️ Informe o item a transferir!\n\n` +
       `Uso: *!givepesca @fulano <item> [quantidade]*\n` +
-      `Exemplo: *!givepesca @João vara_bambu*\n\n` +
+      `Exemplo: *!givepesca @João Vara de Bambu*\n\n` +
       `📦 Ver seus itens: *!inventariopesca*`
     );
   }
 
   // ── Resolve catálogo completo ────────────────────────────────────────────────
   const catalogoCompleto = { ...VARAS_PESCA, ...ISCAS, ...CATALOGO_PESCA };
-  const info = catalogoCompleto[itemKey];
+  const itemKey = resolverChaveCatalogo(itemDigitado, catalogoCompleto);
+  const info = itemKey ? catalogoCompleto[itemKey] : null;
 
   if (!info) {
     return reply(sock, jid, msg,
-      `⚠️ Item *${itemKey}* não existe no sistema de pesca.\n\n` +
+      `⚠️ Item *${itemDigitado}* não existe no sistema de pesca.\n\n` +
       `📦 Veja seus itens: *!inventariopesca*\n` +
       `🛒 Comprar equipamentos: *!varas* · *!iscas*`
     );

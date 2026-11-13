@@ -2,15 +2,12 @@
 
 const path = require('path');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
+const { normalizarNomeComando, resolverChaveCatalogo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'commandItem'));
 const { getCarteira, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 
 // Normaliza chave de item removendo acentos, espaços e caracteres especiais
 function normalizarChaveItem(str = '') {
-  return String(str)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+  return normalizarNomeComando(str);
 }
 
 // Tabela de busca de nomes amigáveis -> chave técnica
@@ -23,8 +20,7 @@ for (const [key, item] of Object.entries(ITENS_LOJA || {})) {
 }
 
 function resolverItemKey(digitado = '') {
-  const norm = normalizarChaveItem(digitado);
-  return LOOKUP_ITENS_LOJA[norm] || null;
+  return resolverChaveCatalogo(digitado, ITENS_LOJA);
 }
 
 async function getSaldoGrupo(userId, idGrupo) {

@@ -78,75 +78,179 @@ const ITENS_LOJA = {
   pcgamerlegendario:{ nome: 'PC Gamer Lendário', preco: 15000, categoria: 'tec' },
 };
 
-// ─── Tabela de minérios do !garimpar (do mais raro ao mais comum) ───────────
+// ─── Tabela de minérios do !garimpar (probabilidades somam exatamente 100%) ──
+// A raridade é explícita: não deve ser inferida apenas pela chance individual.
 const MINERIOS = [
-  // ── LENDÁRIOS (chance ≤ 1%) ─────────────────────────────────────────────
-  { nome: '🌟 Cristal Estelar',  emoji: '🌟', gold: 15000, chance: 0.1,  xp: 360 },
-  { nome: '🔱 Obsidiana Divina', emoji: '🔱', gold: 10500, chance: 0.2,  xp: 300 },
-  { nome: '💎 Diamante Negro',   emoji: '💎', gold: 7500,  chance: 0.3,  xp: 255 },
-  { nome: '🪬 Pedra do Destino', emoji: '🪬', gold: 6000,  chance: 0.4,  xp: 225 },
-  { nome: '💎 Diamante',         emoji: '💎', gold: 5400,  chance: 0.5,  xp: 195 },
+  // ── MÍTICOS (0,30% no total) ───────────────────────────────────────────────
+  { nome: '🌌 Núcleo do Abismo',       emoji: '🌌', gold: 25000, chance: 0.05, xp: 520, raridade: 'mitico' },
+  { nome: '🐉 Coração de Dragão',      emoji: '🐉', gold: 22000, chance: 0.10, xp: 480, raridade: 'mitico' },
+  { nome: '☄️ Fragmento Celestial',    emoji: '☄️', gold: 19000, chance: 0.15, xp: 440, raridade: 'mitico' },
 
-  // ── ÉPICOS (chance 1–3%) ─────────────────────────────────────────────────
-  { nome: '🔮 Ametista Negra',   emoji: '🔮', gold: 3900,  chance: 1.0,  xp: 154 },
-  { nome: '🔮 Ametista',         emoji: '🔮', gold: 3360,  chance: 1.5,  xp: 134 },
-  { nome: '💠 Safira Real',      emoji: '💠', gold: 2800,  chance: 2.0,  xp: 118 },
-  { nome: '💠 Safira',           emoji: '💠', gold: 2380,  chance: 3.0,  xp: 106 },
+  // ── LENDÁRIOS (1,00% no total) ─────────────────────────────────────────────
+  { nome: '🌟 Cristal Estelar',        emoji: '🌟', gold: 15000, chance: 0.20, xp: 360, raridade: 'lendario' },
+  { nome: '🔱 Obsidiana Divina',       emoji: '🔱', gold: 10500, chance: 0.30, xp: 300, raridade: 'lendario' },
+  { nome: '💎 Diamante Negro',         emoji: '💎', gold: 7500,  chance: 0.50, xp: 255, raridade: 'lendario' },
 
-  // ── RAROS (chance 4–8%) ──────────────────────────────────────────────────
-  { nome: '❤️‍🔥 Rubi de Fogo',   emoji: '❤️‍🔥', gold: 1875, chance: 4.0, xp: 80  },
-  { nome: '❤️ Rubi',             emoji: '❤️', gold: 1500,  chance: 5.0,  xp: 70  },
-  { nome: '🫧 Aquamarine',       emoji: '🫧', gold: 1300,  chance: 6.0,  xp: 60  },
-  { nome: '🟣 Tanzanita',        emoji: '🟣', gold: 1125,  chance: 7.0,  xp: 55  },
-  { nome: '🔵 Turquesa',         emoji: '🔵', gold: 1000,  chance: 8.0,  xp: 50  },
+  // ── ÉPICOS (6,50% no total) ────────────────────────────────────────────────
+  { nome: '🪬 Pedra do Destino',       emoji: '🪬', gold: 6500, chance: 0.75, xp: 235, raridade: 'epico' },
+  { nome: '💎 Diamante',               emoji: '💎', gold: 5400, chance: 1.00, xp: 195, raridade: 'epico' },
+  { nome: '🔮 Ametista Negra',         emoji: '🔮', gold: 4200, chance: 1.25, xp: 170, raridade: 'epico' },
+  { nome: '🔮 Ametista',               emoji: '🔮', gold: 3360, chance: 1.50, xp: 145, raridade: 'epico' },
+  { nome: '💠 Safira Real',            emoji: '💠', gold: 2800, chance: 2.00, xp: 120, raridade: 'epico' },
 
-  // ── INCOMUNS (chance 9–17%) ──────────────────────────────────────────────
-  { nome: '🟡 Topázio Dourado',  emoji: '🟡', gold: 770,   chance: 9.0,  xp: 40  },
-  { nome: '🟡 Topázio',          emoji: '🟡', gold: 616,   chance: 11.0, xp: 33  },
-  { nome: '🟢 Esmeralda',        emoji: '🟢', gold: 506,   chance: 13.0, xp: 29  },
-  { nome: '🟠 Ônix Laranja',     emoji: '🟠', gold: 418,   chance: 15.0, xp: 24  },
-  { nome: '🪩 Opala',            emoji: '🪩', gold: 352,   chance: 17.0, xp: 20  },
+  // ── RAROS (15,00% no total) ────────────────────────────────────────────────
+  { nome: '💠 Safira',                 emoji: '💠', gold: 2380, chance: 2.00, xp: 106, raridade: 'raro' },
+  { nome: '❤️‍🔥 Rubi de Fogo',         emoji: '❤️‍🔥', gold: 1875, chance: 2.50, xp: 80, raridade: 'raro' },
+  { nome: '❤️ Rubi',                   emoji: '❤️', gold: 1500, chance: 3.00, xp: 70, raridade: 'raro' },
+  { nome: '🫧 Água-marinha',            emoji: '🫧', gold: 1300, chance: 3.50, xp: 60, raridade: 'raro' },
+  { nome: '🟣 Tanzanita',              emoji: '🟣', gold: 1125, chance: 4.00, xp: 55, raridade: 'raro' },
 
-  // ── COMUNS (chance 20–40%) ───────────────────────────────────────────────
-  { nome: '⚪ Quartzo Rosa',     emoji: '⚪', gold: 234,   chance: 20.0, xp: 13  },
-  { nome: '⚪ Quartzo',          emoji: '⚪', gold: 180,   chance: 25.0, xp: 9   },
-  { nome: '🩶 Granito',          emoji: '🩶', gold: 135,   chance: 28.0, xp: 7   },
-  { nome: '🪨 Pedra Calcária',   emoji: '🪨', gold: 99,    chance: 33.0, xp: 5   },
-  { nome: '🪨 Pedra Comum',      emoji: '🪨', gold: 63,    chance: 40.0, xp: 4   },
+  // ── INCOMUNS (29,00% no total) ─────────────────────────────────────────────
+  { nome: '🔵 Turquesa',               emoji: '🔵', gold: 1000, chance: 4.50, xp: 50, raridade: 'incomum' },
+  { nome: '🟡 Topázio Dourado',         emoji: '🟡', gold: 770,  chance: 4.50, xp: 40, raridade: 'incomum' },
+  { nome: '🟡 Topázio',                emoji: '🟡', gold: 616,  chance: 5.00, xp: 33, raridade: 'incomum' },
+  { nome: '🟢 Esmeralda',              emoji: '🟢', gold: 506,  chance: 5.00, xp: 29, raridade: 'incomum' },
+  { nome: '🟠 Ônix Laranja',           emoji: '🟠', gold: 418,  chance: 5.00, xp: 24, raridade: 'incomum' },
+  { nome: '🪩 Opala',                  emoji: '🪩', gold: 352,  chance: 5.00, xp: 20, raridade: 'incomum' },
+
+  // ── COMUNS (48,20% no total) ───────────────────────────────────────────────
+  { nome: '🌸 Quartzo Rosa',           emoji: '🌸', gold: 234,  chance: 7.00, xp: 13, raridade: 'comum' },
+  { nome: '⚪ Quartzo',                emoji: '⚪', gold: 180,  chance: 8.00, xp: 9,  raridade: 'comum' },
+  { nome: '🩶 Granito',                emoji: '🩶', gold: 135,  chance: 9.00, xp: 7,  raridade: 'comum' },
+  { nome: '🪨 Pedra Calcária',         emoji: '🪨', gold: 99,   chance: 10.00, xp: 5,  raridade: 'comum' },
+  { nome: '🪨 Pedra Comum',            emoji: '🪨', gold: 63,   chance: 14.20, xp: 4,  raridade: 'comum' },
 ];
-// Soma das chances ≈ 100% — o fallback do garimpo cobre eventuais diferenças de float
 
-// ─── Eventos especiais do !garimpar ──────────────────────────────────────────
+// ─── Acontecimentos aleatórios do garimpo (24,5% de chance combinada) ────────
+// Cada acontecimento pode alterar o pagamento e, opcionalmente, o XP.
 const EVENTOS_GARIMPO = [
-  { id: 'veia_rica',    chance: 5, multiplicador: 2,   msg: '✨ *VEIA RICA ENCONTRADA!* Você achou o dobro!'                       },
-  { id: 'explosao',     chance: 3, multiplicador: 0,   msg: '💥 *EXPLOSÃO!* O minério foi destruído. Você saiu ileso, mas sem nada!' },
-  { id: 'treasure',     chance: 1, multiplicador: 3,   msg: '🏆 *TESOURO ESCONDIDO!* Você triplicou o ganho!'                       },
-  { id: 'inundacao',    chance: 4, multiplicador: 0.5, msg: '🌊 *INUNDAÇÃO!* A mina alagou e você salvou só metade.'                },
-  { id: 'pedra_magica', chance: 2, multiplicador: 2.5, msg: '🔮 *PEDRA MÁGICA!* Uma energia estranha multiplicou seu ganho!'        },
+  { id: 'veia_rica', chance: 4, multiplicador: 2, xpMultiplicador: 1.5, mensagens: [
+    '✨ *VEIO RICO!* A sua picareta abriu uma passagem para uma camada cheia de minério. O pagamento dobrou!',
+    '💰 *VEIO RICO!* Você encontrou uma faixa brilhante de pedras valiosas. Tudo o que extraiu vale o dobro!',
+  ] },
+  { id: 'tesouro_antigo', chance: 1, multiplicador: 3, xpMultiplicador: 2, mensagens: [
+    '🏺 *TESOURO ESQUECIDO!* Um baú antigo estava escondido atrás da rocha. O valor da descoberta triplicou!',
+    '👑 *CÂMARA SECRETA!* Você encontrou uma reserva de minério preservada há séculos. Ganho triplicado!',
+  ] },
+  { id: 'geodo_dourado', chance: 2.5, multiplicador: 2.5, xpMultiplicador: 1.75, mensagens: [
+    '🌕 *GEODO DOURADO!* A pedra se abriu e revelou cristais raríssimos. O ganho foi multiplicado por 2,5!',
+    '💠 *GEODO EXTRAORDINÁRIO!* O interior da rocha estava coberto de cristais. Uma descoberta valiosa!',
+  ] },
+  { id: 'fosseis', chance: 4, multiplicador: 1.25, xpMultiplicador: 1.5, mensagens: [
+    '🦴 *FÓSSIL RARO!* Você encontrou vestígios de uma criatura pré-histórica. Um pesquisador pagou um extra pela descoberta!',
+    '📜 *RELÍQUIA DO PASSADO!* Um fóssil preservado chamou a atenção dos especialistas. Você recebeu uma recompensa adicional!',
+  ] },
+  { id: 'luz_misteriosa', chance: 0.5, multiplicador: 4, xpMultiplicador: 2.5, mensagens: [
+    '🌠 *LUZ MISTERIOSA!* Um brilho atravessou a caverna e envolveu o minério. A energia multiplicou seu resultado por quatro!',
+    '✨ *RESSONÂNCIA CRISTALINA!* As pedras vibraram em harmonia e potencializaram sua descoberta. Ganho quadruplicado!',
+  ] },
+  { id: 'explosao', chance: 1.5, multiplicador: 0, xpMultiplicador: 0.5, mensagens: [
+    '💥 *EXPLOSÃO!* Uma bolsa de gás explodiu perto da parede. O minério foi destruído, mas você escapou a tempo!',
+    '🧨 *DESABAMENTO EXPLOSIVO!* Uma detonação inesperada pulverizou a descoberta. Você saiu ileso, porém sem pagamento!',
+  ] },
+  { id: 'inundacao', chance: 2, multiplicador: 0.5, xpMultiplicador: 0.75, mensagens: [
+    '🌊 *INUNDAÇÃO!* Água invadiu o túnel. Você conseguiu salvar apenas metade do material!',
+    '💧 *LENÇOL FREÁTICO!* A parede cedeu e alagou a escavação. Parte do minério se perdeu na correnteza!',
+  ] },
+  { id: 'desmoronamento', chance: 1, multiplicador: 0.25, xpMultiplicador: 0.75, mensagens: [
+    '🪨 *DESMORONAMENTO!* Pedras bloquearam a passagem. Você recolheu apenas uma pequena parte da descoberta!',
+    '⚠️ *TETO INSTÁVEL!* O túnel começou a ceder e você precisou fugir, deixando quase todo o minério para trás!',
+  ] },
+  { id: 'morcegos', chance: 3, multiplicador: 0.8, xpMultiplicador: 1, mensagens: [
+    '🦇 *ENXAME DE MORCEGOS!* Uma colônia acordou com o barulho. Na confusão, você perdeu parte do material!',
+    '🌑 *ASAS NA ESCURIDÃO!* Morcegos atravessaram o túnel e fizeram você abandonar parte da carga!',
+  ] },
+  { id: 'ajuda_geologo', chance: 3, multiplicador: 1.5, xpMultiplicador: 1.75, mensagens: [
+    '🧭 *GEÓLOGO VIAJANTE!* Um especialista reconheceu a formação rochosa e ajudou você a extrair mais minério!',
+    '👷 *AJUDA INESPERADA!* Uma garimpeira experiente ensinou uma técnica que aumentou o valor da sua extração!',
+  ] },
+  { id: 'veio_vulcanico', chance: 2, multiplicador: 2.25, xpMultiplicador: 2, mensagens: [
+    '🔥 *VEIO VULCÂNICO!* O calor revelou uma camada mineral incomum. Sua descoberta valeu muito mais!',
+    '🌋 *ROCHA INCANDESCENTE!* Você encontrou minerais formados sob pressão e calor extremos. Bónus de 2,25 vezes!',
+  ] },
 ];
 
-// ─── Narrativas por raridade do !garimpar ────────────────────────────────────
+// ─── Narrações por raridade ─────────────────────────────────────────────────
 const NARRATIVAS = {
+  mitico: [
+    '🌌 A caverna ficou em silêncio quando a pedra começou a flutuar diante de você...',
+    '🐉 Um calor antigo percorreu a picareta. Aquilo não parecia pertencer a este mundo...',
+    '☄️ Uma luz vinda das profundezas revelou algo que os mapas nem sequer mencionavam...',
+    '🔮 As paredes estremeceram. Você acabou de encontrar uma lenda enterrada...',
+    '✨ Por um instante, todas as lanternas se apagaram — e a pedra continuou brilhando...',
+  ],
   lendario: [
-    '🌟 O chão brilhou e você não acreditou no que viu...',
-    '⚡ Um clarão iluminou a mina inteira...',
-    '👑 Lenda! Você achou o que ninguém encontra...',
+    '👑 O brilho atravessou a poeira e fez até os garimpeiros experientes pararem para olhar...',
+    '🌟 Você ouviu um estalo cristalino. Uma descoberta dessas pode mudar uma vida...',
+    '⚡ A picareta revelou uma formação que poucos acreditariam existir...',
+    '🏆 O velho mapa da mina marcava aquele ponto com um aviso: não escavar...',
+    '💎 Uma peça perfeita surgiu da rocha, sem uma única rachadura...',
+  ],
+  epico: [
+    '🔮 A rocha se partiu em duas e revelou um brilho intenso em seu interior...',
+    '💠 Você seguiu um veio de cristais até uma pequena câmara escondida...',
+    '✨ A sua experiência falou mais alto: havia algo especial naquela formação...',
+    '⛏️ Foram necessários vários golpes precisos, mas o esforço valeu a pena...',
+    '🧭 Um reflexo azul indicou o caminho para uma pedra de grande valor...',
   ],
   raro: [
-    '✨ Seus olhos brilharam ao ver o reflexo...',
-    '💫 A picareta fez um som diferente dessa vez...',
-    '🔥 Algo especial estava escondido nessa rocha...',
+    '🔥 A poeira baixou e revelou uma pedra com cores que pareciam mudar...',
+    '💫 O som da picareta mudou quando atingiu uma camada mais profunda...',
+    '🪨 Você encontrou uma formação incomum entre duas paredes de granito...',
+    '🔍 Um pequeno reflexo chamou a sua atenção no meio dos fragmentos...',
+    '⛏️ A paciência compensou: esta escavação rendeu algo especial...',
   ],
   incomum: [
-    '🔹 Não é o melhor, mas ainda vale muito...',
-    '⛏️ Você cavou fundo e valeu a pena...',
-    '🧱 Entre as pedras, algo se destacou...',
+    '🟢 Uma faixa colorida atravessava a rocha. Você decidiu investigar...',
+    '🧱 Entre os fragmentos comuns, uma pedra se destacou pelo brilho...',
+    '🧭 Você desviou do túnel principal e encontrou uma pequena reserva...',
+    '✨ A luz da lanterna revelou uma formação que quase passou despercebida...',
+    '⛏️ Não foi uma descoberta lendária, mas certamente valeu o esforço...',
   ],
   comum: [
-    '▫️ Mais um dia de garimpo honesto...',
-    '🪨 O trabalho é duro, mas o saldo cai...',
-    '⛏️ Nada de extraordinário, mas rendeu!',
+    '▫️ Mais uma jornada de trabalho duro nas profundezas da mina...',
+    '🪨 A picareta bateu na rocha e você recolheu o que conseguiu...',
+    '⛏️ Nem todo dia é de grandes descobertas. O importante é continuar...',
+    '🧤 A poeira cobriu suas luvas, mas alguns minerais apareceram...',
+    '🕯️ Com a lanterna quase no fim, você encontrou uma última pedra...',
+    '🚶 Você percorreu um túnel estreito e voltou com uma pequena recompensa...',
   ],
 };
 
-module.exports = { ITENS_LOJA, MINERIOS, EVENTOS_GARIMPO, NARRATIVAS };
+// ─── Falas de quem trabalha nas minas ────────────────────────────────────────
+const FALAS_GARIMPO = {
+  mitico: [
+    { personagem: 'Velho Anselmo', texto: 'Há coisas debaixo desta terra que nem deveriam ser acordadas...' },
+    { personagem: 'Mara, a geóloga', texto: 'Isto não aparece em nenhuma tabela mineralógica que eu conheço!' },
+    { personagem: 'Voz da caverna', texto: 'Finalmente... alguém encontrou o que estava escondido.' },
+  ],
+  lendario: [
+    { personagem: 'Velho Anselmo', texto: 'Guarde bem isso. Talvez você nunca mais veja outro igual.' },
+    { personagem: 'Mara, a geóloga', texto: 'Pela formação e pelo brilho, isto é uma descoberta extraordinária!' },
+    { personagem: 'Garimpeiro Raul', texto: 'Eu trabalho aqui há quarenta anos e nunca vi uma pedra dessas.' },
+  ],
+  epico: [
+    { personagem: 'Mara, a geóloga', texto: 'Olhe as inclusões neste cristal. A qualidade é impressionante!' },
+    { personagem: 'Garimpeiro Raul', texto: 'Esse veio ainda pode render. Não pare agora!' },
+    { personagem: 'Velho Anselmo', texto: 'Boa descoberta! Só não conte para todo mundo onde encontrou.' },
+  ],
+  raro: [
+    { personagem: 'Garimpeira Joana', texto: 'Bata mais para o lado esquerdo. A camada continua por ali.' },
+    { personagem: 'Mara, a geóloga', texto: 'Uma peça dessas tem bom valor no mercado de colecionadores.' },
+    { personagem: 'Garimpeiro Raul', texto: 'Está vendo? Paciência também é ferramenta de trabalho.' },
+  ],
+  incomum: [
+    { personagem: 'Garimpeira Joana', texto: 'Não é todo dia que aparece uma pedra assim. Boa!' },
+    { personagem: 'Garimpeiro Raul', texto: 'Separe as pedras por tipo. O comprador paga melhor assim.' },
+    { personagem: 'Mara, a geóloga', texto: 'Interessante! Vale a pena guardar uma amostra para análise.' },
+  ],
+  comum: [
+    { personagem: 'Garimpeiro Raul', texto: 'Devagar se chega longe. Mais uma picaretada!' },
+    { personagem: 'Garimpeira Joana', texto: 'Pelo menos hoje a gente não voltou de mãos vazias.' },
+    { personagem: 'Velho Anselmo', texto: 'A mina recompensa quem não desiste tão fácil.' },
+    { personagem: 'Mara, a geóloga', texto: 'Até as pedras mais simples contam a história deste lugar.' },
+    { personagem: 'Garimpeiro novato', texto: 'Acho que ouvi alguma coisa lá no fundo do túnel...' },
+  ],
+};
+
+module.exports = { ITENS_LOJA, MINERIOS, EVENTOS_GARIMPO, NARRATIVAS, FALAS_GARIMPO };

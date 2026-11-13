@@ -8,6 +8,7 @@
 'use strict';
 
 const path = require('path');
+const { normalizarNomeComando, extrairArgumentosComando } = require('../../utils/commandItem');
 const { randomUUID } = require('node:crypto');
 let CarteiraGrupo;
 let getCarteira;
@@ -574,9 +575,9 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
     const tiersLiberados = CATALGO_EMPREGOS.filter(t => userLevel >= t.nivelMin);
     const tierAtual      = tiersLiberados[tiersLiberados.length - 1] || CATALGO_EMPREGOS[0];
 
-    // Trata argumento de escolha (ex: !procuraremprego 3 ou !procuraremprego entregador_pizza)
-    const args = (caption || '').trim().split(/\s+/).slice(1);
-    const escolhaArg = args[0] ? args[0].trim().toLowerCase() : null;
+    // Trata argumento de escolha (ex: !procuraremprego 3 ou !procuraremprego Entregador de Pizza)
+    const escolhaTexto = String(caption || '').replace(/^[!.,/#]?(?:procuraremprego|buscaemprego|escolheremprego)\s*/i, '').trim();
+    const escolhaArg = escolhaTexto ? escolhaTexto.trim() : null;
 
     // Se NÃO passou argumento -> exibe o painel de vagas com as 7 opções do seu nível!
     if (!escolhaArg) {
@@ -600,13 +601,23 @@ async function handleProcurarEmprego(sock, msg, jid, caption) {
 
     // Se passou argumento -> tenta contratar na vaga escolhida!
     let cargoEscolhido = null;
-    const num = parseInt(escolhaArg, 10);
+    const escolhaNormalizada = normalizarNomeComando(escolhaArg);
+    const ehNumero = /^\d+$/.test(escolhaArg);
+    const num = ehNumero ? Number(escolhaArg) : NaN;
 
-    if (!isNaN(num) && num >= 1 && num <= 7) {
+    if (Number.isInteger(num) && num >= 1 && num <= 7) {
       const vagaEscolhida = tierAtual.cargos[num - 1];
       cargoEscolhido = vagaEscolhida ? CARGO_MAP.get(vagaEscolhida.slug) : null;
     } else {
-      cargoEscolhido = ALL_CARGOS.find(c => c.slug === escolhaArg || c.nome.toLowerCase().includes(escolhaArg));
+      const correspondencias = ALL_CARGOS.filter(c =>
+        normalizarNomeComando(c.slug) === escolhaNormalizada ||
+        normalizarNomeComando(c.nome) === escolhaNormalizada
+      );
+      if (correspondencias.length === 1) cargoEscolhido = correspondencias[0];
+      else if (correspondencias.length === 0) {
+        const parciais = ALL_CARGOS.filter(c => normalizarNomeComando(c.nome).includes(escolhaNormalizada));
+        if (parciais.length === 1) cargoEscolhido = parciais[0];
+      }
     }
 
     if (!cargoEscolhido) {

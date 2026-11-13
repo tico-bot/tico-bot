@@ -26,48 +26,19 @@ try {
   logError('handleGarimpar', error, 'Módulo de missões indisponível; progresso de missão ficará desativado');
 }
 
-const { MINERIOS, EVENTOS_GARIMPO, NARRATIVAS } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
+const {
+  sortearMinerio,
+  sortearEvento,
+  getRaridadeKey,
+  getRaridadeLabel,
+  narrativaAleatoria,
+  falaAleatoria,
+  mensagemEvento,
+  calcularResultadoGarimpo,
+  formatarCatalogoMinerios,
+} = require(path.join(__dirname, '..', '..', '..', 'utils', 'garimpo'));
 
 const GARIMPO_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutos
-
-function sortearMinerio() {
-  const roll = Math.random() * 100;
-  let acumulado = 0;
-  for (const m of MINERIOS) {
-    acumulado += m.chance;
-    if (roll < acumulado) return m;
-  }
-  return MINERIOS[MINERIOS.length - 1];
-}
-
-function sortearEvento() {
-  const roll = Math.random() * 100;
-  let acumulado = 0;
-  for (const e of EVENTOS_GARIMPO) {
-    acumulado += e.chance;
-    if (roll < acumulado) return e;
-  }
-  return null;
-}
-
-function getRaridadeKey(chance) {
-  if (chance <= 1)  return 'lendario';
-  if (chance <= 5)  return 'raro';
-  if (chance <= 15) return 'incomum';
-  return 'comum';
-}
-
-function getRaridadeLabel(chance) {
-  if (chance <= 1)  return '🌟 *LENDÁRIO!*';
-  if (chance <= 5)  return '✨ *Raro!*';
-  if (chance <= 15) return '🔹 Incomum';
-  return '▫️ Comum';
-}
-
-function narrativaAleatoria(key) {
-  const lista = NARRATIVAS[key] ?? NARRATIVAS.comum;
-  return lista[Math.floor(Math.random() * lista.length)];
-}
 
 function formatarTempo(ms) {
   const totalSec = Math.ceil(ms / 1000);
@@ -86,6 +57,12 @@ function msgCooldown(restante) {
 }
 
 const garimpoCache = new Map();
+
+async function handleMinerios(sock, msg, jid, getPrefix) {
+  const prefix = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
+  const texto = formatarCatalogoMinerios(prefix);
+  await sock.sendMessage(jid, { text: texto }, { quoted: msg });
+}
 
 async function handleGarimpar(sock, msg, jid) {
   const userIdRaw = getSenderJid(msg);
@@ -151,19 +128,12 @@ async function handleGarimpar(sock, msg, jid) {
     try {
       const minerio     = sortearMinerio();
       const evento      = sortearEvento();
-      const raridadeKey = getRaridadeKey(minerio.chance);
-      const raridadeTxt = getRaridadeLabel(minerio.chance);
+      const raridadeKey = getRaridadeKey(minerio);
+      const raridadeTxt = getRaridadeLabel(minerio);
       const narrativa   = narrativaAleatoria(raridadeKey);
-
-      let goldFinal = minerio.gold;
-      let xpFinal   = minerio.xp ?? 5;
-      let eventoTxt = '';
-
-      if (evento) {
-        goldFinal = Math.floor(minerio.gold * evento.multiplicador);
-        xpFinal   = Math.floor(xpFinal * Math.max(evento.multiplicador, 0.5));
-        eventoTxt = evento.msg;
-      }
+      const fala        = falaAleatoria(raridadeKey);
+      const eventoTxt   = mensagemEvento(evento);
+      const { goldFinal, xpFinal } = calcularResultadoGarimpo(minerio, evento);
 
       let carteira;
       if (contaVinculada) {
@@ -223,8 +193,9 @@ async function handleGarimpar(sock, msg, jid) {
         ``,
         `_${narrativa}_`,
         ``,
+        ...(fala ? [`💬 *${fala.personagem}:* “${fala.texto}”`, ``] : []),
         `━━━━━━━━━━━━━━━━`,
-        `${minerio.emoji} Minério: *${minerio.nome}*`,
+        `⛏️ Minério: *${minerio.nome}*`,
         `⭐ Raridade: ${raridadeTxt}`,
       ];
 
@@ -275,4 +246,4 @@ async function handleGarimpar(sock, msg, jid) {
   }
 }
 
-module.exports = { handleGarimpar };
+module.exports = { handleGarimpar, handleMinerios };

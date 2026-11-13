@@ -5,7 +5,7 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { getCarteira, transferirGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
 const { resolveUserFromMsg, resolveGlobalId, extrairNumero, getAlternateSenderJids, getParticipantJids, sameWhatsAppIdentity } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const Usuario = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
-const { LOOKUP_ITENS_LOJA, normalizarChaveItem } = require('./_shared');
+const { resolverItemKey } = require('./_shared');
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 const { logError } = require(path.join(__dirname, '..', '..', '..', 'utils', 'logging'));
 
@@ -455,7 +455,7 @@ async function handleGive(sock, msg, jid, caption) {
 
   if (isNaN(quantidade) || quantidade <= 0) quantidade = 1;
 
-  const itemKey  = LOOKUP_ITENS_LOJA[normalizarChaveItem(itemDigitado)] || null;
+  const itemKey  = resolverItemKey(itemDigitado);
   const itemInfo = itemKey ? ITENS_LOJA[itemKey] : null;
 
   if (!itemInfo) {

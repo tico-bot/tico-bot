@@ -27,6 +27,7 @@ async function handleMenuPrata(sock, msg, jid, getPrefix) {
     '📈 *GANHOS, APOSTAS & BANCO*',
     '  ▸ ' + P + 'missao — missão de economia',
     '  ▸ ' + P + 'garimpar — garimpar recursos (aliases: explorar, pesquisar)',
+    '  ▸ ' + P + 'minerios — catálogo, raridades, valores e probabilidades',
     '  ▸ ' + P + 'emprestimo <valor> / ' + P + 'divida — empréstimos e dívidas',
     '  ▸ ' + P + 'banco <valor> / ' + P + 'resgatar / ' + P + 'historicobanco',
     '  ▸ ' + P + 'apostar <valor> / ' + P + 'slots [valor] / ' + P + 'corrida [valor]',

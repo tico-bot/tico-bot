@@ -13,6 +13,7 @@ async function handleMenuJogos(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'menuprata — saldo, lojas, transferências e pesca',
     '  ▸ ' + P + 'missao — missão de economia',
     '  ▸ ' + P + 'garimpar — garimpar recursos',
+    '  ▸ ' + P + 'minerios — catálogo, raridades, valores e probabilidades',
     '  ▸ ' + P + 'banco / ' + P + 'resgatar / ' + P + 'extrato',
     '  ▸ ' + P + 'rankprata — ranking de saldo',
     '',

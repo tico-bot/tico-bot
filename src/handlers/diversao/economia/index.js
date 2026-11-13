@@ -17,7 +17,7 @@ const {
   handleInventario,
 } = require('./loja');
 
-const { handleGarimpar } = require('./garimpo');
+const { handleGarimpar, handleMinerios } = require('./garimpo');
 const { handleSlots, handleCorrida, handleApostar } = require('./cassino');
 const { handlePix, handlePixMulti, handlePixDoar, handleGive } = require('./transferencia');
 const { handleExtrato } = require('./extrato');
@@ -42,6 +42,7 @@ module.exports = {
   handleApostar,
   handleExtrato,
   handleGarimpar,
+  handleMinerios,
   handleSlots,
   handleCorrida,
   getSaldoGrupo,

@@ -809,6 +809,8 @@ async function handleMessage(sock, msg) {
     { await handleRankGold(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
     { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'minerios') || matchCmd(cmdWord, 'minérios') || matchCmd(cmdWord, 'catalogominerios'))
+    { await diversaoHandler.handleMinerios(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
     { await handleEmprestimo(sock, msg, jid, caption); return; }
   if (matchCmdStart(cmd, 'pay emprestimo'))

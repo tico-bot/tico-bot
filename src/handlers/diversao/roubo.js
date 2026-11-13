@@ -3,7 +3,7 @@
 /**
  * Sistema de Roubo — Tico Bot
  * Comandos: !menuroubar, !roubar, !roubarbanco, !menusec, !equiparroubo, !equiparsec
- *           !buyroubarbanco, !equiparroubarbanco, !invroubarbanco
+ *           !buyroubo, !equiparroubarbanco, !invroubarbanco
  *           !meusitensroubo, !meussec, !meiosec, !comprarroubo, !comprarsec
  *
  * Toda a lógica é isolada por grupo via CarteiraGrupo.
@@ -23,6 +23,7 @@ const { incrementMission } = require('./missoes');
 const { normalizarJid, normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
+const { resolverChaveCatalogo, extrairArgumentosComando } = require(path.join(__dirname, '..', '..', 'utils', 'commandItem'));
 
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 
@@ -31,7 +32,7 @@ const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils'
 const COOLDOWN_ROUBO_MS  = 15 * 60 * 1000; // 15 minutos entre tentativas
 const COOLDOWN_PRESO_MS  = 2 * 60 * 60 * 1000; // 2 horas preso se falhar
 const COOLDOWN_POLICIA_MS = 15 * 60 * 1000; // 15 min pra chamar polícia de novo
-const JANELA_DENUNCIA_POLICIA_MS = 15 * 60 * 1000; // 15 min após o roubo para chamar a polícia
+const JANELA_DENUNCIA_POLICIA_MS = 2 * 60 * 60 * 1000; // 2 horas após o roubo para chamar a polícia
 const IMUNIDADE_ROUBO_MS  = 2 * 60 * 60 * 1000; // 2h de imunidade após ser roubado
 const TAXA_SUCESSO_BASE  = 50;
 const TAXA_MIN           = 5;
@@ -149,13 +150,15 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
 
   for (const [key, item] of Object.entries(ITENS_ROUBO)) {
     texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
-    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
+    texto += `     └ Bônus de sucesso: *+${item.bonus}%*\n`;
+    texto += `     └ Comprar/equipar: \`${P}buyroubo ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\` / \`${P}equiparroubo ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
   }
 
   texto += `\n🏦 *FERRAMENTAS PARA ASSALTO A BANCO*\n`;
   for (const [key, item] of Object.entries(ITENS_ROUBO_BANCO)) {
     texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
-    texto += `     └ Bônus de sucesso: *+${item.bonus}%* | chave: \`${key}\`\n`;
+    texto += `     └ Bônus de sucesso: *+${item.bonus}%*\n`;
+    texto += `     └ Comprar/equipar: \`${P}buyroubo ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\` / \`${P}equiparroubo ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
   }
 
   texto += `
@@ -193,7 +196,8 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
     texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
-    texto += `     └ Proteção: *+${item.defesa}%* | chave: \`${key}\`\n`;
+    texto += `     └ Proteção: *+${item.defesa}%*\n`;
+    texto += `     └ Comprar/equipar: \`${P}buysec ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\` / \`${P}equiparsec ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
   }
 
   texto += `
@@ -216,15 +220,14 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 async function handleComprarRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match = String(caption || '').match(/buyroubo\s+(\S+)/i);
-  if (!match) {
+  const itemDigitado = extrairArgumentosComando(caption || '', 'buyroubo');
+  const itemSlug = resolverChaveCatalogo(itemDigitado, { ...ITENS_ROUBO, ...ITENS_ROUBO_BANCO });
+  if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!buyroubo <item>*\nExemplo: *!buyroubo dinamite*',
+      text: '⚠️ Use: *!buyroubo <nome do item>*\nExemplo: *!buyroubo Dinamite*',
     }, { quoted: msg });
     return;
   }
-
-  const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_ROUBO[itemSlug] || ITENS_ROUBO_BANCO[itemSlug];
   const campoInventario = ITENS_ROUBO[itemSlug] ? 'itensRoubo' : 'itensRouboBanco';
   if (!itemInfo) {
@@ -285,7 +288,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       `💵 *Preço:* ${itemInfo.preco} Prata\n` +
       `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
       `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
-      `💡 Use *!equiparroubo ${itemSlug}* para equipar!`,
+      `💡 Use *!equiparroubo ${itemInfo.nome.replace(/^[^\p{L}\p{N}]+/u, '')}* para equipar!`,
   }, { quoted: msg });
 }
 
@@ -294,15 +297,14 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
 async function handleComprarSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match = caption.match(/buysec\s+(\S+)/i);
-  if (!match) {
+  const itemDigitado = extrairArgumentosComando(caption || '', 'buysec');
+  const itemSlug = resolverChaveCatalogo(itemDigitado, ITENS_SEGURANCA);
+  if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!buysec <item>*\nExemplo: *!buysec cofre*',
+      text: '⚠️ Use: *!buysec <nome do item>*\nExemplo: *!buysec Cofre Forte*',
     }, { quoted: msg });
     return;
   }
-
-  const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_SEGURANCA[itemSlug];
   if (!itemInfo) {
     await sock.sendMessage(jid, {
@@ -362,7 +364,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
       `💵 *Preço:* ${formatarSaldo(itemInfo.preco, carteiraFinal)}\n` +
       `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
       `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
-      `💡 Use *!equiparsec ${itemSlug}* para ativar!`,
+      `💡 Use *!equiparsec ${itemInfo.nome.replace(/^[^\p{L}\p{N}]+/u, '')}* para ativar!`,
   }, { quoted: msg });
 }
 
@@ -370,16 +372,15 @@ async function handleComprarSec(sock, msg, jid, caption) {
 async function handleEquiparRoubo(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = String(caption || '').match(/equiparroubo\s+(\S+)/i);
+  const itemDigitado = extrairArgumentosComando(caption || '', 'equiparroubo');
+  const itemSlug = resolverChaveCatalogo(itemDigitado, { ...ITENS_ROUBO, ...ITENS_ROUBO_BANCO });
 
-  if (!match) {
+  if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!equiparroubo <item>*\nExemplo: *!equiparroubo dinamite*',
+      text: '⚠️ Use: *!equiparroubo <nome do item>*\nExemplo: *!equiparroubo Dinamite*',
     }, { quoted: msg });
     return;
   }
-
-  const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_ROUBO[itemSlug] || ITENS_ROUBO_BANCO[itemSlug];
   const ferramentaBanco = Boolean(ITENS_ROUBO_BANCO[itemSlug]);
   const campoInventario = ferramentaBanco ? 'itensRouboBanco' : 'itensRoubo';
@@ -399,7 +400,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemSlug}*`,
+        `🛒 Compre com *!buyroubo ${itemInfo.nome.replace(/^[^\p{L}\p{N}]+/u, '')}*`,
     }, { quoted: msg });
     return;
   }
@@ -429,16 +430,15 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 async function handleEquiparSec(sock, msg, jid, caption) {
   const userId  = getUserId(msg);
   const idGrupo = getGroupId(msg, jid);
-  const match   = caption.match(/equiparsec\s+(\S+)/i);
+  const itemDigitado = extrairArgumentosComando(caption || '', 'equiparsec');
+  const itemSlug = resolverChaveCatalogo(itemDigitado, ITENS_SEGURANCA);
 
-  if (!match) {
+  if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!equiparsec <item>*\nExemplo: *!equiparsec cofre*',
+      text: '⚠️ Use: *!equiparsec <nome do item>*\nExemplo: *!equiparsec Cofre Forte*',
     }, { quoted: msg });
     return;
   }
-
-  const itemSlug = match[1].toLowerCase().trim();
   const itemInfo = ITENS_SEGURANCA[itemSlug];
 
   if (!itemInfo) {
@@ -455,7 +455,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!buysec ${itemSlug}*`,
+        `🛒 Compre com *!buysec ${itemInfo.nome.replace(/^[^\p{L}\p{N}]+/u, '')}*`,
     }, { quoted: msg });
     return;
   }
@@ -662,7 +662,7 @@ async function handleRoubar(sock, msg, jid) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui mais *${itemAtaque.nome}* no inventário!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemSlugAtaque}*`,
+        `🛒 Compre com *!buyroubo ${itemAtaque.nome.replace(/^[^\p{L}\p{N}]+/u, '')}*`,
     }, { quoted: msg });
     return;
   }
@@ -1091,7 +1091,7 @@ async function handleRoubarBanco(sock, msg, jid) {
       text:
         `❌ *Você precisa equipar uma ferramenta de banco antes!*\n\n` +
         `🛒 Compre com *!menuroubar*\n` +
-        `⚡ Equipe com *!equiparroubarbanco <item>*`,
+        `⚡ Equipe com *!equiparroubo <nome do item>*`,
     }, { quoted: msg });
     return;
   }
@@ -1102,7 +1102,7 @@ async function handleRoubarBanco(sock, msg, jid) {
     await sock.sendMessage(jid, {
       text:
         `❌ Você não possui *${itemAtaque.nome}* no inventário!\n\n` +
-        `🛒 Compre com *!buyroubarbanco ${itemSlugAtaque}*`,
+        `🛒 Compre com *!buyroubo ${itemAtaque.nome.replace(/^[^\p{L}\p{N}]+/u, '')}*`,
     }, { quoted: msg });
     return;
   }

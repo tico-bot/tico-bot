@@ -19,6 +19,7 @@ try {
 }
 
 const { resolverItemKey } = require('./_shared');
+const { extrairArgumentosComando } = require('../../../utils/commandItem');
 const { formatWalletAmount, getWalletBalance } = require('../../../utils/carteira/wallet');
 const { logError } = require('../../../utils/logging');
 
@@ -113,7 +114,7 @@ async function handleLojaFood(sock, msg, jid, getPrefix) {
       const item = ITENS_LOJA[k];
       if (item) {
         texto += `  🍽️ ${item.nome} — *${formatMoney(item.preco)}*\n`;
-        texto += `    └ chave: \`${k}\`\n`;
+        texto += `    └ Comprar: \`${P}buy ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
       }
     }
   }
@@ -146,7 +147,7 @@ async function handleLojaPet(sock, msg, jid, getPrefix) {
       const item = ITENS_LOJA[k];
       if (item) {
         texto += `  🐾 ${item.nome} — *${formatMoney(item.preco)}*\n`;
-        texto += `    └ chave: \`${k}\`\n`;
+        texto += `    └ Comprar: \`${P}buy ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
       }
     }
   }
@@ -180,7 +181,7 @@ async function handleLojaTec(sock, msg, jid, getPrefix) {
       const item = ITENS_LOJA[k];
       if (item) {
         texto += `  💻 ${item.nome} — *${formatMoney(item.preco)}*\n`;
-        texto += `    └ chave: \`${k}\`\n`;
+        texto += `    └ Comprar: \`${P}buy ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
       }
     }
   }
@@ -212,7 +213,7 @@ async function handleLojaCasal(sock, msg, jid, getPrefix) {
       const item = ITENS_LOJA[k];
       if (item) {
         texto += `  💕 ${item.nome} — *${formatMoney(item.preco)}*\n`;
-        texto += `    └ chave: \`${k}\`\n`;
+        texto += `    └ Comprar: \`${P}buy ${item.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n`;
       }
     }
   }
@@ -234,7 +235,7 @@ async function handleComprar(sock, msg, jid, caption) {
   const match   = caption.match(/buy\s+(.+)/i);
 
   if (!match) {
-    await sock.sendMessage(jid, { text: '⚠️ Use: *!buy <nome_do_item>*\nExemplo: *!buy pizza*' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: '⚠️ Use: *!buy <nome do item>*\nExemplo: *!buy pizza*' }, { quoted: msg });
     return;
   }
 
@@ -256,7 +257,7 @@ async function handleComprar(sock, msg, jid, caption) {
       text:
         `⚠️ *ITEM NÃO ENCONTRADO*\n\nO item *${itemDigitado}* não existe!\n\n` +
         `━━━━━━━━━━━━━━━━\n*ITENS DISPONÍVEIS:*\n${lista}\n\n` +
-        `*USE:*\n  !buy <item>\n  Exemplo: !buy pizza`,
+        `*USE:*\n  !buy <nome do item>\n  Exemplo: !buy Pizza Margherita`,
     }, { quoted: msg });
     return;
   }
@@ -334,22 +335,25 @@ async function handleVender(sock, msg, jid, caption) {
     }, { quoted: msg });
     return;
   }
-  const match  = caption.match(/vender\s+(\S+)\s+(\d+)\s+(\d+)/i);
+  const partesVenda = extrairArgumentosComando(caption, 'vender').split(/\s+/).filter(Boolean);
+  const quantidadeRaw = partesVenda.pop();
+  const precoRaw = partesVenda.pop();
+  const itemDigitado = partesVenda.join(' ').trim();
+  const precoDigitado = /^\d+$/.test(precoRaw || '') ? Number(precoRaw) : NaN;
+  const quantidade = /^\d+$/.test(quantidadeRaw || '') ? Number(quantidadeRaw) : NaN;
+  const itemKey = itemDigitado ? resolverItemKey(itemDigitado) : null;
+  const itemInfo = itemKey ? ITENS_LOJA[itemKey] : null;
 
-  if (!match) {
+  if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!vender <item> <preco> <quantidade>*\nExemplo: *!vender pizza 50 3*',
+      text: `⚠️ Item *${itemDigitado || '(não informado)'}* não existe! Use *!loja* para ver os itens.\nExemplo: *!vender Pizza Margherita 50 3*`,
     }, { quoted: msg });
     return;
   }
-
-  const itemKey        = match[1].toLowerCase().trim();
-  const precoDigitado  = parseInt(match[2]);
-  const quantidade     = parseInt(match[3]);
-  const itemInfo       = ITENS_LOJA[itemKey];
-
-  if (!itemInfo) {
-    await sock.sendMessage(jid, { text: `⚠️ Item *${itemKey}* não existe! Use *!loja* para ver os itens.` }, { quoted: msg });
+  if (!Number.isSafeInteger(precoDigitado) || !Number.isSafeInteger(quantidade)) {
+    await sock.sendMessage(jid, {
+      text: '⚠️ Use: *!vender <item> <preço> <quantidade>*\nExemplo: *!vender Pizza Margherita 50 3*',
+    }, { quoted: msg });
     return;
   }
   if (precoDigitado <= 0 || quantidade <= 0) {

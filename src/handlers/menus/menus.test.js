@@ -103,7 +103,7 @@ test('main and category menus include key working commands', async () => {
 
   const games = await renderMenu('jogos', () =>
     utilidade.handleMenuJogos(sock, msg, jid, getPrefix));
-  for (const command of ['quizfut', 'forca', 'pescar', 'eredivisie', 'mundial', 'campeonatozoeira']) {
+  for (const command of ['quizfut', 'forca', 'pescar', 'minerios', 'eredivisie', 'mundial', 'campeonatozoeira']) {
     assert.ok(games.includes(command), 'menujogos should include ' + command);
   }
 
@@ -130,6 +130,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(prata, /rankingpesca/);
   assert.match(prata, /!prata/);
   assert.match(prata, /!rankprata/);
+  assert.match(prata, /!minerios — catálogo, raridades, valores e probabilidades/);
 
   const effects = await renderMenu('efeitos', () =>
     imagem.handleMenuEfeitos(sock, msg, jid, '!'));

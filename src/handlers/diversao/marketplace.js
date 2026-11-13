@@ -24,6 +24,7 @@ const mongoose = require('mongoose');
 const Usuario  = require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 const { formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
+const { resolverChaveCatalogo, extrairArgumentosComando } = require(path.join(__dirname, '..', '..', 'utils', 'commandItem'));
 
 // ─── CATÁLOGO ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,10 @@ function registerCatalog(itens = {}) {
 
 function getNomeItem(itemKey) {
   return CATALOGO_COMPLETO[itemKey]?.nome ?? itemKey;
+}
+
+function resolverItemMarketplace(digitado) {
+  return resolverChaveCatalogo(digitado, CATALOGO_COMPLETO);
 }
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
@@ -698,14 +703,15 @@ function filtroOfertasAtivas(extra = {}) {
 // ─── MENSAGENS ────────────────────────────────────────────────────────────────
 
 function parseBuyArgs(caption) {
-  // Antes o regex procurava "buy" seguido de espaço — mas o comando real é
-  // "!buyoferta", onde depois de "buy" vem "oferta" (sem espaço), não whitespace.
-  // O match nunca acontecia e !buyoferta ficava permanentemente quebrado.
-  const match = caption.match(/buyoferta\s+([\d@.\w]+)\s+([A-Za-z0-9_-]+)\s+(\d{1,6})/i);
-  if (!match) return null;
-  const quantidade = parseInt(match[3], 10);
-  if (!Number.isFinite(quantidade) || quantidade < 1) return null;
-  return { vendedorRaw: match[1], itemKey: match[2].toLowerCase(), quantidade };
+  const partes = extrairArgumentosComando(caption, 'buyoferta').split(/\s+/).filter(Boolean);
+  if (partes.length < 3) return null;
+  const vendedorRaw = partes.shift();
+  const quantidadeRaw = partes.pop();
+  if (!/^\d{1,6}$/.test(quantidadeRaw || '')) return null;
+  const quantidade = Number(quantidadeRaw);
+  if (!Number.isSafeInteger(quantidade) || quantidade < 1) return null;
+  const itemKey = resolverItemMarketplace(partes.join(' ').trim());
+  return itemKey ? { vendedorRaw, itemKey, quantidade } : null;
 }
 
 function buildMensagemComprador({
@@ -801,7 +807,7 @@ async function executarCompra({
       `⚠️ *Quantidade indisponível!*\n\n` +
       `📦 Estoque atual: *${ofertaExistente.quantidade}*\n` +
       `📊 Você pediu: *${quantidade}*\n` +
-      `🔍 Verifique: *!buscaroferta ${itemKey}*`;
+      `🔍 Verifique: *!buscaroferta ${getNomeItem(itemKey)}*`;
     throw err;
   }
 
@@ -859,7 +865,7 @@ async function executarCompra({
     const err = new Error('CONFLITO_ESTOQUE');
     err.userMsg =
       `⚠️ Outra compra acabou de esgotar o estoque.\n\n` +
-      `🔍 Verifique disponibilidade: *!buscaroferta ${itemKey}*`;
+      `🔍 Verifique disponibilidade: *!buscaroferta ${getNomeItem(itemKey)}*`;
     throw err;
   }
 
@@ -1124,7 +1130,7 @@ async function handleAvenda(sock, msg, jid, caption = '') {
         texto += `     💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un. _(total: ${formatarSaldo(totalVal)})_\n`;
         texto += `     🏦 _Taxa estimada: ${formatarSaldo(taxaEst)} (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
         texto += expiraTexto;
-        texto += `     🛒 \`!buyoferta ${num} ${o.itemKey} <qtd>\`\n`;
+        texto += `     🛒 \`!buyoferta ${num} ${o.itemNome || getNomeItem(o.itemKey)} <qtd>\`\n`;
       }
     }
 
@@ -1148,14 +1154,13 @@ async function handleAvenda(sock, msg, jid, caption = '') {
 // !buscaroferta <item>
 async function handleBuscarOferta(sock, msg, jid, caption) {
   // Aceita tanto "!buscaroferta" quanto o alias "!buscaoferta" registrado no bot.js
-  const match = caption.match(/busca(?:r)?oferta\s+([A-Za-z0-9_-]+)/i);
-  if (!match) {
+  const itemDigitado = String(caption || '').replace(/^[!.,/#]?busca(?:r)?oferta\s*/i, '').trim();
+  const itemKey = resolverItemMarketplace(itemDigitado);
+  if (!itemKey) {
     return reply(sock, jid, msg,
-      '⚠️ Use: *!buscaroferta <item>*\n📌 Exemplo: *!buscaroferta dinamite*'
+      `⚠️ Item *${itemDigitado || '(não informado)'}* não encontrado. Informe o nome completo; espaços e acentos são aceitos.`
     );
   }
-
-  const itemKey  = match[1].toLowerCase();
   const itemNome = getNomeItem(itemKey);
 
   try {
@@ -1167,7 +1172,7 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
       return reply(sock, jid, msg,
         `🔍 Nenhuma oferta encontrada para *${itemNome}*.\n\n` +
         `💡 Seja o primeiro a vender:\n` +
-        `➡️ *!ofertar ${itemKey} <preco> <qtd>*`
+        `➡️ *!ofertar ${itemNome} <preço> <qtd>*`
       );
     }
 
@@ -1202,13 +1207,13 @@ async function handleBuscarOferta(sock, msg, jid, caption) {
       texto += `   💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un. _(total: ${formatarSaldo(totalVal)})_\n`;
       texto += `   🏦 _Taxa estimada: ${formatarSaldo(taxaEst)} (${CONFIG.TAXA_MERCADO_PCT}%)_\n`;
       texto += expiraTexto;
-      texto += `   🛒 \`!buyoferta ${num} ${itemKey} <qtd>\`\n\n`;
+      texto += `   🛒 \`!buyoferta ${num} ${itemNome} <qtd>\`\n\n`;
     }
 
     const nomeBarato = maisBarato.sellerName?.trim() || formatarNumero(maisBarato.sellerId);
     texto += `━━━━━━━━━━━━━━━━\n`;
     texto += `🏆 Mais barato: *${formatarSaldo(maisBarato.preco)}* de ${nomeBarato}\n`;
-    texto += `🛒 \`!buyoferta ${formatarNumero(maisBarato.sellerId)} ${itemKey} <qtd>\``;
+    texto += `🛒 \`!buyoferta ${formatarNumero(maisBarato.sellerId)} ${itemNome} <qtd>\``;
 
     return reply(sock, jid, msg, texto);
   } catch (e) {
@@ -1244,18 +1249,21 @@ async function handleOfertar(sock, msg, jid, caption) {
   // Contas vinculadas ao app não usam o marketplace (ele paga em Usuario.gold, saldo legado).
   // ── 2. Parse dos argumentos ──────────────────────────────────────────────
 
-  const match = caption.match(/ofertar\s+([A-Za-z0-9_-]+)\s+(\d+)\s+(\d+)/i);
-  if (!match) {
+  const partesOferta = extrairArgumentosComando(caption, 'ofertar').split(/\s+/).filter(Boolean);
+  const quantidadeRaw = partesOferta.pop();
+  const precoRaw = partesOferta.pop();
+  const itemDigitado = partesOferta.join(' ').trim();
+  const itemKey = resolverItemMarketplace(itemDigitado);
+  const preco = /^\d+$/.test(precoRaw || '') ? Number(precoRaw) : NaN;
+  const quantidade = /^\d+$/.test(quantidadeRaw || '') ? Number(quantidadeRaw) : NaN;
+  if (!itemKey || !Number.isSafeInteger(preco) || !Number.isSafeInteger(quantidade)) {
     return reply(sock, jid, msg,
-      '⚠️ *Uso correto:* `!ofertar <item> <preco> <quantidade>`\n' +
-      '📌 *Exemplo:* `!ofertar dinamite 200 3`\n\n' +
+      '⚠️ *Uso correto:* `!ofertar <nome do item> <preço> <quantidade>`\n' +
+      '📌 *Exemplo:* `!ofertar Vara Amaldiçoada 200 3`\n' +
+      'Espaços, underscores e acentos são aceitos.\n\n' +
       '🛒 Ver marketplace: *!avenda*'
     );
   }
-
-  const itemKey    = match[1].toLowerCase();
-  const preco      = parseInt(match[2], 10);
-  const quantidade = parseInt(match[3], 10);
 
   // ── 3. Validações de negócio (síncronas, sem I/O) ────────────────────────
 
@@ -1441,7 +1449,7 @@ async function handleOfertar(sock, msg, jid, caption) {
     `━━━━━━━━━━━━━━━━\n` +
     `📋 *Suas ofertas ativas:* ${restantes}/${CONFIG.MAX_OFERTAS_USER}\n` +
     `🛒 Ver marketplace: *!avenda*\n` +
-    `❌ Cancelar oferta: *!cancelaroferta ${itemKey}*`
+    `❌ Cancelar oferta: *!cancelaroferta ${itemNome}*`
   );
 }
 
@@ -1463,7 +1471,7 @@ async function handleBuy(sock, msg, jid, caption) {
   if (!args) {
     return reply(sock, jid, msg,
       '⚠️ *Uso correto:* `!buyoferta <vendedor> <item> <quantidade>`\n' +
-      '📌 *Exemplo:* `!buyoferta 5511999999999 dinamite 2`\n\n' +
+      '📌 *Exemplo:* `!buyoferta 5511999999999 Dinamite 2`\n\n' +
       '🛒 Ver vendedores disponíveis: *!avenda*'
     );
   }
@@ -1560,7 +1568,7 @@ async function handleBuy(sock, msg, jid, caption) {
   if (!ofertaPreview) {
     return reply(sock, jid, msg,
       `❌ Oferta não encontrada!\n\n` +
-      `🔍 Ver ofertas de *${getNomeItem(itemKey)}*: *!buscaroferta ${itemKey}*\n` +
+      `🔍 Ver ofertas de *${getNomeItem(itemKey)}*: *!buscaroferta ${getNomeItem(itemKey)}*\n` +
       `🛒 Ver todas as ofertas: *!avenda*`
     );
   }
@@ -1570,7 +1578,7 @@ async function handleBuy(sock, msg, jid, caption) {
       `⚠️ *Quantidade indisponível!*\n\n` +
       `📦 Estoque atual: *${ofertaPreview.quantidade}*\n` +
       `📊 Você pediu: *${quantidade}*\n` +
-      `🔍 Ver oferta: *!buscaroferta ${itemKey}*`
+      `🔍 Ver oferta: *!buscaroferta ${getNomeItem(itemKey)}*`
     );
   }
 
@@ -1733,14 +1741,13 @@ async function handleCancelarOferta(sock, msg, jid, caption) {
   if (!userId) return reply(sock, jid, msg, '⚠️ Não foi possível identificar seu usuário.');
 
   // Aceita tanto "!cancelaroferta" quanto o alias "!canceloferta" registrado no bot.js
-  const match = caption.match(/cancela(?:r)?oferta\s+([A-Za-z0-9_-]+)/i);
-  if (!match) {
+  const itemDigitado = String(caption || '').replace(/^[!.,/#]?(?:cancelaroferta|canceloferta)\s*/i, '').trim();
+  const itemKey = resolverItemMarketplace(itemDigitado);
+  if (!itemKey) {
     return reply(sock, jid, msg,
-      '⚠️ Use: *!cancelaroferta <item>*\nExemplo: *!cancelaroferta dinamite*'
+      `⚠️ Não encontrei o item *${itemDigitado || '(não informado)'}* no catálogo. Informe o nome completo.`
     );
   }
-
-  const itemKey = match[1].toLowerCase();
 
   try {
     const ofertaCancelada = await withTransaction(async (session) => {
@@ -1832,7 +1839,7 @@ async function handleMinhasOfertas(sock, msg, jid) {
     if (ofertas.length === 0) {
       return reply(sock, jid, msg,
         `📦 *VOCÊ NÃO TEM OFERTAS ATIVAS*\n\n` +
-        `Crie uma com: *!ofertar <item> <preco> <qtd>*\n` +
+        `Crie uma com: *!ofertar <nome do item> <preço> <quantidade>*\n` +
         `Ver marketplace: *!avenda*`
       );
     }
@@ -1862,7 +1869,7 @@ async function handleMinhasOfertas(sock, msg, jid) {
       texto += `   💵 ${formatarSaldo(o.preco)} × ${o.quantidade} un.\n`;
       texto += `   💰 Você recebe: *${formatarSaldo(liquido)}* _(bruto ${formatarSaldo(totalItem)} − taxa ${formatarSaldo(taxa)})_`;
       texto += expiraTexto + '\n';
-      texto += `   ❌ \`!cancelaroferta ${o.itemKey}\`\n\n`;
+      texto += `   ❌ \`!cancelaroferta ${getNomeItem(o.itemKey)}\`\n\n`;
     }
 
     texto += `━━━━━━━━━━━━━━━━\n`;
@@ -2031,7 +2038,7 @@ async function handleOfertasRecebidas(sock, msg, jid) {
 async function handleAceitarOfferta(sock, msg, jid) {
   return reply(sock, jid, msg,
     '💼 Este comando foi substituído por *!buyoferta*!\n\n' +
-    'Exemplo: *!buyoferta 5511999999999 dinamite 2*\n' +
+    'Exemplo: *!buyoferta 5511999999999 Dinamite 2*\n' +
     'Ver ofertas disponíveis: *!avenda*'
   );
 }

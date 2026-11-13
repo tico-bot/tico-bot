@@ -42,7 +42,7 @@ const {
 const {
   handleGold, handleLoja, handleLojaFood, handleLojaPet, handleLojaTec, handleLojaCasal,
   handleComprar, handleVender, handleInventario, handlePix, handlePixMulti, handlePixDoar,
-  handleApostar, handleExtrato, handleGarimpar, handleSlots, handleCorrida,
+  handleApostar, handleExtrato, handleGarimpar, handleMinerios, handleSlots, handleCorrida,
   getSaldoAtual, changeGold, ITENS_LOJA, handleRankGold
 } = require('./economia');
 
@@ -185,6 +185,7 @@ module.exports = {
   handleApostar,
   handleExtrato,
   handleGarimpar,
+  handleMinerios,
   handleSlots,
   handleCorrida,
   getSaldoAtual,

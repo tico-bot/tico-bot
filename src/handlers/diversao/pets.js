@@ -6,6 +6,7 @@ const { resolverJidCarteira, getCarteira } = require(path.join(__dirname, '..', 
 const { isAdmin } = require('../grupo/helpers');
 const { getAlternateSenderJids, resolveDisplayName } = require('../../utils/identity');
 const { logError } = require('../../utils/logging');
+const { normalizarNomeComando, resolverChaveCatalogo, extrairArgumentosComando } = require('../../utils/commandItem');
 const { ABRIGO_TEMPO_MAXIMO_MS, filtroAbrigoDoGrupo, limparPetsExpiradosDoAbrigo } = require('../../utils/petShelter');
 const { atualizarNecessidades, obterEstagioPet, calcularHumorPet, gerarPetId } = require('../../utils/petNeeds');
 const GrupoConfig = require('../../models/GrupoConfig');
@@ -673,13 +674,15 @@ async function handleBrincarPet(sock, msg, jid, caption = '') {
     disco: { felicidade: 10, xp: 12, energia: 8 },
     casabrinquedo: { felicidade: 15, xp: 15, energia: 0 },
   };
-  const brinquedoDigitado = caption.replace(/^[!.,/]\s*brincar\b/i, '').trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+  const brinquedoDigitado = extrairArgumentosComando(caption, 'brincar').replace(/^['"]|['"]$/g, '').trim();
   let itemBrinquedo = null;
   if (brinquedoDigitado) {
-    if (!brinquedos[brinquedoDigitado]) return reply(sock, jid, msg, `⚠️ Brinquedo desconhecido. Use: *${Object.keys(brinquedos).join('*, *')}*.`);
-    try { itemBrinquedo = await consumirItemPet(userId, jid, [brinquedoDigitado]); }
+    const catalogoBrinquedos = Object.fromEntries(Object.keys(brinquedos).map(chave => [chave, { nome: textoItemPet(chave) }]));
+    const chaveBrinquedo = resolverChaveCatalogo(brinquedoDigitado, catalogoBrinquedos);
+    if (!chaveBrinquedo) return reply(sock, jid, msg, `⚠️ Brinquedo desconhecido. Use: *${Object.keys(brinquedos).map(textoItemPet).join('*, *')}*.`);
+    try { itemBrinquedo = await consumirItemPet(userId, jid, [chaveBrinquedo]); }
     catch (err) { console.error('[brincar] Erro ao consumir brinquedo:', err); }
-    if (!itemBrinquedo) return reply(sock, jid, msg, `❌ Você não tem *${textoItemPet(brinquedoDigitado)}* no inventário deste grupo. Veja *!lojapet*.`);
+    if (!itemBrinquedo) return reply(sock, jid, msg, `❌ Você não tem *${textoItemPet(chaveBrinquedo)}* no inventário deste grupo. Veja *!lojapet*.`);
   }
 
   const bonus = itemBrinquedo ? brinquedos[itemBrinquedo.chave] : { felicidade: 0, xp: 0, energia: 0 };
@@ -813,7 +816,7 @@ async function handleSelecionarPet(sock, msg, jid, caption = '') {
   if (!nomeBusca) return reply(sock, jid, msg, '⚠️ Informe o nome do personagem. Exemplo: *!petselecionar Lula*');
   try {
     const colecao = await getPetCollection(userId, jid);
-    const normalizar = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const normalizar = normalizarNomeComando;
     const exatos = colecao.filter(p => normalizar(p.name) === normalizar(nomeBusca));
     const parciais = colecao.filter(p => normalizar(p.name).includes(normalizar(nomeBusca)));
     const pet = exatos[0] || (parciais.length === 1 ? parciais[0] : null);
@@ -870,9 +873,10 @@ async function handleVacinarPet(sock, msg, jid) {
 async function handleEquiparPet(sock, msg, jid, caption = '') {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
-  const chave = caption.replace(/^[!.,/]\s*equiparpet\s*/i, '').trim().toLowerCase().replace(/\s+/g, '');
-  const acessorios = ['coleira', 'coleiraouro', 'bandana', 'coroa'];
-  if (!acessorios.includes(chave)) return reply(sock, jid, msg, `⚠️ Informe um acessório: *${acessorios.join('*, *')}*.`);
+  const digitado = extrairArgumentosComando(caption, 'equiparpet');
+  const catalogoAcessorios = { coleira: { nome: 'Coleira Colorida' }, coleiraouro: { nome: 'Coleira de Ouro' }, bandana: { nome: 'Bandana' }, coroa: { nome: 'Coroa Pet' } };
+  const chave = resolverChaveCatalogo(digitado, catalogoAcessorios);
+  if (!chave) return reply(sock, jid, msg, `⚠️ Informe um acessório: *${Object.values(catalogoAcessorios).map(i => i.nome).join('*, *')}*.`);
   const pet = await getPet(userId, jid).catch(() => null);
   if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
   if ((pet.accessories || []).includes(chave)) return reply(sock, jid, msg, `🎀 *${pet.name}* já está usando ${textoItemPet(chave)}.`);
@@ -890,7 +894,9 @@ async function handleEquiparPet(sock, msg, jid, caption = '') {
 async function handleDesequiparPet(sock, msg, jid, caption = '') {
   const userId = await getUserId(msg, jid);
   if (!userId) return;
-  const chave = caption.replace(/^[!.,/]\s*desequiparpet\s*/i, '').trim().toLowerCase().replace(/\s+/g, '');
+  const digitado = extrairArgumentosComando(caption, 'desequiparpet');
+  const catalogoAcessorios = { coleira: { nome: 'Coleira Colorida' }, coleiraouro: { nome: 'Coleira de Ouro' }, bandana: { nome: 'Bandana' }, coroa: { nome: 'Coroa Pet' } };
+  const chave = resolverChaveCatalogo(digitado, catalogoAcessorios);
   const pet = await getPet(userId, jid).catch(() => null);
   if (!pet?.name) return reply(sock, jid, msg, '⚠️ Você não tem um personagem ativo neste grupo.');
   const acessorios = pet.accessories || [];
@@ -1452,7 +1458,7 @@ async function handleAbrigo(sock, msg, jid, caption = '') {
       const candidatos = await CarteiraGrupo.find(filtroAbrigoDoGrupo(jid))
         .select('idWhatsApp petShelter')
         .lean();
-      const normalizarNome = valor => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const normalizarNome = normalizarNomeComando;
       const exatos = candidatos.filter(c => normalizarNome(c.petShelter?.shelteredPet?.name) === normalizarNome(nomeBusca));
       const parciais = candidatos.filter(c => normalizarNome(c.petShelter?.shelteredPet?.name).includes(normalizarNome(nomeBusca)));
       alvo = exatos[0] || (parciais.length === 1 ? parciais[0] : null);

@@ -58,7 +58,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
             `⚔️ Bônus de ataque: *+${a.bonusAtaque}*${mana}\n` +
             `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
             statusTag +
-            `🛒 \`!comprar ${chave}\``
+            `🛒 \`!comprar ${a.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\``
           );
         }).join('\n\n');
 
@@ -77,7 +77,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
             `🛡️ Bônus de defesa: *+${a.bonusDefesa}*${mana}\n` +
             `${RARIDADE_EMOJI[a.raridade] || '⚪'} Raridade: *${a.raridade}*\n` +
             statusTag +
-            `🛒 \`!comprar ${chave}\``
+            `🛒 \`!comprar ${a.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\``
           );
         }).join('\n\n');
 
@@ -90,7 +90,7 @@ async function handleLojaMedieval(sock, msg, jid, senderJid, nomeDisplay, args) 
         `📦 Preço: *${formatarSaldo(poc.preco, carteira)}*\n` +
         `${tipoIc} Restaura: *+${poc.valor} ${tipoTx}*\n` +
         `${RARIDADE_EMOJI[poc.raridade] || '⚪'} Raridade: *${poc.raridade}*\n` +
-        `🛒 \`!comprar ${chave}\``
+        `🛒 \`!comprar ${poc.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\``
       );
     }).join('\n\n');
 
@@ -131,7 +131,7 @@ async function handleComprarMedieval(sock, msg, jid, senderJid, nomeDisplay, arg
   try {
     const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
-      return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada_Rúnica*' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '🏪 Diga o nome do item!\nExemplo: *!comprar Espada* ou *!comprar Espada Rúnica*' }, { quoted: msg });
     }
 
     const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
@@ -260,7 +260,7 @@ async function handleEquipar(sock, msg, jid, senderJid, nomeDisplay, args) {
   try {
     const nomeItem = itemKeyParaNome((args || '').trim());
     if (!nomeItem) {
-      return sock.sendMessage(jid, { text: '🎽 Diga o nome do item!\nExemplo: *!equipar Espada* ou *!equipar Espada_Rúnica*' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '🎽 Diga o nome do item!\nExemplo: *!equipar Espada* ou *!equipar Espada Rúnica*' }, { quoted: msg });
     }
 
     const arma     = ARMAS.find(a => a.nome.toLowerCase() === nomeItem.toLowerCase());
@@ -461,7 +461,7 @@ async function handleUsarPocao(sock, msg, jid, senderJid, nomeDisplay, args) {
     const nomePocao = itemKeyParaNome((args || '').trim());
     if (!nomePocao) {
       return sock.sendMessage(jid, {
-        text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção_de_Cura* ou *!usarpocao Poção de Cura*',
+        text: '🧪 Diga o nome da poção!\nExemplo: *!usarpocao Poção de Cura* (também aceita sem acento).',
       }, { quoted: msg });
     }
 
@@ -550,7 +550,7 @@ async function handleSellMed(sock, msg, jid, senderJid, nomeDisplay, args) {
         text:
           `🏷️ *Como vender:*\n` +
           `▸ *!sellmed Espada* — vende 1 unidade\n` +
-          `▸ *!sellmed Poção_de_Cura 3* — vende 3 unidades\n\n` +
+          `▸ *!sellmed Poção de Cura 3* — vende 3 unidades\n\n` +
           `_Use *!invmed* para ver seus itens._`,
       }, { quoted: msg });
     }
@@ -658,7 +658,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
   try {
     if (!targetJid) {
       return sock.sendMessage(jid, {
-        text: '🎁 Marque quem vai receber o item!\nExemplo: *!givemed @fulano Espada* ou *!givemed @fulano Poção_de_Cura 3*',
+        text: '🎁 Marque quem vai receber o item!\nExemplo: *!givemed @fulano Espada* ou *!givemed @fulano Poção de Cura 3*',
       }, { quoted: msg });
     }
     if (targetJid === senderJid) {
@@ -676,7 +676,7 @@ async function handleGiveMed(sock, msg, jid, senderJid, nomeDisplay, targetJid, 
         text:
           `🎁 *Como enviar um item:*\n` +
           `▸ *!givemed @pessoa Espada* — envia 1 unidade\n` +
-          `▸ *!givemed @pessoa Poção_de_Cura 3* — envia 3 unidades\n\n` +
+          `▸ *!givemed @pessoa Poção de Cura 3* — envia 3 unidades\n\n` +
           `_Use *!invmed* para ver seus itens._`,
       }, { quoted: msg });
     }

@@ -7,6 +7,7 @@
 const MedievalPersonagem = require('../models/MedievalPersonagem');
 const GrupoConfig        = require('../models/GrupoConfig');
 const { contaVinculada, bloqueadoPorVinculo } = require('./carteira/vinculo');
+const { normalizarNomeComando } = require('./commandItem');
 
 const JANELA_SAQUE_MS = 3 * 60 * 1000; // 3 minutos
 
@@ -34,7 +35,16 @@ function normalizarItemKey(nomeItem) {
 }
 
 function itemKeyParaNome(chaveItem) {
-  return (chaveItem || '').replace(/_/g, ' ');
+  const digitado = String(chaveItem || '').trim();
+  if (!digitado) return '';
+  const procurado = normalizarNomeComando(digitado);
+  const catalogo = [...ARMAS, ...ARMADURAS, ...POCOES];
+  const encontrados = catalogo.filter(item =>
+    normalizarNomeComando(item.nome) === procurado ||
+    normalizarNomeComando(normalizarItemKey(item.nome)) === procurado
+  );
+  const unicos = [...new Map(encontrados.map(item => [item.nome, item])).values()];
+  return unicos.length === 1 ? unicos[0].nome : digitado.replace(/_/g, ' ');
 }
 
 function getInventarioMap(personagem) {
@@ -546,15 +556,18 @@ function getElemento(nome) {
 }
 
 function getArma(nome) {
-  return ARMAS.find(a => a.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
+  const procura = normalizarNomeComando(nome);
+  return ARMAS.find(a => normalizarNomeComando(a.nome) === procura || normalizarNomeComando(normalizarItemKey(a.nome)) === procura) ?? null;
 }
 
 function getArmadura(nome) {
-  return ARMADURAS.find(a => a.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
+  const procura = normalizarNomeComando(nome);
+  return ARMADURAS.find(a => normalizarNomeComando(a.nome) === procura || normalizarNomeComando(normalizarItemKey(a.nome)) === procura) ?? null;
 }
 
 function getPocao(nome) {
-  return POCOES.find(p => p.nome.toLowerCase() === (nome || '').toLowerCase()) ?? null;
+  const procura = normalizarNomeComando(nome);
+  return POCOES.find(p => normalizarNomeComando(p.nome) === procura || normalizarNomeComando(normalizarItemKey(p.nome)) === procura) ?? null;
 }
 
 function calcularMultElemento(elementoAtacante, elementoDefensor) {
