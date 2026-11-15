@@ -13,14 +13,19 @@ test('quiz ativo só intercepta respostas sem prefixo, nunca comandos', () => {
     /if \(diversaoHandler\.quizState\?\.has\(senderJid\) && !isAnyCmd\(raw\)\)/
   );
   assert.match(router, /matchCmd\(cmdWord, 'quizhelp'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quiztiktok'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizmoda'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizfutebol'\)/);
 });
 
-test('quizhelp é verificado antes do comando genérico de quiz', () => {
+test('os comandos de quiz são reconhecidos por nome completo, sem capturar prefixos desconhecidos', () => {
   const ajuda = router.indexOf("matchCmd(cmdWord, 'quizhelp')");
-  const generico = router.indexOf("matchCmdStart(cmd, 'quiz')");
+  const quizGeral = router.indexOf("matchCmd(cmdWord, 'quiz')");
   assert.notEqual(ajuda, -1, 'a rota específica de ajuda precisa existir');
-  assert.notEqual(generico, -1, 'a rota geral de quiz precisa existir');
-  assert.ok(ajuda < generico, '/quizhelp deve ser verificado antes do /quiz');
+  assert.notEqual(quizGeral, -1, 'a rota exacta de /quiz precisa existir');
+  assert.ok(ajuda < quizGeral, '/quizhelp deve ser verificado antes do /quiz');
+  assert.doesNotMatch(router, /matchCmdStart\(cmd, 'quiz'\)/);
+  assert.match(router, /identificarQuizDesconhecido\(cmdWord, VALID_PREFIXES\)/);
 });
 
 test('a condição do estado ativo deixa prefixados seguirem para os handlers de comando', () => {
@@ -31,15 +36,14 @@ test('a condição do estado ativo deixa prefixados seguirem para os handlers de
   assert.match(trecho, /handleQuiz\(sock, msg, jid, author, senderJid, caption\)/);
 });
 
-
-test('a rota chama o handler de ajuda, com o prefixo do grupo, antes do quiz genérico', () => {
+test('a rota chama o handler de ajuda antes dos comandos de quiz', () => {
   assert.match(
     router,
     /if \(matchCmd\(cmdWord, 'quizhelp'\)\) \{ await diversaoHandler\.handleQuizHelp\(sock, msg, jid, getPrefix\(jid\)\); return; \}/
   );
   assert.ok(
-    router.indexOf("matchCmd(cmdWord, 'quizhelp')") < router.indexOf("matchCmdStart(cmd, 'quiz')"),
-    'a rota específica precisa vir antes da rota genérica'
+    router.indexOf("matchCmd(cmdWord, 'quizhelp')") < router.indexOf("matchCmd(cmdWord, 'quiz')"),
+    'a rota específica precisa vir antes da rota geral'
   );
 });
 

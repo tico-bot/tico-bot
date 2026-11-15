@@ -7,7 +7,7 @@ const { respostaCorresponde, perguntasQuiz } = require('./quiz');
 const resposta = 'Cristiano Ronaldo';
 const aliases = ['CR7'];
 
-test('aceita variações de maiúsculas, acentos e espaços', () => {
+test('aceita variações de maiúsculas, minúsculas, acentos e espaços', () => {
   for (const tentativa of [
     'Cristiano Ronaldo',
     'cristiano Ronaldo',
@@ -16,6 +16,10 @@ test('aceita variações de maiúsculas, acentos e espaços', () => {
   ]) {
     assert.equal(respostaCorresponde(tentativa, resposta), true, tentativa);
   }
+  assert.equal(respostaCorresponde('SAO PAULO', 'São Paulo'), true);
+  assert.equal(respostaCorresponde('JOAO PEREIRA', 'João Pereira'), true);
+  assert.equal(respostaCorresponde('BRASILIA', 'Brasília'), true);
+  assert.equal(respostaCorresponde('CUIABA', 'Cuiabá'), true);
 });
 
 test('aceita partes do nome e palavras em ordem diferente', () => {

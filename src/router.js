@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { unwrapMessageContent } = require('./utils/message-content');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 // ─── Estado persistido (data.json — cache local; Mongo é a fonte de verdade) ─
@@ -115,6 +116,7 @@ const { registerActiveGroup }                                       = require('.
 const { prepareDailyMissionState, incrementMission } = require('./handlers/diversao/missoes');
 const { addUserXp, getBonusHorario, isXpEnabledForMessage } = require('./utils/xp');
 const { extrairDominiosDeLinks, todosLinksPermitidos, isGroupMigrationSpam, isPaymentMessageContent } = require('./utils/links');
+const { identificarQuizDesconhecido } = require('./utils/quiz-commands');
 
 // Fix #1: unmuteUser agora é corretamente re-exportado por handlers/grupo/index.js!
 const { isMuted, unmuteUser } = require('./handlers/grupo');
@@ -252,10 +254,7 @@ async function handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid
 async function handleMessage(sock, msg) {
   const jid = msg.key.remoteJid;
 
-  const content =
-    msg.message?.ephemeralMessage?.message ||
-    msg.message?.viewOnceMessage?.message  ||
-    msg.message;
+  const content = unwrapMessageContent(msg.message);
   if (!content) return;
 
   const imageMsg  = content.imageMessage;
@@ -1277,12 +1276,21 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'clubes') || matchCmd(cmdWord, 'times')) { await futebolApiHandler.handleTeams(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'artilheiros') || matchCmd(cmdWord, 'goleadores')) { await futebolApiHandler.handleScorers(sock, msg, jid, caption.trim().split(/\s+/).slice(1)); return; }
   if (matchCmd(cmdWord, 'quizhelp')) { await diversaoHandler.handleQuizHelp(sock, msg, jid, getPrefix(jid)); return; }
-  if (matchCmd(cmdWord, 'quiz') || matchCmdStart(cmd, 'quiz') ||
-      matchCmd(cmdWord, 'quizfut') || matchCmd(cmdWord, 'quizctec') ||
+  if (matchCmd(cmdWord, 'quiz') ||
+      matchCmd(cmdWord, 'quizfut') || matchCmd(cmdWord, 'quizfutebol') ||
+      matchCmd(cmdWord, 'quizctec') ||
       matchCmd(cmdWord, 'quizgeo') || matchCmd(cmdWord, 'quizmat') ||
       matchCmd(cmdWord, 'quizhis') || matchCmd(cmdWord, 'quizbsq') ||
-      matchCmd(cmdWord, 'quizanime'))
+      matchCmd(cmdWord, 'quizanime') || matchCmd(cmdWord, 'quiztiktok') ||
+      matchCmd(cmdWord, 'quizmoda'))
     { await diversaoHandler.handleQuiz(sock, msg, jid, author, senderJid, caption); return; }
+  const quizDesconhecido = identificarQuizDesconhecido(cmdWord, VALID_PREFIXES);
+  if (quizDesconhecido) {
+    await sock.sendMessage(jid, {
+      text: `⚠️ O comando *${quizDesconhecido.prefix}${quizDesconhecido.comando}* não existe.\n\nConsulte *${quizDesconhecido.prefix}quizhelp* para ver os quizzes disponíveis.`,
+    }, { quoted: msg });
+    return;
+  }
   if (matchCmd(cmdWord, 'pontos'))         { await diversaoHandler.handlePontos(sock, msg, jid, author, senderJid); return; }
   if (matchCmd(cmdWord, 'rankjogos'))      { await diversaoHandler.handleRankJogos(sock, msg, jid, contactNames); return; }
 }

@@ -1,9 +1,9 @@
 /**
  * Sistema de Quiz — Tico Bot
- * Comandos: !quiz, !quizfut, !quizctec, !quizgeo, !quizmat, !quizhis, !quizbsq
- *           !pontos, !rankjogos
- * - 185+ questões
- * - Limite de 10 quiz por dia por usuário
+ * Comandos: /quiz, /quiztiktok, /quizmoda e quizzes temáticos
+ *           /pontos, /rankjogos
+ * - Banco geral e bancos temáticos separados
+ * - Limite de 30 quizzes por janela de 30 minutos por usuário
  * - Pontos salvos na nuvem (MongoDB)
  */
 
@@ -18,6 +18,11 @@ const { hojeStr } = require('../../utils/tempo');
 const { formatarNumeroBR } = require('../../utils/numberFormat');
 const QUIZ_DAILY_BONUS_TARGET = 3;
 const QUIZ_DAILY_BONUS_PRATA = 500;
+const QUIZ_GOLD_BASE_REWARD = 15;
+const QUIZ_GOLD_MULTIPLIER = 30;
+const QUIZ_GOLD_REWARD = QUIZ_GOLD_BASE_REWARD * QUIZ_GOLD_MULTIPLIER;
+const perguntasQuizTikTok = require('./quiz.tiktok-questions');
+const perguntasQuizModa = require('./quiz.moda-questions');
 // ─── ESTADO ──────────────────────────────────────────────────────────────────
 
 const quizState      = new Map(); // senderJid → { r, resolvedJid, timeout }
@@ -32,6 +37,26 @@ const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️�
 // Limite por janela móvel, persistido no MongoDB para sobreviver a reinícios.
 const QUIZ_WINDOW_LIMIT = 30;
 const QUIZ_WINDOW_MS = 30 * 60 * 1000;
+
+const FILTROS_QUIZ = Object.freeze({
+  quizfut: q => q.d === 'Futebol',
+  quizfutebol: q => q.d === 'Futebol',
+  quizctec: q => ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d),
+  quizgeo: q => q.d === 'Geografia',
+  quizmat: q => ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d),
+  quizhis: q => q.d === 'História',
+  quizbsq: q => q.d === 'Basquete',
+  quizanime: q => q.d === 'Anime',
+});
+
+function resolverFiltroQuiz(comando) {
+  return FILTROS_QUIZ[comando] || null;
+}
+
+function normalizarComandoQuiz(caption) {
+  const cmdRaw = String(caption || '').trim().toLowerCase().split(/\s+/)[0] || '';
+  return cmdRaw.replace(/^[^a-z0-9]+/, '');
+}
 
 // ─── UTILITÁRIOS ─────────────────────────────────────────────────────────────
 
@@ -958,7 +983,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       const pts = (pontosMap.get(effectiveJid) || 0) + 10;
       pontosMap.set(effectiveJid, pts);
 
-      const goldReward = 15;
+      const goldReward = QUIZ_GOLD_REWARD;
       const [, novoSaldoGold] = await Promise.all([
         saveQuizPointsToDB(effectiveJid, jid),
         changeGold(effectiveJid, goldReward, jid),
@@ -972,7 +997,7 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
         return null;
       });
 
-      const linhaGold = `💵 *+${formatarNumeroBR(goldReward)} Prata!* Saldo: *${formatarNumeroBR(novoSaldoGold)} Prata*`;
+      const linhaGold = `💵 *+${formatarNumeroBR(goldReward)} Pratas!* Saldo: *${formatarNumeroBR(novoSaldoGold)} Pratas*`;
       const linhaIncentivo = !incentivoDiario ? '' : incentivoDiario.bonusConcedido
         ? `\n🎁 *BÔNUS DIÁRIO!* Você completou ${QUIZ_DAILY_BONUS_TARGET} acertos e recebeu *+${QUIZ_DAILY_BONUS_PRATA} Pratas extras!*`
         : `\n🎯 *Meta diária:* ${incentivoDiario.acertos}/${QUIZ_DAILY_BONUS_TARGET} acertos — complete a meta e ganhe *+${QUIZ_DAILY_BONUS_PRATA} Pratas!*`;
@@ -993,21 +1018,10 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
   }
 
   // ── Filtrar por categoria ─────────────────────────────────────────────────
-  const cmdRaw   = caption.trim().toLowerCase().split(' ')[0];
-  const cmdClean = cmdRaw.replace(/^[!.,\/@]+/, '');
-
-  const categoriaMap = {
-    quizfut:   q => q.d === 'Futebol',
-    quizctec:  q => ['Ciência', 'Química', 'Física', 'Biologia', 'Astronomia', 'Tecnologia'].includes(q.d),
-    quizgeo:   q => q.d === 'Geografia',
-    quizmat:   q => ['Matemática', 'Geometria', 'Cálculo', 'Estatística'].includes(q.d),
-    quizhis:   q => q.d === 'História',
-    quizbsq:   q => q.d === 'Basquete',
-    quizanime: q => q.d === 'Anime',
-  };
-
-  const filtro = categoriaMap[cmdClean];
-  const perguntasFiltradas = filtro ? perguntasQuiz.filter(filtro) : perguntasQuiz;
+  const cmdClean = normalizarComandoQuiz(caption);
+  const filtro = resolverFiltroQuiz(cmdClean);
+  const bancoEspecial = resolverBancoQuiz(cmdClean);
+  const perguntasFiltradas = bancoEspecial || (filtro ? perguntasQuiz.filter(filtro) : perguntasQuiz);
 
   if (perguntasFiltradas.length === 0) {
     await sock.sendMessage(jid, {
@@ -1070,6 +1084,12 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
 
 function mensagemQuizTempoEsgotado(author) {
   return `⏰ *Tempo esgotado*, *${author}*! Você não conseguiu responder a tempo. 😬`;
+}
+
+function resolverBancoQuiz(comando) {
+  if (comando === 'quiztiktok') return perguntasQuizTikTok;
+  if (comando === 'quizmoda') return perguntasQuizModa;
+  return null;
 }
 
 // ─── !pontos ─────────────────────────────────────────────────────────────────
@@ -1179,6 +1199,14 @@ module.exports = {
   registrarInicioQuiz,
   QUIZ_WINDOW_LIMIT,
   QUIZ_WINDOW_MS,
+  QUIZ_GOLD_BASE_REWARD,
+  QUIZ_GOLD_MULTIPLIER,
+  QUIZ_GOLD_REWARD,
+  resolverBancoQuiz,
+  resolverFiltroQuiz,
+  normalizarComandoQuiz,
   quizState,
   perguntasQuiz,
+  perguntasQuizTikTok,
+  perguntasQuizModa,
 };

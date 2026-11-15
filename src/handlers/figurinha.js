@@ -42,6 +42,20 @@ const VIDEO_MAX_FRAMES = 72;
 const VIDEO_STICKER_MAX_SECONDS = 9;
 const VIDEO_INPUT_MAX_SECONDS = 20;
 
+const VIEW_ONCE_FIELDS = [
+  'viewOnceMessage',
+  'viewOnceMessageV2',
+  'viewOnceMessageV2Extension',
+];
+
+const VIEW_ONCE_STICKER_WARNINGS = [
+  '🔒 *Essa mídia é de visualização única.* Não consigo transformá-la em figurinha. Peça para a pessoa enviá-la como imagem comum e tente novamente.',
+  '⚠️ Não dá para criar figurinha a partir de uma imagem de visualização única. Reenvie a foto sem essa opção.',
+  '👀 Essa imagem é de visualização única, por isso não consigo convertê-la em figurinha. Peça uma cópia enviada normalmente.',
+  '🚫 Mídia temporária detectada! Para virar figurinha, ela precisa ser enviada sem o recurso de visualização única.',
+  '📷 A visualização única impede esta conversão. Peça que enviem a imagem novamente como foto normal para eu criar a figurinha.',
+];
+
 // Usa o binário empacotado quando existe; em Linux, pode usar o ffmpeg do sistema.
 function resolveFfmpegBin() {
   let bundled = null;
@@ -252,7 +266,40 @@ function buildQuotedMsg(jid, contextInfo, quoted) {
 // ─── !s / !f ──────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+/** Detecta envelopes de visualização única, inclusive aninhados em mensagens temporárias. */
+function isViewOnceMessage(message) {
+  let current = message;
+  for (let depth = 0; depth < 10 && current && typeof current === 'object'; depth += 1) {
+    if (VIEW_ONCE_FIELDS.some(field => current[field] != null)) return true;
+    if (current.imageMessage?.viewOnce === true || current.videoMessage?.viewOnce === true) return true;
+
+    current =
+      current.ephemeralMessage?.message ||
+      current.documentWithCaptionMessage?.message ||
+      current.deviceSentMessage?.message ||
+      null;
+  }
+  return false;
+}
+
+function getViewOnceStickerWarning() {
+  const index = Math.min(
+    VIEW_ONCE_STICKER_WARNINGS.length - 1,
+    Math.floor(Math.random() * VIEW_ONCE_STICKER_WARNINGS.length),
+  );
+  return VIEW_ONCE_STICKER_WARNINGS[index];
+}
+
+async function avisarVisualizacaoUnica(sock, msg, jid) {
+  await sock.sendMessage(jid, { text: getViewOnceStickerWarning() }, { quoted: msg });
+}
+
 async function handleSticker(sock, msg, content, jid, author, stickerCount) {
+  if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
+    await avisarVisualizacaoUnica(sock, msg, jid);
+    return true;
+  }
+
   const imageMsg = content.imageMessage;
   const videoMsg = content.videoMessage;
 
@@ -264,6 +311,11 @@ async function handleSticker(sock, msg, content, jid, author, stickerCount) {
 
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quoted      = contextInfo?.quotedMessage;
+
+  if (quoted && isViewOnceMessage(quoted)) {
+    await avisarVisualizacaoUnica(sock, msg, jid);
+    return true;
+  }
 
   if (quoted) {
     const qImage = quoted.imageMessage;
@@ -285,6 +337,12 @@ async function handleSticker(sock, msg, content, jid, author, stickerCount) {
 // ═══════════════════════════════════════════════════════════════
 
 async function processMedia(sock, msg, content, jid, author, stickerCount) {
+  // Também protege o Auto-Sticker e chamadas diretas que não passam por handleSticker.
+  if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
+    await avisarVisualizacaoUnica(sock, msg, jid);
+    return;
+  }
+
   const imageMsg = content.imageMessage;
   const videoMsg = content.videoMessage;
   if (!imageMsg && !videoMsg) return;
@@ -1255,4 +1313,6 @@ module.exports = {
   handleMenuFig,
   setLogger,
   videoToStickerBuffer,
+  isViewOnceMessage,
+  getViewOnceStickerWarning,
 };
