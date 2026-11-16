@@ -16,7 +16,7 @@ O arquivo `diversao.js` foi dividido em 5 módulos menores e organizados dentro 
 - Lojas especializadas: `!lojafood`, `!lojapet`, `!lojatec`
 - Inventário: `!inventario`, `!usar`
 - Transações: `!pix`, `!apostar`, `!extrato`
-- Garimpo: `!garimpar` e catálogo de minérios: `!minerios` (raridades, probabilidades, valores em Prata e XP)
+- Garimpo: `!garimpar` (alias: `!minerar`, `!explorar`, `!pesquisar`) e catálogo de minérios: `!minerios` (raridades, probabilidades, valores em Prata e XP)
 - **Corrigido**: Função `getSaldoAtual()` e `changeGold()` agora exportadas
 - **Corrigido**: Iteração sobre inventário usando `Object.entries()` em vez de Map
 

@@ -4,7 +4,8 @@ const path = require('path');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const Usuario       = require(path.join(__dirname, '..', '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', '..', 'models', 'CarteiraGrupo'));
-const { getCarteira, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const { getCarteira, alterarGold, comprarComGold, venderComGold, formatarSaldo } = require(path.join(__dirname, '..', '..', '..', 'utils', 'carteira'));
+const republicaEconomia = require('../../republica/economia');
 const { getSenderJid, resolveGlobalId, resolveUserFromMsg, extrairNumero, resolveDisplayName } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const { ITENS_LOJA } = require(path.join(__dirname, '..', '..', '..', 'config', 'economia'));
 
@@ -270,15 +271,18 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
-  const preco   = itemInfo.preco;
+  const preco = itemInfo.preco;
+  const tributacao = await republicaEconomia.calcularImpostoConsumo(idGrupo, preco);
+  const impostoConsumo = tributacao.imposto;
+  const totalCompra = preco + impostoConsumo;
   const ehPesca = !!(VARAS_PESCA?.[itemNome] || ISCAS?.[itemNome]);
   const ehPet = String(itemInfo.categoria || '').startsWith('pet');
 
   const resultado = await comprarComGold({
     idWhatsApp: userId,
     idGrupo,
-    preco,
-    descricaoGold: `Compra: ${itemInfo.nome}`,
+    preco: totalCompra,
+    descricaoGold: `Compra: ${itemInfo.nome}${impostoConsumo ? ` (CBS/IBS: ${impostoConsumo})` : ''}`,
     modeloInventario: (ehPesca || ehPet) ? CarteiraGrupo : Usuario,
     filtroInventario: (ehPesca || ehPet)
       ? { idWhatsApp: userId, idGrupo }
@@ -311,6 +315,14 @@ async function handleComprar(sock, msg, jid, caption) {
     return;
   }
 
+  if (impostoConsumo > 0) {
+    try {
+      await republicaEconomia.registarImpostoConsumo(idGrupo, impostoConsumo, `Compra na loja: ${itemInfo.nome}`, userId);
+    } catch (erroTesouro) {
+      await alterarGold(userId, idGrupo, impostoConsumo, 'Estorno: imposto de consumo não contabilizado').catch(() => {});
+      console.error('[Republica] Falha ao registar imposto da loja; imposto devolvido:', erroTesouro.message);
+    }
+  }
   const saldoFinal = resultado.carteira?.gold ?? 0;
 
   await sock.sendMessage(jid, {
@@ -319,7 +331,9 @@ async function handleComprar(sock, msg, jid, caption) {
       `🛒 *Você comprou com sucesso!*\n\n` +
       `━━━━━━━━━━━━━━━━\n*DETALHES:*\n` +
       `  📦 Item: *${itemInfo.nome}*\n` +
-      `  💵 Preço: *${formatWalletAmount(preco, walletBalance)}*\n\n` +
+      `  💵 Preço: *${formatWalletAmount(preco, walletBalance)}*\n` +
+      (impostoConsumo > 0 ? `  🧾 CBS/IBS: *${formatWalletAmount(impostoConsumo, walletBalance)}*\n` : '') +
+      `  💳 Total: *${formatWalletAmount(totalCompra, walletBalance)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n*SALDO ATUALIZADO:*\n` +
       `  ✅ Novo saldo: *${formatWalletAmount(saldoFinal, resultado.carteira)}*`,
   }, { quoted: msg });

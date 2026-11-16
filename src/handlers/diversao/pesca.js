@@ -21,6 +21,7 @@ const LidMapping = require(path.join(__dirname, '..', '..', 'models', 'LidMappin
 const { normalizarJidComDominio } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
 const { resolveDisplayName, sameWhatsAppIdentity, getAlternateSenderJids, getParticipantJids } = require(path.join(__dirname, '..', '..', 'utils', 'identity'));
 const { normalizarNomeComando, resolverChaveCatalogo, extrairArgumentosComando } = require(path.join(__dirname, '..', '..', 'utils', 'commandItem'));
+const republicaEconomia = require('../republica/economia');
 
 // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────────────
 
@@ -475,9 +476,11 @@ async function handlePescar(sock, msg, jid) {
     const ehDesc = DESCARTAVEL_KEYS.has(item.key);
 
     // ── Persistência de Recompensas e Inventário ──────────────────────────
-    const carteiraRecompensa = item.gold > 0
-      ? await alterarGold(userId, groupId, item.gold, `Pesca: ${item.nome}`)
-      : await getCarteira(userId, groupId);
+    const pescaAjustada = await republicaEconomia.aplicarMultiplicadorRecompensa(groupId, item.gold);
+    const liquidacaoPesca = pescaAjustada > 0
+      ? await republicaEconomia.liquidarRenda(userId, groupId, pescaAjustada, pescaAjustada, `Pesca: ${item.nome}`)
+      : { carteira: await getCarteira(userId, groupId), imposto: 0, liquido: 0 };
+    const carteiraRecompensa = liquidacaoPesca.carteira;
 
     if (!ehDesc) {
       await CarteiraGrupo.findOneAndUpdate(
@@ -504,7 +507,11 @@ async function handlePescar(sock, msg, jid) {
       `📦 *${item.nome}*\n` +
       `🏷️ Raridade: *${rarLabel}*\n`;
 
-    if (item.gold > 0) resultado += `💰 *+${formatarSaldo(item.gold, carteiraRecompensa)}* adicionados ao saldo\n`;
+    if (liquidacaoPesca.bruto > 0) {
+      resultado += `💰 Bruto: *${formatarSaldo(liquidacaoPesca.bruto, carteiraRecompensa)}*\n`;
+      if (liquidacaoPesca.imposto > 0) resultado += `🧾 IRPF-Tico: *-${formatarSaldo(liquidacaoPesca.imposto, carteiraRecompensa)}*\n`;
+      resultado += `💵 Líquido recebido: *+${formatarSaldo(liquidacaoPesca.liquido, carteiraRecompensa)}*\n`;
+    }
 
     if (ehDesc)   resultado += `\n🗑️ _Apenas entulho de rio descartável desta vez..._\n`;
     else          resultado += `\n📥 _Item guardado com sucesso no inventário do grupo._\n`;
@@ -952,8 +959,11 @@ async function handleVenderPesca(sock, msg, jid, caption) {
     }
 
     // ── Credita o gold; se o crédito falhar, devolve os itens debitados ────
+    let liquidacaoVenda;
     try {
-      await alterarGold(userId, groupId, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`);
+      liquidacaoVenda = await republicaEconomia.liquidarRenda(
+        userId, groupId, totalGold, totalGold, `Venda pesca: ${info.nome} ×${qtdVender}`
+      );
     } catch (erroCredito) {
       await CarteiraGrupo.findOneAndUpdate(
         { idWhatsApp: userId, idGrupo: groupId },
@@ -962,7 +972,8 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       throw erroCredito;
     }
 
-    const carteiraFinal = await getCarteira(userId, groupId);
+    const carteiraFinal = liquidacaoVenda.carteira;
+    const totalRecebidoLiquido = liquidacaoVenda.liquido;
 
     // BUG 9 FIX: o aviso de "50%" só faz sentido pra vara agora — iscas
     // vendem na mesma taxa que itens pescados (70%), então não são mais
@@ -976,7 +987,9 @@ async function handleVenderPesca(sock, msg, jid, caption) {
       `📦 Item: *${info.nome}*\n` +
       `🔢 Quantidade vendida: *${qtdVender}×*\n` +
       `💰 Valor unitário: *${formatarSaldo(precoUnitario, carteiraFinal)}* (${Math.round(taxaVenda * 100)}% do valor base)\n` +
-      `🏆 Total recebido: *+${formatarSaldo(totalGold, carteiraFinal)}*\n\n` +
+      `🏆 Total bruto: *${formatarSaldo(totalGold, carteiraFinal)}*\n` +
+      (liquidacaoVenda.imposto > 0 ? `🧾 IRPF-Tico: *-${formatarSaldo(liquidacaoVenda.imposto, carteiraFinal)}*\n` : '') +
+      `💰 Total líquido recebido: *+${formatarSaldo(totalRecebidoLiquido, carteiraFinal)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       avisoEquip +
       `📦 Restante no inventário: *${disponivel - qtdVender}×*\n` +

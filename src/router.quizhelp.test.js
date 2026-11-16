@@ -16,6 +16,12 @@ test('quiz ativo só intercepta respostas sem prefixo, nunca comandos', () => {
   assert.match(router, /matchCmd\(cmdWord, 'quiztiktok'\)/);
   assert.match(router, /matchCmd\(cmdWord, 'quizmoda'\)/);
   assert.match(router, /matchCmd\(cmdWord, 'quizfutebol'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizgeo'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizmat'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizctec'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizhis'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizbsq'\)/);
+  assert.match(router, /matchCmd\(cmdWord, 'quizanime'\)/);
 });
 
 test('os comandos de quiz são reconhecidos por nome completo, sem capturar prefixos desconhecidos', () => {

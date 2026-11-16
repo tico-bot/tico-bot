@@ -25,6 +25,8 @@ try {
 }
 
 const { bloqueadoPorVinculo } = require('../../utils/carteira/vinculo');
+const republicaEconomia = require('../republica/economia');
+const republicaSocial = require('../republica/social');
 
 // ─── TABELA DE EMPREGOS (7 POR NÍVEL / TIER) ──────────────────────────────────
 
@@ -682,6 +684,14 @@ async function handleTrabalhar(sock, msg, jid, caption = '') {
   const { userId, groupId } = ctx;
   try {
     const carteira = await getCarteira(userId, groupId);
+    const licenca = await republicaSocial.obterLicencaAtiva(groupId, userId);
+    if (licenca) {
+      return reply(sock, jid, msg,
+        `👶 *LICENÇA PARENTAL ACTIVA!*\n\n` +
+        `Você está em licença de ${licenca.tipo} até *${new Date(licenca.fim).toLocaleString('pt-BR')}*.\n` +
+        `A remuneração é processada pelo Fundo de Licença Parental. Você poderá voltar ao trabalho após o término.`
+      );
+    }
     if (!carteira.empregoAtual || carteira.empregoAtual === 'desempregado') {
       return reply(sock, jid, msg,
         `😴 *VOCÊ ESTÁ DESEMPREGADO!*\n\n` +
@@ -764,7 +774,8 @@ async function handleTrabalhar(sock, msg, jid, caption = '') {
 async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, agora) {
   const tierInfo  = cargo.tierInfo;
   const numFuncoes = cargo.funcoes.length;
-  const salarioTotal = randInt(tierInfo.salarioMin, tierInfo.salarioMax);
+  const salarioBase = randInt(tierInfo.salarioMin, tierInfo.salarioMax);
+  const salarioTotal = await republicaEconomia.aplicarMultiplicadorRecompensa(groupId, salarioBase);
   const sucessos     = (carteira.totalTrabalhosComSucesso ?? 0) + 1;
 
   await CarteiraGrupo.findOneAndUpdate(
@@ -775,7 +786,9 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     }
   );
 
-  const carteiraAtualizada = await alterarGold(userId, groupId, salarioTotal);
+  const liquidacao = await republicaEconomia.liquidarRenda(userId, groupId, salarioTotal, salarioTotal, 'Salário do emprego');
+  const carteiraAtualizada = liquidacao.carteira;
+  const salarioLiquido = liquidacao.liquido;
 
   const parcela = Math.floor(salarioTotal / numFuncoes);
   const detalheFuncoes = `\n📋 *FUNÇÕES DESEMPENHADAS NESTE TURNO (${numFuncoes}):*\n` +
@@ -800,7 +813,9 @@ async function _executarTurno(sock, msg, jid, userId, groupId, carteira, cargo, 
     `💼 Cargo: *${cargo.nome}*\n` +
     `🎖️ Categoria: *${tierInfo.nomeTier}*\n` +
     `${detalheFuncoes}\n` +
-    `💰 *Salário Total Recebido:* *+${formatarSaldo(salarioTotal, carteiraAtualizada)}*\n` +
+    `💰 *Salário bruto:* *${formatarSaldo(salarioTotal, carteiraAtualizada)}*\n` +
+    (liquidacao.imposto > 0 ? `🧾 IRPF-Tico: *-${formatarSaldo(liquidacao.imposto, carteiraAtualizada)}*\n` : '') +
+    `💵 *Salário líquido recebido:* *+${formatarSaldo(salarioLiquido, carteiraAtualizada)}*\n` +
     `📊 Turnos no cargo atual: *${sucessos}*\n` +
     `⏰ Próximo turno em: *${LABEL_COOLDOWN}* _(horário comercial)_\n` +
     `⏱️ Janela de tolerância: *${LABEL_JANELA}*\n` +

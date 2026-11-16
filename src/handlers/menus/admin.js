@@ -56,6 +56,7 @@ async function handleMenuAdm(sock, msg, jid, getPrefix) {
     '  ▸ ' + P + 'fundoboasvindas / ' + P + 'fundobv — responder a uma foto para definir fundo',
     '  ▸ ' + P + 'pet on/off/status — controlar spawns de pets',
     '  ▸ ' + P + 'medieval on/off — ativar modo medieval',
+    '  ▸ ' + P + 'republica on/off — ativar modo República',
     '',
     '📌 *MENSAGENS, ENQUETES & SORTEIOS*',
     '  ▸ ' + P + 'fixargrupo — fixar mensagem citada',

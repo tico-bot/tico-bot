@@ -53,6 +53,10 @@ function resolverFiltroQuiz(comando) {
   return FILTROS_QUIZ[comando] || null;
 }
 
+function ehComandoQuiz(comando) {
+  return comando === 'quiz' || Boolean(resolverFiltroQuiz(comando)) || Boolean(resolverBancoQuiz(comando));
+}
+
 function normalizarComandoQuiz(caption) {
   const cmdRaw = String(caption || '').trim().toLowerCase().split(/\s+/)[0] || '';
   return cmdRaw.replace(/^[^a-z0-9]+/, '');
@@ -959,62 +963,70 @@ async function handleQuiz(sock, msg, jid, author, senderJid, caption = '') {
       msg.message?.ephemeralMessage?.message?.conversation ||
       msg.message?.ephemeralMessage?.message?.extendedTextMessage?.text || '';
 
-    // Ignora comandos durante quiz ativo
-    if (/^[!.,\/@]/.test(textoRaw)) return;
+    const comandoSolicitado = normalizarComandoQuiz(textoRaw);
+    if (ehComandoQuiz(comandoSolicitado)) {
+      // Um novo comando de quiz substitui a pergunta pendente. Antes, este
+      // caminho retornava silenciosamente e impedia trocar de tema (ex.: /quizgeo).
+      clearTimeout(state.timeout);
+      quizState.delete(senderJid);
+    } else {
+      // Nunca interpretar comandos prefixados como respostas do quiz.
+      if (/^[!.,\/@#]/.test(textoRaw)) return;
 
-    const resposta = normalize(textoRaw);
+      const resposta = normalize(textoRaw);
 
-    if (!resposta) {
-      await sock.sendMessage(jid, {
-        text: `❌ Você deve enviar uma *resposta em texto*! 😅`,
-      }, { quoted: msg });
+      if (!resposta) {
+        await sock.sendMessage(jid, {
+          text: `❌ Você deve enviar uma *resposta em texto*! 😅`,
+        }, { quoted: msg });
+        return;
+      }
+
+      clearTimeout(state.timeout);
+      quizState.delete(senderJid);
+
+      // Usa o JID resolvido salvo no state (garante que veio do LidMapping correto)
+      const effectiveJid = state.resolvedJid ?? resolvedJidNorm;
+
+      const acertou = respostaCorresponde(textoRaw, state.r, state.aliases || []);
+
+      if (acertou) {
+        const pts = (pontosMap.get(effectiveJid) || 0) + 10;
+        pontosMap.set(effectiveJid, pts);
+
+        const goldReward = QUIZ_GOLD_REWARD;
+        const [, novoSaldoGold] = await Promise.all([
+          saveQuizPointsToDB(effectiveJid, jid),
+          changeGold(effectiveJid, goldReward, jid),
+          Usuario.findOneAndUpdate(
+            { idWhatsApp: effectiveJid },
+            { $inc: { 'dailyMissions.progress.quiz5': 1 } }
+          ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
+        ]);
+        const incentivoDiario = await registrarAcertoDiarioQuiz(effectiveJid, jid).catch(e => {
+          console.error('⚠️ Erro ao atualizar bônus diário do Quiz:', e.message);
+          return null;
+        });
+
+        const linhaGold = `💵 *+${formatarNumeroBR(goldReward)} Pratas!* Saldo: *${formatarNumeroBR(novoSaldoGold)} Pratas*`;
+        const linhaIncentivo = !incentivoDiario ? '' : incentivoDiario.bonusConcedido
+          ? `\n🎁 *BÔNUS DIÁRIO!* Você completou ${QUIZ_DAILY_BONUS_TARGET} acertos e recebeu *+${QUIZ_DAILY_BONUS_PRATA} Pratas extras!*`
+          : `\n🎯 *Meta diária:* ${incentivoDiario.acertos}/${QUIZ_DAILY_BONUS_TARGET} acertos — complete a meta e ganhe *+${QUIZ_DAILY_BONUS_PRATA} Pratas!*`;
+
+        await sock.sendMessage(jid, {
+          text:
+            `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
+            `💰 *+10 pontos!* Total: *${pts} pts*\n` +
+            linhaGold + linhaIncentivo,
+        }, { quoted: msg });
+
+      } else {
+        await sock.sendMessage(jid, {
+          text: `❌ *ERROU!* *${author}*! Tente novamente no próximo quiz. 😬`,
+        }, { quoted: msg });
+      }
       return;
     }
-
-    clearTimeout(state.timeout);
-    quizState.delete(senderJid);
-
-    // Usa o JID resolvido salvo no state (garante que veio do LidMapping correto)
-    const effectiveJid = state.resolvedJid ?? resolvedJidNorm;
-
-    const acertou = respostaCorresponde(textoRaw, state.r, state.aliases || []);
-
-    if (acertou) {
-      const pts = (pontosMap.get(effectiveJid) || 0) + 10;
-      pontosMap.set(effectiveJid, pts);
-
-      const goldReward = QUIZ_GOLD_REWARD;
-      const [, novoSaldoGold] = await Promise.all([
-        saveQuizPointsToDB(effectiveJid, jid),
-        changeGold(effectiveJid, goldReward, jid),
-        Usuario.findOneAndUpdate(
-          { idWhatsApp: effectiveJid },
-          { $inc: { 'dailyMissions.progress.quiz5': 1 } }
-        ).catch(e => console.error('⚠️ Erro ao atualizar progresso quiz5:', e.message)),
-      ]);
-      const incentivoDiario = await registrarAcertoDiarioQuiz(effectiveJid, jid).catch(e => {
-        console.error('⚠️ Erro ao atualizar bônus diário do Quiz:', e.message);
-        return null;
-      });
-
-      const linhaGold = `💵 *+${formatarNumeroBR(goldReward)} Pratas!* Saldo: *${formatarNumeroBR(novoSaldoGold)} Pratas*`;
-      const linhaIncentivo = !incentivoDiario ? '' : incentivoDiario.bonusConcedido
-        ? `\n🎁 *BÔNUS DIÁRIO!* Você completou ${QUIZ_DAILY_BONUS_TARGET} acertos e recebeu *+${QUIZ_DAILY_BONUS_PRATA} Pratas extras!*`
-        : `\n🎯 *Meta diária:* ${incentivoDiario.acertos}/${QUIZ_DAILY_BONUS_TARGET} acertos — complete a meta e ganhe *+${QUIZ_DAILY_BONUS_PRATA} Pratas!*`;
-
-      await sock.sendMessage(jid, {
-        text:
-          `✅ *CORRETO!* Parabéns, *${author}*! 🎉\n\n` +
-          `💰 *+10 pontos!* Total: *${pts} pts*\n` +
-          linhaGold + linhaIncentivo,
-      }, { quoted: msg });
-
-    } else {
-      await sock.sendMessage(jid, {
-        text: `❌ *ERROU!* *${author}*! Tente novamente no próximo quiz. 😬`,
-      }, { quoted: msg });
-    }
-    return;
   }
 
   // ── Filtrar por categoria ─────────────────────────────────────────────────
@@ -1204,6 +1216,7 @@ module.exports = {
   QUIZ_GOLD_REWARD,
   resolverBancoQuiz,
   resolverFiltroQuiz,
+  ehComandoQuiz,
   normalizarComandoQuiz,
   quizState,
   perguntasQuiz,

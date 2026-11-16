@@ -31,6 +31,7 @@ const grupoConfigSchema = new mongoose.Schema(
     sistemaPet:         { type: Boolean, default: false },
     sistemaGold:        { type: Boolean, default: false },
     medievalAtivo:      { type: Boolean, default: false },
+    republicaAtivo:     { type: Boolean, default: false },
     botAtivo:           { type: Boolean, default: true  },
     xpAtivo:            { type: Boolean, default: false },
     rankingSemanal:     { type: Boolean, default: false },

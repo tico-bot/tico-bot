@@ -11,6 +11,7 @@ const {
 const { dentroDoHorario } = require('./emprego');
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const GrupoConfig = require('../../models/GrupoConfig');
+const RepublicaLicenca = require('../../models/RepublicaLicenca');
 
 // 10:00 no fuso UTC-3 usado pelo relógio do expediente.
 const BASE = Date.UTC(2026, 10, 13, 13, 0, 0);
@@ -86,6 +87,7 @@ test('envia o aviso no grupo, menciona o trabalhador e não duplica o mesmo marc
   const originalFind = CarteiraGrupo.find;
   const originalUpdateOne = CarteiraGrupo.updateOne;
   const originalGrupoFind = GrupoConfig.find;
+  const originalLicencaFind = RepublicaLicenca.find;
   const marcados = new Set();
   const mensagens = [];
   const query = linhas => ({ select() { return this; }, async lean() { return linhas; } });
@@ -98,6 +100,7 @@ test('envia o aviso no grupo, menciona o trabalhador e não duplica o mesmo marc
     return { modifiedCount: 1 };
   };
   GrupoConfig.find = () => query([{ idGrupo: grupo, botAtivo: true, prefixo: '/' }]);
+  RepublicaLicenca.find = () => query([]);
 
   try {
     const sock = {
@@ -115,6 +118,43 @@ test('envia o aviso no grupo, menciona o trabalhador e não duplica o mesmo marc
     CarteiraGrupo.find = originalFind;
     CarteiraGrupo.updateOne = originalUpdateOne;
     GrupoConfig.find = originalGrupoFind;
+    RepublicaLicenca.find = originalLicencaFind;
+  }
+});
+
+
+test('não envia avisos de atraso enquanto o trabalhador está em licença parental', async () => {
+  const grupo = '120363000000000001@g.us';
+  const usuario = '5511999999998@s.whatsapp.net';
+  const carteira = {
+    _id: 'carteira-licenca', idWhatsApp: usuario, idGrupo: grupo,
+    empregoAtual: 'Entregador de Pizza', ultimoTrabalho: new Date(BASE), avisosEmprego: [],
+  };
+  const originais = {
+    carteiraFind: CarteiraGrupo.find,
+    carteiraUpdate: CarteiraGrupo.updateOne,
+    grupoFind: GrupoConfig.find,
+    licencaFind: RepublicaLicenca.find,
+  };
+  const query = linhas => ({ select() { return this; }, async lean() { return linhas; } });
+  const mensagens = [];
+  CarteiraGrupo.find = () => query([carteira]);
+  CarteiraGrupo.updateOne = async () => ({ modifiedCount: 1 });
+  GrupoConfig.find = () => query([{ idGrupo: grupo, botAtivo: true, prefixo: '/' }]);
+  RepublicaLicenca.find = () => query([{ idGrupo: grupo, usuarioId: usuario }]);
+  try {
+    const sock = {
+      user: { id: 'bot@s.whatsapp.net' },
+      async sendMessage(jid, payload) { mensagens.push({ jid, payload }); },
+    };
+    const agora = BASE + 30 * MIN;
+    assert.equal(await processarAvisosTrabalho(sock, agora), 0);
+    assert.equal(mensagens.length, 0);
+  } finally {
+    CarteiraGrupo.find = originais.carteiraFind;
+    CarteiraGrupo.updateOne = originais.carteiraUpdate;
+    GrupoConfig.find = originais.grupoFind;
+    RepublicaLicenca.find = originais.licencaFind;
   }
 });
 

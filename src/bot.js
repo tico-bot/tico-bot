@@ -45,6 +45,7 @@ const relacionamentoHandler = require('./handlers/relacionamento');
 // ─── Router & Handlers ────────────────────────────────────────────────────────
 // Fix #3: Conectado ao router.js modular!
 const { handleMessage, setBotJid, contactNames } = require('./router');
+const republicaScheduler = require('./handlers/republica');
 const { processarBemVindo }       = require('./handlers/grupo');
 
 const { initPetScheduler, registerActiveGroup, initFilhosScheduler } = require('./handlers/diversao');
@@ -342,6 +343,7 @@ async function startBot() {
 
     if (connection === 'close') {
       pararAgendadorAvisosEmprego();
+      republicaScheduler.pararCiclo();
       schedulersIniciados = false;
       _botSock = null;
 
@@ -394,6 +396,7 @@ async function startBot() {
         initQuizRankingScheduler(sock, new Set());
         initFilhosScheduler();
         iniciarAgendadorAvisosEmprego(sock);
+        republicaScheduler.iniciarCiclo(sock);
 
         setInterval(() => downloadsHandler.limparTmpAntigos(10 * 60 * 1000), 5 * 60 * 1000);
         downloadsHandler.limparTmpAntigos(10 * 60 * 1000);

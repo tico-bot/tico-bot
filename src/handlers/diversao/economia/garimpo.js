@@ -8,6 +8,7 @@ const { alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', 
 const { getSenderJid } = require(path.join(__dirname, '..', '..', '..', 'utils', 'identity'));
 const crypto = require('crypto');
 const { logError } = require(path.join(__dirname, '..', '..', '..', 'utils', 'logging'));
+const republicaEconomia = require('../../republica/economia');
 const {
   adjustWalletLocal,
   formatWalletAmount,
@@ -47,12 +48,12 @@ function formatarTempo(ms) {
   return m > 0 ? `${m}min ${s}s` : `${s}s`;
 }
 
-function msgCooldown(restante) {
+function msgCooldown(restante, prefix = '!') {
   return (
     `⏳ *GARIMPO EM COOLDOWN* ⏳\n\n` +
     `⛏️ Você já garimpou recentemente!\n\n` +
     `⏰ Próximo garimpo em: *${formatarTempo(restante)}*\n\n` +
-    `_Use !garimpar quando o tempo acabar._`
+    `_Quando o tempo acabar, use ${prefix}garimpar ou ${prefix}minerar._`
   );
 }
 
@@ -64,7 +65,8 @@ async function handleMinerios(sock, msg, jid, getPrefix) {
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
 }
 
-async function handleGarimpar(sock, msg, jid) {
+async function handleGarimpar(sock, msg, jid, getPrefix) {
+  const prefix = typeof getPrefix === 'function' ? getPrefix(jid) : '!';
   const userIdRaw = getSenderJid(msg);
   const userId    = jidNormalizedUser(userIdRaw);
   const agora     = Date.now();
@@ -97,7 +99,7 @@ async function handleGarimpar(sock, msg, jid) {
     if (tsCache > 0) {
       const passado = agora - tsCache;
       if (passado < GARIMPO_COOLDOWN_MS) {
-        await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passado) }, { quoted: msg });
+        await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passado, prefix) }, { quoted: msg });
         return;
       }
     }
@@ -112,7 +114,7 @@ async function handleGarimpar(sock, msg, jid) {
       const passadoDB = agora - tsUltimo;
       if (passadoDB < GARIMPO_COOLDOWN_MS) {
         garimpoCache.set(userId, tsUltimo);
-        await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passadoDB) }, { quoted: msg });
+        await sock.sendMessage(jid, { text: msgCooldown(GARIMPO_COOLDOWN_MS - passadoDB, prefix) }, { quoted: msg });
         return;
       }
     }
@@ -136,6 +138,8 @@ async function handleGarimpar(sock, msg, jid) {
       const { goldFinal, xpFinal } = calcularResultadoGarimpo(minerio, evento);
 
       let carteira;
+      let goldPago = goldFinal;
+      let impostoGarimpo = 0;
       if (contaVinculada) {
         // Conta vinculada: o ouro vai para o saldo do app (1 unidade de Prata equivale à unidade interna da carteira vinculada,
         // mesma regra do !pix). Missões ainda não suportam conta vinculada, então ficam de fora.
@@ -171,15 +175,23 @@ async function handleGarimpar(sock, msg, jid) {
         ]).catch((xpErr) => console.error('⚠️ Erro ao gravar XP do garimpo:', xpErr.message));
       } else {
         await prepareDailyMissionState(userId);
+        const goldAjustado = await republicaEconomia.aplicarMultiplicadorRecompensa(jid, goldFinal);
+        const liquidacaoGarimpoPromise = republicaEconomia.liquidarRenda(
+          userId, jid, goldAjustado, goldAjustado, `Garimpo - ${minerio.nome}`
+        );
 
         [carteira] = await Promise.all([
-          alterarGold(userId, jid, goldFinal, `Garimpo - ${minerio.nome}`),
+          liquidacaoGarimpoPromise.then(resultado => {
+            goldPago = resultado.liquido;
+            impostoGarimpo = resultado.imposto;
+            return resultado.carteira;
+          }),
           Usuario.findOneAndUpdate(
             { idWhatsApp: userId },
             { $inc: { xp: xpFinal } },
             { upsert: true }
           ),
-          incrementMission(userId, 'gold500', goldFinal),
+          incrementMission(userId, 'gold500', goldAjustado),
           CarteiraGrupo.findOneAndUpdate(
             { idWhatsApp: userId, idGrupo: jid },
             { $inc: { xp: xpFinal } },
@@ -204,9 +216,11 @@ async function handleGarimpar(sock, msg, jid) {
       linhas.push(``);
       const ganhoExibido = carteira?.walletLinked
         ? localMinorUnitsToBrlCents(goldFinal, carteira)
-        : goldFinal;
+        : goldPago;
       if (goldFinal > 0) {
-        linhas.push(`💰 Encontrado: *+${formatWalletAmount(ganhoExibido, carteira)}*`);
+        linhas.push(`💰 Bruto encontrado: *${formatWalletAmount(ganhoExibido + impostoGarimpo, carteira)}*`);
+        if (impostoGarimpo > 0) linhas.push(`🧾 IRPF-Tico: *-${formatWalletAmount(impostoGarimpo, carteira)}*`);
+        linhas.push(`💵 Líquido recebido: *+${formatWalletAmount(ganhoExibido, carteira)}*`);
       } else {
         linhas.push(`💰 Encontrado: *nada — evento destruiu tudo!*`);
       }

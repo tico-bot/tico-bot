@@ -95,6 +95,7 @@ test('o catálogo lista todos os minérios, raridades, probabilidades, valores e
   const texto = formatarCatalogoMinerios('?');
   assert.match(texto, /CATÁLOGO DE MINÉRIOS/);
   assert.match(texto, /\?garimpar/);
+  assert.match(texto, /\?minerar/);
   assert.match(texto, /24,5%/);
   assert.match(texto, /valores-base em Pratas foram triplicados para todos os minérios/i);
   const formatarNumero = valor => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(valor);

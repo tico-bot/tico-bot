@@ -6,6 +6,8 @@ const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira, formatarSaldo, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
+const republicaEconomia = require('../republica/economia');
+const republicaSocial = require('../republica/social');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CHANCE_FILHO       = 0.40;  // 40% de chance
@@ -199,7 +201,7 @@ async function handleTentarFilho(sock, msg, jid) {
     const personalidade = PERSONALIDADES[Math.floor(Math.random() * PERSONALIDADES.length)];
     const emoji         = sexo === 'menino' ? '👦' : '👧';
 
-    await Filho.create({
+    const filhoCriado = await Filho.create({
       jidA: userId,
       jidB: parceiro,
       idGrupo: jid,
@@ -216,6 +218,22 @@ async function handleTentarFilho(sock, msg, jid) {
       nascidoEm:   new Date(),
     });
 
+    let avisoLicencas = '';
+    if (await republicaEconomia.modoAtivo(jid)) {
+      const licencas = await republicaSocial.registrarLicencasNascimento(jid, userId, parceiro, filhoCriado);
+      if (licencas.length) {
+        avisoLicencas = `\n\n👶 *LICENÇAS PARENTAIS:* ${licencas.length} responsável(is) empregado(s) recebeu(ram) licença de 2 dias, remunerada pelo Fundo Social.`;
+        for (const licenca of licencas) {
+          await sock.sendMessage(licenca.usuarioId, {
+            text: '👶 *LICENÇA ' + String(licenca.tipo || 'PARENTAL').toUpperCase() + ' ACTIVADA*\n\n' +
+              'Você recebeu 2 dias de licença remunerada no emprego do Tico.\n' +
+              'Remuneração diária prevista: *' + Math.floor(licenca.salarioDiario || 0).toLocaleString('pt-BR') + ' Pratas*.\n' +
+              'O pagamento sai do Fundo de Licença Parental e o seu emprego fica protegido durante as 48 horas.',
+          }).catch(() => {});
+        }
+      }
+    }
+
     return sock.sendMessage(jid, {
       text:
         `🎉 *PARABÉNS! NASCEU UM(A) FILHO(A)!* 🎉\n\n` +
@@ -227,7 +245,8 @@ async function handleTentarFilho(sock, msg, jid) {
         `🍽️ Fome       : ${statusBar(100)}\n` +
         `😴 Sono       : ${statusBar(100)}\n` +
         `🎈 Alegria    : ${statusBar(100)}\n\n` +
-        `💡 Use *!cuidarfilho* para cuidar dele(a) diariamente!`,
+        `💡 Use *!cuidarfilho* para cuidar dele(a) diariamente!` +
+        avisoLicencas,
       mentions: [userId, parceiro],
     }, { quoted: msg });
 

@@ -2,6 +2,7 @@
 
 const CarteiraGrupo = require('../../models/CarteiraGrupo');
 const GrupoConfig = require('../../models/GrupoConfig');
+const RepublicaLicenca = require('../../models/RepublicaLicenca');
 const { TEMPO, calcularTempoForaHorario, dentroDoHorario } = require('./emprego');
 
 const MINUTO_MS = 60_000;
@@ -106,6 +107,13 @@ async function processarAvisosTrabalho(sock, agora = Date.now()) {
   const grupos = [...new Set(carteiras.map(c => c.idGrupo).filter(g => typeof g === 'string' && g.endsWith('@g.us')))];
   if (!grupos.length) return 0;
 
+  const licencasAtivas = await RepublicaLicenca.find({
+    idGrupo: { $in: grupos },
+    usuarioId: { $in: carteiras.map(c => c.idWhatsApp) },
+    ativa: true, fim: { $gt: new Date(agora) },
+  }).select('idGrupo usuarioId').lean();
+  const emLicenca = new Set(licencasAtivas.map(l => l.idGrupo + '|' + l.usuarioId));
+
   // Grupos explicitamente desligados não recebem mensagens automáticas.
   const configs = await GrupoConfig.find({ idGrupo: { $in: grupos } })
     .select('idGrupo botAtivo prefixo')
@@ -117,6 +125,7 @@ async function processarAvisosTrabalho(sock, agora = Date.now()) {
     const { idWhatsApp: usuarioJid, idGrupo: grupoJid } = carteira;
     if (!grupoJid?.endsWith('@g.us') || configPorGrupo.get(grupoJid)?.botAtivo === false) continue;
     if (typeof usuarioJid !== 'string' || !usuarioJid.includes('@')) continue;
+    if (emLicenca.has(grupoJid + '|' + usuarioJid)) continue;
 
     const aviso = selecionarAviso(carteira.ultimoTrabalho, agora, carteira.avisosEmprego);
     if (!aviso) continue;

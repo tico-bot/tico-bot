@@ -11,6 +11,8 @@ const {
   PARTICIPATION_TARGET,
   PARTICIPATION_REWARD,
   calcularProximaPremiacao,
+  obterHorarioGrupo,
+  resolverHorariosGrupos,
 } = require('./quizRanking');
 
 const groupJid = '120363000000000000@g.us';
@@ -30,6 +32,18 @@ test('aviso diário anuncia os novos prémios e o bônus de participação', asy
   assert.match(texto, /\+500 Pratas/);
   assert.match(texto, /18h30/);
   assert.doesNotMatch(texto, /R\$|reais?/i);
+});
+
+test('avisos do quiz usam o horário específico do grupo', async () => {
+  const sent = [];
+  const sock = { async sendMessage(jid, payload) { sent.push({ jid, payload }); } };
+  const horarios = new Map([[groupJid, obterHorarioGrupo(1)]]);
+
+  await enviarAviso(sock, new Set([groupJid]), '10min', horarios);
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].payload.text, /19h10/);
+  assert.doesNotMatch(sent[0].payload.text, /18h30/);
 });
 
 test('premiação diária multiplica os prêmios por dez, registra o pagamento e zera o placar', async t => {
@@ -103,6 +117,80 @@ test('premiação diária multiplica os prêmios por dez, registra o pagamento e
   await executarPremiacao(sock, new Set([groupJid]), dataPremiacao);
   assert.equal(pagamentos.length, 3);
   assert.equal(mensagens.length, 1);
+});
+
+test('os horários dos grupos avançam em intervalos de 40 minutos', () => {
+  assert.equal(obterHorarioGrupo(0).texto, '18h30');
+  assert.equal(obterHorarioGrupo(1).texto, '19h10');
+  assert.equal(obterHorarioGrupo(2).texto, '19h50');
+  assert.equal(obterHorarioGrupo(3).texto, '20h30');
+
+  // Os horários continuam em sequência após a meia-noite.
+  const proximoDia = calcularProximaPremiacao(new Date('2026-11-14T03:55:00.000Z'), 9);
+  assert.equal(proximoDia.horario.texto, '00h30');
+  assert.equal(proximoDia.data, '2026-11-14');
+  assert.equal(proximoDia.instante.toISOString(), '2026-11-14T04:30:00.000Z');
+});
+
+test('os horários atribuídos aos grupos permanecem estáveis e novos grupos recebem o próximo intervalo', async t => {
+  const estado = new Map();
+  t.mock.method(ExtraState, 'findById', id => ({
+    async lean() {
+      return estado.has(id) ? { value: estado.get(id) } : null;
+    },
+  }));
+  t.mock.method(ExtraState, 'updateOne', async (filtro, update) => {
+    if (update.$set?.value) estado.set(filtro._id, update.$set.value);
+    return { modifiedCount: 1 };
+  });
+
+  const grupoA = '120363000000000001@g.us';
+  const grupoB = '120363000000000002@g.us';
+  const grupoC = '120363000000000003@g.us';
+
+  const primeira = await resolverHorariosGrupos(new Set([grupoB, grupoA]));
+  assert.equal(primeira.atribuicoes.get(grupoA), 0);
+  assert.equal(primeira.atribuicoes.get(grupoB), 1);
+
+  const segunda = await resolverHorariosGrupos(new Set([grupoC, grupoB, grupoA]));
+  assert.equal(segunda.atribuicoes.get(grupoA), 0);
+  assert.equal(segunda.atribuicoes.get(grupoB), 1);
+  assert.equal(segunda.atribuicoes.get(grupoC), 2);
+});
+
+test('a apuração de um grupo não bloqueia a de outro, mesmo com estado global antigo concluído', async t => {
+  const eventos = new Map([
+    ['quiz_premiacao_diaria_global:' + dataPremiacao, { status: 'completed' }],
+  ]);
+  t.mock.method(ExtraState, 'findById', id => ({
+    async lean() {
+      return eventos.has(id) ? { value: eventos.get(id) } : null;
+    },
+  }));
+  t.mock.method(ExtraState, 'updateOne', async (filtro, update) => {
+    if (update.$setOnInsert?.value && !eventos.has(filtro._id)) {
+      eventos.set(filtro._id, update.$setOnInsert.value);
+    }
+    if (update.$set?.value) eventos.set(filtro._id, update.$set.value);
+    return { modifiedCount: 1 };
+  });
+  t.mock.method(CarteiraGrupo, 'find', () => ({
+    sort() { return this; },
+    limit() { return this; },
+    async lean() { return []; },
+  }));
+
+  const grupoA = '120363000000000011@g.us';
+  const grupoB = '120363000000000012@g.us';
+  const sock = { async sendMessage() { throw new Error('não deveria enviar prémio sem vencedores'); } };
+
+  await executarPremiacao(sock, new Set([grupoA]), dataPremiacao);
+  await executarPremiacao(sock, new Set([grupoB]), dataPremiacao);
+
+  const idA = 'quiz_premiacao_diaria:' + dataPremiacao + ':' + encodeURIComponent(grupoA);
+  const idB = 'quiz_premiacao_diaria:' + dataPremiacao + ':' + encodeURIComponent(grupoB);
+  assert.equal(eventos.get(idA).status, 'completed');
+  assert.equal(eventos.get(idB).status, 'completed');
 });
 
 test('próxima premiação é calculada diariamente às 18h30 de Cuiabá', () => {

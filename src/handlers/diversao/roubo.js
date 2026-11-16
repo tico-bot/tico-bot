@@ -82,6 +82,292 @@ const ITENS_SEGURANCA = {
   central_ia:     { nome: '🧠 Central de Segurança com IA',   codigo: 'central', preco: 7500, defesa: 100 },
 };
 
+const FALAS_VARIADAS = {
+  compraRouboUso: [
+    () => '⚠️ Informe a chave da ferramenta que deseja comprar. Exemplo: *!buyroubo dinamite*',
+    () => '🛒 Qual ferramenta vai para o seu inventário? Use *!buyroubo <chave>*. Exemplo: *!buyroubo dinamite*',
+    () => '🔎 Faltou a chave do item! Consulte *!menuroubar* e tente *!buyroubo <chave>*.'
+  ],
+  compraSecUso: [
+    () => '⚠️ Informe a chave da defesa. Exemplo: *!buysec cofre*',
+    () => '🛡️ Para comprar uma proteção, use *!buysec <chave>*. Veja as opções em *!menusec*.',
+    () => '🔎 Não identifiquei qual defesa deseja. Exemplo: *!buysec alarme*.'
+  ],
+  itemNaoEncontrado: [
+    ({ item, menu }) => `🔎 Não encontrei *${item}* nesta loja. Confira as opções em *!${menu}*.`,
+    ({ item, menu }) => `📦 *${item}* não faz parte do catálogo disponível. Consulte *!${menu}* para ver as chaves válidas.`,
+    ({ item, menu }) => `🤔 Essa chave (*${item}*) não corresponde a nenhum produto. Dê uma olhada em *!${menu}*.`
+  ],
+  saldoInsuficiente: [
+    ({ preco, saldo, faltam, carteira }) => `💸 *Ainda falta um pouco para essa compra!*
+
+💵 Preço: *${formatarSaldo(preco, carteira)}*
+💰 Seu saldo: *${formatarSaldo(saldo, carteira)}*
+🪙 Faltam: *${formatarSaldo(faltam, carteira)}*`,
+    ({ preco, saldo, faltam, carteira }) => `🏷️ *Você não tem Pratas suficientes.*
+
+Custo: *${formatarSaldo(preco, carteira)}*
+Disponível: *${formatarSaldo(saldo, carteira)}*
+Diferença: *${formatarSaldo(faltam, carteira)}*`,
+    ({ preco, saldo, faltam, carteira }) => `🚫 Compra não concluída: seu saldo ainda não alcança o preço.
+
+🛒 Valor do item: *${formatarSaldo(preco, carteira)}*
+👛 Seu saldo: *${formatarSaldo(saldo, carteira)}*
+📉 Necessário juntar mais: *${formatarSaldo(faltam, carteira)}*`
+  ],
+  compraErro: [
+    () => '⚠️ A loja não conseguiu concluir a compra desta vez. Tente novamente.',
+    () => '🧾 Houve uma falha ao processar o pagamento. Nenhuma nova tentativa foi feita; tente outra vez.',
+    () => '🔧 O sistema de compras encontrou um problema. Aguarde um instante e tente novamente.'
+  ],
+  compraReembolsada: [
+    () => '⚠️ O item não foi guardado no inventário. O valor da compra foi devolvido à sua carteira.',
+    () => '🔄 A compra não pôde ser finalizada, mas o reembolso já foi realizado.',
+    () => '📦 Não consegui entregar o item. Pode ficar tranquilo: o pagamento foi estornado.'
+  ],
+  compraFalhaCritica: [
+    () => '🚨 O item não foi registrado e o reembolso automático também falhou. Não tente comprar novamente antes de contatar um administrador.',
+    () => '🆘 Houve uma falha na entrega e na devolução das Pratas. Contacte um administrador para verificar a transação.',
+    () => '⚠️ A compra ficou pendente: não foi possível guardar o item nem concluir o reembolso. Avise um administrador.'
+  ],
+  compraRouboSucesso: [
+    ({ itemInfo, carteiraFinal }) => `✅ *Compra concluída!*
+
+🔧 Ferramenta: ${itemInfo.nome}
+💵 Preço: *${formatarNumeroBR(itemInfo.preco)} Pratas*
+📈 Bônus: *+${itemInfo.bonus}%*
+💎 Saldo restante: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+⚡ Para usar, equipe com *!equiparroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo, carteiraFinal }) => `🛍️ *Boa escolha! O item já é seu.*
+
+🎭 ${itemInfo.nome}
+🏷️ Pago: *${formatarNumeroBR(itemInfo.preco)} Pratas*
+🎯 Bônus de sucesso: *+${itemInfo.bonus}%*
+👛 Agora tem: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+Não se esqueça de equipar: *!equiparroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo, carteiraFinal }) => `📦 *Item adicionado ao inventário!*
+
+Equipamento: ${itemInfo.nome}
+Custo: *${formatarNumeroBR(itemInfo.preco)} Pratas*
+Bônus: *+${itemInfo.bonus}%*
+Saldo: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+Próximo passo: *!equiparroubo ${itemInfo.codigo}*.`
+  ],
+  compraSecSucesso: [
+    ({ itemInfo, carteiraFinal }) => `✅ *Proteção comprada!*
+
+🔐 ${itemInfo.nome}
+💵 Preço: *${formatarSaldo(itemInfo.preco, carteiraFinal)}*
+🛡️ Defesa: *+${itemInfo.defesa}%*
+💎 Saldo restante: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+Ative com *!equiparsec ${itemInfo.codigo}*.`,
+    ({ itemInfo, carteiraFinal }) => `🛡️ *Equipamento de segurança adquirido!*
+
+Item: ${itemInfo.nome}
+Proteção: *+${itemInfo.defesa}%*
+Saldo atual: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+Use *!equiparsec ${itemInfo.codigo}* para o ativar.`,
+    ({ itemInfo, carteiraFinal }) => `📦 A sua nova defesa já está no inventário!
+
+🔒 ${itemInfo.nome}
+Bônus defensivo: *+${itemInfo.defesa}%*
+Carteira: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
+
+Falta só ativá-la: *!equiparsec ${itemInfo.codigo}*.`
+  ],
+  equiparRouboUso: [
+    () => '⚠️ Diga qual ferramenta deseja equipar. Exemplo: *!equiparroubo dinamite*.',
+    () => '🎒 Preciso da chave do equipamento. Consulte *!menuroubar* e use *!equiparroubo <chave>*.',
+    () => '🔧 Qual ferramenta vai usar? Envie a chave depois de *!equiparroubo*.'
+  ],
+  equiparSecUso: [
+    () => '⚠️ Informe a defesa que deseja ativar. Exemplo: *!equiparsec cofre*.',
+    () => '🛡️ Escolha uma chave do *!menusec* e envie *!equiparsec <chave>*.',
+    () => '🔐 Não identifiquei a proteção. Exemplo: *!equiparsec alarme*.'
+  ],
+  itemNaoPossuido: [
+    ({ itemInfo, comando }) => `🎒 Você ainda não tem *${itemInfo.nome}* no inventário deste grupo.
+
+Compre primeiro com *!${comando} ${itemInfo.codigo}*.`,
+    ({ itemInfo, comando }) => `📦 *${itemInfo.nome}* não aparece na sua mochila por aqui.
+
+Pode adquiri-lo usando *!${comando} ${itemInfo.codigo}*.`,
+    ({ itemInfo, comando }) => `🤷 Este equipamento ainda não é seu: *${itemInfo.nome}*.
+
+Passe na loja e use *!${comando} ${itemInfo.codigo}* para o comprar.`
+  ],
+  equiparRouboSucesso: [
+    ({ itemInfo, qtd, taxaRoubo, taxaBanco, ferramentaBanco, destino }) => `✅ *Ferramenta equipada!*
+
+🎭 ${itemInfo.nome}
+📈 Bônus: *+${itemInfo.bonus}%*
+🎲 Chance no /roubar: até *${taxaRoubo}%*
+${ferramentaBanco ? `🏦 Chance no /roubarbanco: até *${taxaBanco}%*\n` : ''}🎒 Quantidade no inventário: *${qtd}x*
+
+🔫 Agora pode usar *${destino}*.`,
+    ({ itemInfo, qtd, taxaRoubo, taxaBanco, ferramentaBanco, destino }) => `⚡ *Preparado para a ação!*
+
+Equipamento: ${itemInfo.nome}
+Bônus de sucesso: *+${itemInfo.bonus}%*
+/roubar: até *${taxaRoubo}%*
+${ferramentaBanco ? `/roubarbanco: até *${taxaBanco}%*\n` : ''}Restantes: *${qtd}x*
+
+Alvo à vista? Use *${destino}*.`,
+    ({ itemInfo, qtd, taxaRoubo, taxaBanco, ferramentaBanco, destino }) => `🧰 *Tudo pronto! Ferramenta selecionada.*
+
+${itemInfo.nome}
+Bônus: *+${itemInfo.bonus}%*
+Probabilidade no /roubar: até *${taxaRoubo}%*
+${ferramentaBanco ? `Probabilidade no /roubarbanco: até *${taxaBanco}%*\n` : ''}Stock disponível: *${qtd}x*
+
+Próximo passo: *${destino}*.`
+  ],
+  equiparSecSucesso: [
+    ({ itemInfo, qtd, defesaFinal }) => `✅ *Defesa ativada!*
+
+🔐 ${itemInfo.nome}
+🛡️ Protecção: *+${itemInfo.defesa}%*
+🔒 Chance de resistir: até *${defesaFinal}%*
+🎒 Quantidade: *${qtd}x*`,
+    ({ itemInfo, qtd, defesaFinal }) => `🧱 A sua segurança foi reforçada!
+
+Item: ${itemInfo.nome}
+Bônus defensivo: *+${itemInfo.defesa}%*
+Resistência possível: até *${defesaFinal}%*
+No inventário: *${qtd}x*`,
+    ({ itemInfo, qtd, defesaFinal }) => `🛡️ *Protecção pronta para uso.*
+
+Equipamento: ${itemInfo.nome}
+Defesa adicional: *+${itemInfo.defesa}%*
+Chance de resistir: até *${defesaFinal}%*
+Stock: *${qtd}x*`
+  ],
+  roubarSemMencao: [
+    () => '👀 Quem será a vítima? Mencione alguém: *!roubar @pessoa*.',
+    () => '🎯 Faltou escolher o alvo. Marque a pessoa que pretende roubar com *!roubar @pessoa*.',
+    () => '⚠️ O plano está pronto, mas não há alvo! Use *!roubar @pessoa*.'
+  ],
+  roubarProprio: [
+    () => '😅 Tentar roubar a si próprio? Essa carteira está fora de alcance!',
+    () => '🪞 Você não pode ser o ladrão e a vítima ao mesmo tempo.',
+    () => '🚫 Operação cancelada: escolha outra pessoa, não a si próprio.'
+  ],
+  roubarSemFerramenta: [
+    () => '🎒 Você está de mãos vazias! Compre uma ferramenta em *!menuroubar* e equipe-a com *!equiparroubo <chave>*.',
+    () => '🔧 Sem equipamento, sem assalto. Consulte *!menuroubar*, compre uma ferramenta e equipe-a.',
+    () => '🕵️ Antes de agir, prepare a mochila: use *!buyroubo <chave>* e depois *!equiparroubo <chave>*.'
+  ],
+  roubarSemEstoque: [
+    ({ itemInfo }) => `📭 Acabaram as unidades de *${itemInfo.nome}*. Compre outra com *!buyroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo }) => `🗑️ Não restou nenhuma *${itemInfo.nome}* no seu inventário. Reponha em *!buyroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo }) => `⚠️ A ferramenta *${itemInfo.nome}* está esgotada! A loja vende mais com *!buyroubo ${itemInfo.codigo}*.`
+  ],
+  roubarBancoSemMencao: [
+    () => '🏦 Indique quem tem o banco que pretende assaltar: *!roubarbanco @pessoa*.',
+    () => '🎯 Falta marcar o titular do banco. Use *!roubarbanco @pessoa*.',
+    () => '⚠️ Não há alvo selecionado para o assalto bancário. Mencione alguém.'
+  ],
+  roubarBancoProprio: [
+    () => '🏦 O seu próprio banco está fora dos limites. Escolha outro alvo.',
+    () => '😅 Assaltar o próprio banco não faz sentido. Marque outra pessoa.',
+    () => '🚫 Não pode roubar o investimento de si próprio!'
+  ],
+  roubarBancoSemFerramenta: [
+    () => '🏦 Falta uma ferramenta bancária! Compre uma na secção de assalto a banco do *!menuroubar* e equipe-a.',
+    () => '🔧 As ferramentas comuns não servem para abrir cofres bancários. Equipe uma ferramenta da categoria *FERRAMENTAS PARA ASSALTO A BANCO*.',
+    () => '📦 Para este comando é obrigatório ter uma ferramenta bancária equipada. Veja *!menuroubar* e use *!equiparroubo <chave>*.'
+  ],
+  roubarBancoSemEstoque: [
+    ({ itemInfo }) => `🏦 O seu estoque de *${itemInfo.nome}* acabou. Compre outra unidade com *!buyroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo }) => `📭 Não há mais *${itemInfo.nome}* disponível no inventário. Reponha usando *!buyroubo ${itemInfo.codigo}*.`,
+    ({ itemInfo }) => `⚠️ Ferramenta bancária esgotada: *${itemInfo.nome}*. A chave para comprar outra é *${itemInfo.codigo}*.`
+  ],
+  alvoImune: [
+    ({ tempo }) => `🛡️ O alvo ainda está protegido! A imunidade termina dentro de *${tempo}*.`,
+    ({ tempo }) => `⛔ Essa pessoa foi roubada há pouco e está sob proteção por mais *${tempo}*.`,
+    ({ tempo }) => `🛡️ Segurança reforçada: não pode voltar a roubar esta pessoa durante *${tempo}*.`
+  ],
+  usuarioPreso: [
+    ({ tempo }) => `🚔 Você continua atrás das grades. A liberdade chega dentro de *${tempo}*.`,
+    ({ tempo }) => `🔒 A polícia ainda não o libertou. Aguarde mais *${tempo}*.`,
+    ({ tempo }) => `👮 Sem fugas! Ainda faltam *${tempo}* para terminar a sua prisão.`
+  ],
+  cooldownRoubo: [
+    ({ tempo, banco }) => `⏱️ A poeira ainda não assentou. Aguarde *${tempo}* antes de ${banco ? 'tentar outro assalto ao banco' : 'tentar roubar novamente'}.`,
+    ({ tempo, banco }) => `🕒 Está a agir depressa demais! O próximo ${banco ? 'assalto bancário' : 'roubo'} só fica disponível em *${tempo}*.`,
+    ({ tempo, banco }) => `⌛ Ainda está em recuperação. Volte a ${banco ? 'assaltar o banco' : 'roubar'} dentro de *${tempo}*.`
+  ],
+  roubarVitimaSemSaldo: [
+    () => '💰 A carteira desta pessoa está vazia. Não há Pratas para levar neste grupo.',
+    () => '📭 Parece que a vítima não tem saldo disponível para roubo.',
+    () => '😶 Nada por aqui: a carteira do alvo não possui Pratas.'
+  ],
+  roubarBancoSemInvestimento: [
+    () => '🏦 Esse banco não tem nenhum investimento ativo para ser roubado.',
+    () => '📉 O alvo não mantém dinheiro investido no banco deste grupo.',
+    () => '🔎 Não encontrei saldo aplicado no banco dessa pessoa.'
+  ],
+  inventarioRouboVazio: [
+    () => '🎒 A sua mochila está vazia. Visite *!menuroubar* para começar a montar o equipamento.',
+    () => '📦 Ainda não há ferramentas no seu inventário. Use *!buyroubo <chave>* para adquirir a primeira.',
+    () => '🕸️ Nenhum equipamento por aqui! A loja *!menuroubar* tem o que precisa.'
+  ],
+  inventarioSecVazio: [
+    () => '🔐 Ainda não tem proteções neste grupo. Veja as opções em *!menusec*.',
+    () => '🛡️ O seu inventário de segurança está vazio. Passe pela loja com *!menusec*.',
+    () => '📭 Nenhuma defesa guardada. Use *!buysec <chave>* para adquirir uma.'
+  ],
+  semDefesaAtiva: [
+    () => '⚠️ Nenhuma proteção está ativa. Equipe uma com *!equiparsec <chave>*.',
+    () => '🛡️ Está sem defesa equipada neste momento. Consulte *!menusec*.',
+    () => '🔓 A sua segurança está desativada. Escolha uma defesa com *!equiparsec <chave>*.'
+  ],
+  policiaSemMencao: [
+    () => '👮 Para denunciar, mencione quem o roubou: *!policia @ladrão*.',
+    () => '🚨 Falta indicar o suspeito. Use *!policia @ladrão*.',
+    () => '🔎 Quem deve ser denunciado? Marque o ladrão no comando *!policia*.'
+  ],
+  policiaPrazoExpirado: [
+    () => '⌛ A denúncia não pode ser registrada. A polícia só aceita chamadas nos primeiros 15 minutos após o roubo.',
+    () => '🚔 O prazo para denunciar já passou, ou esse jogador não corresponde ao último registro de roubo.',
+    () => '📄 Não foi possível validar a denúncia. Confirme o ladrão e lembre-se: o limite é de 15 minutos.'
+  ]
+};
+
+const ultimaFalaPorCategoria = new Map();
+
+function sortearFala(chave, dados = {}, aleatorio = Math.random) {
+  const variantes = FALAS_VARIADAS[chave];
+  if (!Array.isArray(variantes) || variantes.length === 0) {
+    throw new Error(`Conjunto de falas desconhecido: ${chave}`);
+  }
+
+  const obterIndice = () => {
+    const sorteio = Number(aleatorio());
+    return Math.min(
+      variantes.length - 1,
+      Math.max(0, Math.floor((Number.isFinite(sorteio) ? sorteio : 0) * variantes.length))
+    );
+  };
+
+  let indice = obterIndice();
+  const anterior = ultimaFalaPorCategoria.get(chave);
+  if (variantes.length > 1 && indice === anterior) {
+    const deslocamento = 1 + Math.floor(
+      Math.max(0, Math.min(0.999999, Number(aleatorio()) || 0)) * (variantes.length - 1)
+    );
+    indice = (indice + deslocamento) % variantes.length;
+  }
+
+  ultimaFalaPorCategoria.set(chave, indice);
+  return variantes[indice](dados);
+}
+
 // ─── UTILITÁRIOS ──────────────────────────────────────────────────────────────
 
 /** JID do remetente da mensagem (funciona em grupo e privado) — normalizado */
@@ -101,6 +387,49 @@ function getItemQtd(mapaOuObj, chave) {
   if (!mapaOuObj) return 0;
   if (typeof mapaOuObj.get === 'function') return mapaOuObj.get(chave) ?? 0;
   return mapaOuObj[chave] ?? 0;
+}
+
+/**
+ * Resolve a ferramenta ativa para o roubo normal.
+ * O campo equiparoubo guarda a escolha atual de /roubar (inclusive uma
+ * ferramenta bancária); equiparouboBanco continua independente para
+ * /roubarbanco. Carteiras antigas sem a escolha atual usam o slot bancário.
+ */
+function selecionarFerramentaRoubo(carteira) {
+  const slugAtivo = carteira?.equiparoubo;
+  const catalogoAtivo = ITENS_ROUBO[slugAtivo]
+    ? ITENS_ROUBO
+    : ITENS_ROUBO_BANCO;
+  const opcoes = [
+    {
+      slug: slugAtivo,
+      catalogo: catalogoAtivo,
+      inventario: ITENS_ROUBO[slugAtivo] ? 'itensRoubo' : 'itensRouboBanco',
+      campoEquipado: 'equiparoubo',
+    },
+    {
+      slug: carteira?.equiparouboBanco,
+      catalogo: ITENS_ROUBO_BANCO,
+      inventario: 'itensRouboBanco',
+      campoEquipado: 'equiparouboBanco',
+    },
+  ].filter((opcao, index) =>
+    opcao.slug
+    && opcao.catalogo[opcao.slug]
+    && (index === 0 || opcao.slug !== slugAtivo)
+  );
+
+  return opcoes.find(opcao => getItemQtd(carteira[opcao.inventario], opcao.slug) > 0)
+    || opcoes[0]
+    || null;
+}
+
+/** /roubarbanco aceita exclusivamente ferramentas do catálogo bancário. */
+function selecionarFerramentaBanco(carteira) {
+  const slug = carteira?.equiparouboBanco;
+  const item = slug && ITENS_ROUBO_BANCO[slug];
+  if (!item) return null;
+  return { slug, item, inventario: 'itensRouboBanco' };
 }
 
 /** Resolve o código curto exibido nos menus; mantém nomes antigos por compatibilidade. */
@@ -181,15 +510,16 @@ async function handleMenuRoubo(sock, msg, jid, getPrefix) {
   texto += `
 📜 *COMANDOS*
   ▸ ${P}buyroubo _(chave)_ — Comprar item/ferramenta
-  ▸ ${P}equiparroubo _(chave)_ — Equipar para o tipo de roubo
+  ▸ ${P}equiparroubo _(chave)_ — Escolher a ferramenta ativa de roubo
   ▸ ${P}invroubo — Ver inventários de roubo e banco
   ▸ ${P}roubar @pessoa — Roubar alguém
   ▸ ${P}roubarbanco @pessoa — Assaltar o banco de alguém\r\n  ▸ ${P}policia @ladrão — tentar recuperar o que foi roubado
 
 ⚠️ *REGRAS*
-  • Item equipado é obrigatório para roubar!
-  • Assaltar bancos exige ferramenta própria, comprada e equipada pelos comandos acima.
-  • A ferramenta é consumida na tentativa de assalto ao banco.
+  • É obrigatório equipar uma ferramenta antes de tentar roubar.
+  • Ferramentas bancárias também funcionam no comando !roubar.
+  • A ferramenta escolhida para !roubar não apaga a configuração própria de !roubarbanco.
+  • A ferramenta é consumida a cada tentativa de roubo ou assalto ao banco.
   • Cooldown: *${formatarTempo(COOLDOWN_ROUBO_MS)}* entre tentativas
   • Taxa base de sucesso: *${TAXA_SUCESSO_BASE}%*
 
@@ -241,7 +571,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const itemSlug = resolverChaveFerramenta(itemDigitado, { ...ITENS_ROUBO, ...ITENS_ROUBO_BANCO });
   if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!buyroubo <chave>*\nExemplo: *!buyroubo dinamite*',
+      text: sortearFala('compraRouboUso'),
     }, { quoted: msg });
     return;
   }
@@ -249,7 +579,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const campoInventario = ITENS_ROUBO[itemSlug] ? 'itensRoubo' : 'itensRouboBanco';
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não encontrado na loja de roubo!\nUse *!menuroubar* para ver os disponíveis.`,
+      text: sortearFala('itemNaoEncontrado', { item: itemSlug, menu: 'menuroubar' }),
     }, { quoted: msg });
     return;
   }
@@ -263,17 +593,13 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
       const saldo    = carteira.gold ?? 0;
       const faltam   = Math.max(0, itemInfo.preco - saldo);
       await sock.sendMessage(jid, {
-        text:
-          `❌ *SALDO INSUFICIENTE!*\n\n` +
-          `💵 Preço:      *${formatarSaldo(itemInfo.preco, carteira)}*\n` +
-          `💰 Seu saldo:  *${formatarSaldo(saldo, carteira)}*\n` +
-          `⚠️ Faltam:     *${formatarSaldo(faltam, carteira)}*`,
+        text: sortearFala('saldoInsuficiente', { preco: itemInfo.preco, saldo, faltam, carteira }),
       }, { quoted: msg });
       return;
     }
     console.error('Erro ao debitar gold (buyroubo):', e.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao processar a compra. Tente novamente.',
+      text: sortearFala('compraErro'),
     }, { quoted: msg });
     return;
   }
@@ -285,12 +611,12 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
     try {
       await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item. Seu saldo foi reembolsado.',
+        text: sortearFala('compraReembolsada'),
       }, { quoted: msg });
     } catch (refundErr) {
       console.error('FALHA CRÍTICA: reembolso também falhou (buyroubo):', refundErr.message);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item e ao reembolsar o saldo. Contate um administrador.',
+        text: sortearFala('compraFalhaCritica'),
       }, { quoted: msg });
     }
     return;
@@ -299,13 +625,7 @@ async function handleComprarRoubo(sock, msg, jid, caption) {
   const carteiraFinal = await getCarteira(userId, idGrupo);
 
   await sock.sendMessage(jid, {
-    text:
-      `✅ *COMPRA REALIZADA!*\n\n` +
-      `🔧 *Item/ferramenta:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${formatarNumeroBR(itemInfo.preco)} Prata\n` +
-      `📈 *Bônus:* +${itemInfo.bonus}% de sucesso\n` +
-      `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
-      `💡 Use *!equiparroubo ${itemInfo.codigo}* para equipar!`,
+    text: sortearFala('compraRouboSucesso', { itemInfo, carteiraFinal }),
   }, { quoted: msg });
 }
 
@@ -318,14 +638,14 @@ async function handleComprarSec(sock, msg, jid, caption) {
   const itemSlug = resolverChaveFerramenta(itemDigitado, ITENS_SEGURANCA);
   if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!buysec <chave>*\nExemplo: *!buysec cofre*',
+      text: sortearFala('compraSecUso'),
     }, { quoted: msg });
     return;
   }
   const itemInfo = ITENS_SEGURANCA[itemSlug];
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não encontrado na loja de segurança!\nUse *!menusec* para ver os disponíveis.`,
+      text: sortearFala('itemNaoEncontrado', { item: itemSlug, menu: 'menusec' }),
     }, { quoted: msg });
     return;
   }
@@ -339,17 +659,13 @@ async function handleComprarSec(sock, msg, jid, caption) {
       const saldo    = carteira.gold ?? 0;
       const faltam   = Math.max(0, itemInfo.preco - saldo);
       await sock.sendMessage(jid, {
-        text:
-          `❌ *SALDO INSUFICIENTE!*\n\n` +
-          `💵 Preço:      *${formatarSaldo(itemInfo.preco, carteira)}*\n` +
-          `💰 Seu saldo:  *${formatarSaldo(saldo, carteira)}*\n` +
-          `⚠️ Faltam:     *${formatarSaldo(faltam, carteira)}*`,
+        text: sortearFala('saldoInsuficiente', { preco: itemInfo.preco, saldo, faltam, carteira }),
       }, { quoted: msg });
       return;
     }
     console.error('Erro ao debitar gold (buysec):', e.message);
     await sock.sendMessage(jid, {
-      text: '⚠️ Erro ao processar a compra. Tente novamente.',
+      text: sortearFala('compraErro'),
     }, { quoted: msg });
     return;
   }
@@ -361,12 +677,12 @@ async function handleComprarSec(sock, msg, jid, caption) {
     try {
       await alterarGold(userId, idGrupo, itemInfo.preco, `Reembolso: ${itemInfo.nome}`);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item. Seu saldo foi reembolsado.',
+        text: sortearFala('compraReembolsada'),
       }, { quoted: msg });
     } catch (refundErr) {
       console.error('FALHA CRÍTICA: reembolso também falhou (buysec):', refundErr.message);
       await sock.sendMessage(jid, {
-        text: '⚠️ Erro ao registrar o item e ao reembolsar o saldo. Contate um administrador.',
+        text: sortearFala('compraFalhaCritica'),
       }, { quoted: msg });
     }
     return;
@@ -375,13 +691,7 @@ async function handleComprarSec(sock, msg, jid, caption) {
   const carteiraFinal = await getCarteira(userId, idGrupo);
 
   await sock.sendMessage(jid, {
-    text:
-      `✅ *COMPRA REALIZADA!*\n\n` +
-      `🔐 *Item:* ${itemInfo.nome}\n` +
-      `💵 *Preço:* ${formatarSaldo(itemInfo.preco, carteiraFinal)}\n` +
-      `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
-      `💎 *Saldo restante:* ${formatarSaldo(carteiraFinal.gold, carteiraFinal)}\n\n` +
-      `💡 Use *!equiparsec ${itemInfo.codigo}* para ativar!`,
+    text: sortearFala('compraSecSucesso', { itemInfo, carteiraFinal }),
   }, { quoted: msg });
 }
 
@@ -394,7 +704,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 
   if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!equiparroubo <chave>*\nExemplo: *!equiparroubo dinamite*',
+      text: sortearFala('equiparRouboUso'),
     }, { quoted: msg });
     return;
   }
@@ -405,7 +715,7 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não existe!\nUse *!menuroubar* para ver os disponíveis.`,
+      text: sortearFala('itemNaoEncontrado', { item: itemSlug, menu: 'menuroubar' }),
     }, { quoted: msg });
     return;
   }
@@ -415,30 +725,29 @@ async function handleEquiparRoubo(sock, msg, jid, caption) {
 
   if (qtd <= 0) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemInfo.codigo}*`,
+      text: sortearFala('itemNaoPossuido', { itemInfo, comando: 'buyroubo' }),
     }, { quoted: msg });
     return;
   }
 
+  const camposEquipados = { [campoEquipado]: itemSlug };
+  // Ferramenta bancária passa a ser também a escolha ativa de /roubar,
+  // mas mantém seu próprio slot para continuar disponível em /roubarbanco.
+  if (ferramentaBanco) camposEquipados.equiparoubo = itemSlug;
+
   await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: userId, idGrupo },
-    { $set: { [campoEquipado]: itemSlug } }
+    { $set: camposEquipados }
   );
 
-  const taxaBase = ferramentaBanco ? TAXA_SUCESSO_BASE_BANCO : TAXA_SUCESSO_BASE;
-  const taxaFinal = Math.min(TAXA_MAX, taxaBase + itemInfo.bonus);
-  const destino = ferramentaBanco ? '!roubarbanco @pessoa' : '!roubar @pessoa';
+  const taxaRoubo = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + itemInfo.bonus);
+  const taxaBanco = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE_BANCO + itemInfo.bonus);
+  const destino = ferramentaBanco
+    ? '!roubar @pessoa ou !roubarbanco @pessoa'
+    : '!roubar @pessoa';
 
   await sock.sendMessage(jid, {
-    text:
-      `✅ *${ferramentaBanco ? 'FERRAMENTA BANCÁRIA' : 'ITEM DE ROUBO'} EQUIPADO!* ✅\n\n` +
-      `🎭 *Item:* ${itemInfo.nome}\n` +
-      `📈 *Bônus de sucesso:* +${itemInfo.bonus}%\n` +
-      `🎲 *Taxa com este item:* até *${taxaFinal}%*\n` +
-      `🎒 *No inventário:* ${qtd}x\n\n` +
-      `🔫 Agora use *${destino}* para atacar!`,
+    text: sortearFala('equiparRouboSucesso', { itemInfo, qtd, taxaRoubo, taxaBanco, ferramentaBanco, destino }),
   }, { quoted: msg });
 }
 
@@ -452,7 +761,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
 
   if (!itemSlug) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!equiparsec <chave>*\nExemplo: *!equiparsec cofre*',
+      text: sortearFala('equiparSecUso'),
     }, { quoted: msg });
     return;
   }
@@ -460,7 +769,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
 
   if (!itemInfo) {
     await sock.sendMessage(jid, {
-      text: `⚠️ Item *${itemSlug}* não existe!\nUse *!menusec* para ver os disponíveis.`,
+      text: sortearFala('itemNaoEncontrado', { item: itemSlug, menu: 'menusec' }),
     }, { quoted: msg });
     return;
   }
@@ -470,9 +779,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
 
   if (qtd <= 0) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ Você não possui *${itemInfo.nome}* neste grupo!\n\n` +
-        `🛒 Compre com *!buysec ${itemInfo.codigo}*`,
+      text: sortearFala('itemNaoPossuido', { itemInfo, comando: 'buysec' }),
     }, { quoted: msg });
     return;
   }
@@ -485,12 +792,7 @@ async function handleEquiparSec(sock, msg, jid, caption) {
   const defesaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + itemInfo.defesa);
 
   await sock.sendMessage(jid, {
-    text:
-      `✅ *DEFESA ATIVADA!* ✅\n\n` +
-      `🔐 *Item:* ${itemInfo.nome}\n` +
-      `🛡️ *Proteção:* +${itemInfo.defesa}%\n` +
-      `🔒 *Chance de resistir:* até *${defesaFinal}%*\n` +
-      `🎒 *No inventário:* ${qtd}x`,
+    text: sortearFala('equiparSecSucesso', { itemInfo, qtd, defesaFinal }),
   }, { quoted: msg });
 }
 
@@ -550,7 +852,7 @@ async function handleInvRoubo(sock, msg, jid) {
   }
 
   if (!possuiItens) {
-    texto += `🛒 Compre itens e ferramentas em *!menuroubar* com *!buyroubo <chave>*`;
+    texto += sortearFala('inventarioRouboVazio');
   } else {
     texto += `Use *!equiparroubo <chave>* para escolher o equipamento de cada categoria.`;
   }
@@ -581,8 +883,8 @@ async function handleInvSec(sock, msg, jid) {
   }
 
   if (!temItem) {
-    texto += `😔 Você não possui nenhum item de segurança neste grupo.\n\n`;
-    texto += `🛒 Compre itens com *!menusec*!`;
+    texto += `${sortearFala('inventarioSecVazio')}\n\n`;
+    texto += `🛒 Use *!menusec* para consultar a loja.`;
   } else {
     texto += `\n━━━━━━━━━━━━━━━━\n`;
 
@@ -595,8 +897,7 @@ async function handleInvSec(sock, msg, jid) {
       texto += `🛡️ *Defesa ativa:* +${eq.defesa}% de proteção\n`;
       texto += `🔒 *Chance de resistir:* até ${chanceResistir}%`;
     } else {
-      texto += `⚠️ *Nenhuma defesa ativa!*\n`;
-      texto += `Use *!equiparsec <chave>* para ativar.`;
+      texto += sortearFala('semDefesaAtiva');
     }
   }
 
@@ -625,9 +926,9 @@ async function handleMeioSec(sock, msg, jid) {
     texto += `  🛡️ Total: *${defesaFinal}%* de chance de resistir\n\n`;
     texto += `🔄 Troque com *!equiparsec <chave>*`;
   } else {
-    texto += `❌ *Nenhuma defesa ativa!*\n\n`;
+    texto += `${sortearFala('semDefesaAtiva')}\n`;
     texto += `⚠️ Sem defesa você tem apenas *${TAXA_SUCESSO_BASE}%* de chance de resistir!\n`;
-    texto += `🛒 Compre com *!menusec* e equipe com *!equiparsec <chave>*`;
+    texto += `🛒 Consulte *!menusec* para escolher uma proteção.`;
   }
 
   await sock.sendMessage(jid, { text: texto }, { quoted: msg });
@@ -644,13 +945,13 @@ async function handleRoubar(sock, msg, jid) {
   // ── Validações básicas ───────────────────────────────────────────────────────
   if (!vitimaId) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!roubar @pessoa*\nMencione quem você quer roubar!',
+      text: sortearFala('roubarSemMencao'),
     }, { quoted: msg });
     return;
   }
 
   if (atacanteId === vitimaId) {
-    await sock.sendMessage(jid, { text: '❌ Você não pode se roubar!' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: sortearFala('roubarProprio') }, { quoted: msg });
     return;
   }
   // ── Buscar carteiras em paralelo ─────────────────────────────────────────────
@@ -659,27 +960,27 @@ async function handleRoubar(sock, msg, jid) {
     getCarteira(vitimaId,   idGrupo),
   ]);
 
-  // ── Item equipado obrigatório ────────────────────────────────────────────────
-  const itemSlugAtaque = carteiraAtacante.equiparoubo;
-  const itemAtaque     = itemSlugAtaque && ITENS_ROUBO[itemSlugAtaque];
+  // ── Item equipado obrigatório (aceita ferramentas comuns e bancárias) ────────
+  const ferramentaAtaque = selecionarFerramentaRoubo(carteiraAtacante);
 
-  if (!itemAtaque) {
+  if (!ferramentaAtaque) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ *Você precisa equipar um item de roubo antes!*\n\n` +
-        `🛒 Compre com *!menuroubar*\n` +
-        `⚡ Equipe com *!equiparroubo <chave>*`,
+      text: sortearFala('roubarSemFerramenta'),
     }, { quoted: msg });
     return;
   }
 
-  // ── Confere se ainda tem o item em estoque (mesma checagem do !roubarbanco) ──
-  const qtdItemAtaque = getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque);
+  const {
+    slug: itemSlugAtaque,
+    inventario: campoInventarioAtaque,
+    campoEquipado: campoEquipadoAtaque,
+  } = ferramentaAtaque;
+  const itemAtaque = ferramentaAtaque.catalogo[itemSlugAtaque];
+  const qtdItemAtaque = getItemQtd(carteiraAtacante[campoInventarioAtaque], itemSlugAtaque);
+
   if (qtdItemAtaque <= 0) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ Você não possui mais *${itemAtaque.nome}* no inventário!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemAtaque.codigo}*`,
+      text: sortearFala('roubarSemEstoque', { itemInfo: itemAtaque }),
     }, { quoted: msg });
     return;
   }
@@ -694,7 +995,7 @@ async function handleRoubar(sock, msg, jid) {
   if (agora < prestoAte) {
     const restante = prestoAte - agora;
     await sock.sendMessage(jid, {
-      text: `🚔 *VOCÊ ESTÁ PRESO!*\n\nAguarde *${formatarTempo(restante)}* para sair da prisão.`,
+      text: sortearFala('usuarioPreso', { tempo: formatarTempo(restante) }),
     }, { quoted: msg });
     return;
   }
@@ -708,7 +1009,7 @@ async function handleRoubar(sock, msg, jid) {
   if (tempoPassado < COOLDOWN_ROUBO_MS) {
     const restante = COOLDOWN_ROUBO_MS - tempoPassado;
     await sock.sendMessage(jid, {
-      text: `⏱️ *COOLDOWN ATIVO!*\n\nAguarde *${formatarTempo(restante)}* para tentar novamente.`,
+      text: sortearFala('cooldownRoubo', { tempo: formatarTempo(restante), banco: false }),
     }, { quoted: msg });
     return;
   }
@@ -718,7 +1019,7 @@ async function handleRoubar(sock, msg, jid) {
   if (agora < imunidadeAte) {
     const restante = imunidadeAte - agora;
     await sock.sendMessage(jid, {
-      text: `🛡️ *VÍTIMA IMUNE!*\n\nEssa pessoa foi roubada recentemente e está protegida por mais *${formatarTempo(restante)}*.`,
+      text: sortearFala('alvoImune', { tempo: formatarTempo(restante) }),
     }, { quoted: msg });
     return;
   }
@@ -727,7 +1028,7 @@ async function handleRoubar(sock, msg, jid) {
   const saldoVitima = carteiraVitima.gold ?? 0;
   if (saldoVitima <= 0) {
     await sock.sendMessage(jid, {
-      text: '❌ A vítima não tem saldo para roubar neste grupo!',
+      text: sortearFala('roubarVitimaSemSaldo'),
     }, { quoted: msg });
     return;
   }
@@ -769,10 +1070,12 @@ async function handleRoubar(sock, msg, jid) {
   // ── Consumir item de ataque (sempre, independente do resultado) ──────────
   // Reaproveita o documento retornado pelo próprio decremento — evita um
   // round-trip extra ao banco só para checar se o estoque zerou.
-  const carteiraAtacanteAtualizada = await incrementarItem(atacanteId, idGrupo, 'itensRoubo', itemSlugAtaque, -1);
+  const carteiraAtacanteAtualizada = await incrementarItem(
+    atacanteId, idGrupo, campoInventarioAtaque, itemSlugAtaque, -1
+  );
   const qtdItemAtaqueRestante = carteiraAtacanteAtualizada
-    ? getItemQtd(carteiraAtacanteAtualizada.itensRoubo, itemSlugAtaque)
-    : Math.max(0, getItemQtd(carteiraAtacante.itensRoubo, itemSlugAtaque) - 1); // fallback se a guarda atômica bloqueou
+    ? getItemQtd(carteiraAtacanteAtualizada[campoInventarioAtaque], itemSlugAtaque)
+    : Math.max(0, getItemQtd(carteiraAtacante[campoInventarioAtaque], itemSlugAtaque) - 1); // fallback se a guarda atômica bloqueou
 
   // ── Consumir item de defesa da vítima (se houver, sempre) ────────────────
   if (itemDefesa) {
@@ -790,9 +1093,20 @@ async function handleRoubar(sock, msg, jid) {
   }
 
   if (qtdItemAtaqueRestante <= 0) {
+    const camposParaLimpar = {};
+    if (carteiraAtacante.equiparoubo === itemSlugAtaque) {
+      camposParaLimpar.equiparoubo = '';
+    }
+    if (carteiraAtacante.equiparouboBanco === itemSlugAtaque) {
+      camposParaLimpar.equiparouboBanco = '';
+    }
+    if (Object.keys(camposParaLimpar).length === 0) {
+      camposParaLimpar[campoEquipadoAtaque] = '';
+    }
+
     await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: atacanteId, idGrupo },
-      { $unset: { equiparoubo: '' } }
+      { $unset: camposParaLimpar }
     );
   }
 
@@ -925,7 +1239,7 @@ async function handlePolicia(sock, msg, jid) {
   // ── Validações rápidas ────────────────────────────────────────────────────
   if (!ladrao) {
     await sock.sendMessage(jid, {
-      text: '⚠️ Use: *!policia @ladrão*\nMencione quem te roubou!',
+      text: sortearFala('policiaSemMencao'),
     }, { quoted: msg });
     return;
   }
@@ -960,9 +1274,7 @@ async function handlePolicia(sock, msg, jid) {
 
   if (!ladraoCorrespondeAoRegistro || !dentroDaJanelaDenuncia) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ *NÃO É POSSÍVEL CHAMAR A POLÍCIA!*\n\n` +
-        `Você só pode acionar a polícia nos primeiros 15 minutos após o roubo.`,
+      text: sortearFala('policiaPrazoExpirado'),
     }, { quoted: msg });
     return;
   }
@@ -1061,10 +1373,16 @@ async function consumirFerramentaBanco(atacanteId, idGrupo, itemSlug, carteiraAt
     : Math.max(0, getItemQtd(carteiraAtacante.itensRouboBanco, itemSlug) - 1);
 
   if (restante <= 0) {
-    await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: atacanteId, idGrupo },
-      { $unset: { equiparouboBanco: '' } }
-    );
+    await Promise.all([
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: atacanteId, idGrupo, equiparouboBanco: itemSlug },
+        { $unset: { equiparouboBanco: '' } }
+      ),
+      CarteiraGrupo.findOneAndUpdate(
+        { idWhatsApp: atacanteId, idGrupo, equiparoubo: itemSlug },
+        { $unset: { equiparoubo: '' } }
+      ),
+    ]);
   }
 }
 
@@ -1080,16 +1398,14 @@ async function handleRoubarBanco(sock, msg, jid) {
   // ── Validações básicas ────────────────────────────────────────────────────
   if (!vitimaId) {
     await sock.sendMessage(jid, {
-      text:
-        '⚠️ Use: *!roubarbanco @pessoa*\n' +
-        'Mencione quem você quer assaltar no banco!',
+      text: sortearFala('roubarBancoSemMencao'),
     }, { quoted: msg });
     return;
   }
 
   if (atacanteId === vitimaId) {
     await sock.sendMessage(jid, {
-      text: '❌ Você não pode roubar seu próprio banco!',
+      text: sortearFala('roubarBancoProprio'),
     }, { quoted: msg });
     return;
   }
@@ -1100,26 +1416,22 @@ async function handleRoubarBanco(sock, msg, jid) {
   ]);
 
   // ── Item equipado obrigatório ─────────────────────────────────────────────
-  const itemSlugAtaque = carteiraAtacante.equiparouboBanco;
-  const itemAtaque     = itemSlugAtaque && ITENS_ROUBO_BANCO[itemSlugAtaque];
+  const ferramentaBanco = selecionarFerramentaBanco(carteiraAtacante);
+  const itemSlugAtaque = ferramentaBanco?.slug;
+  const itemAtaque = ferramentaBanco?.item;
 
   if (!itemAtaque) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ *Você precisa equipar uma ferramenta de banco antes!*\n\n` +
-        `🛒 Compre com *!menuroubar*\n` +
-        `⚡ Equipe com *!equiparroubo <chave>*`,
+      text: sortearFala('roubarBancoSemFerramenta'),
     }, { quoted: msg });
     return;
   }
 
-  // ── Verificar se atacante tem o item no inventário (vai consumir se falhar) ─
+  // Só consulta o inventário bancário: itens comuns nunca são aceitos aqui.
   const qtdItem = getItemQtd(carteiraAtacante.itensRouboBanco, itemSlugAtaque);
   if (qtdItem <= 0) {
     await sock.sendMessage(jid, {
-      text:
-        `❌ Você não possui *${itemAtaque.nome}* no inventário!\n\n` +
-        `🛒 Compre com *!buyroubo ${itemAtaque.codigo}*`,
+      text: sortearFala('roubarBancoSemEstoque', { itemInfo: itemAtaque }),
     }, { quoted: msg });
     return;
   }
@@ -1129,7 +1441,7 @@ async function handleRoubarBanco(sock, msg, jid) {
   if (agora < imunidadeAte) {
     const restante = imunidadeAte - agora;
     await sock.sendMessage(jid, {
-      text: `🛡️ *VÍTIMA IMUNE!*\n\nEssa pessoa foi roubada recentemente e está protegida por mais *${formatarTempo(restante)}*.`,
+      text: sortearFala('alvoImune', { tempo: formatarTempo(restante) }),
     }, { quoted: msg });
     return;
   }
@@ -1138,7 +1450,7 @@ async function handleRoubarBanco(sock, msg, jid) {
   const prestoAte = _tsOuZero(carteiraAtacante.prestoAte);
   if (agora < prestoAte) {
     await sock.sendMessage(jid, {
-      text: `🚔 *VOCÊ ESTÁ PRESO!*\n\nAguarde *${formatarTempo(prestoAte - agora)}* para sair da prisão.`,
+      text: sortearFala('usuarioPreso', { tempo: formatarTempo(prestoAte - agora) }),
     }, { quoted: msg });
     return;
   }
@@ -1148,7 +1460,7 @@ async function handleRoubarBanco(sock, msg, jid) {
   const restanteCd       = COOLDOWN_ROUBARBANCO_MS - (agora - ultimoRouboBanco);
   if (restanteCd > 0) {
     await sock.sendMessage(jid, {
-      text: `⏱️ *COOLDOWN ATIVO!*\n\nAguarde *${formatarTempo(restanteCd)}* para tentar assaltar o banco novamente.`,
+      text: sortearFala('cooldownRoubo', { tempo: formatarTempo(restanteCd), banco: true }),
     }, { quoted: msg });
     return;
   }
@@ -1159,7 +1471,7 @@ async function handleRoubarBanco(sock, msg, jid) {
 
   if (saldoBanco <= 0) {
     await sock.sendMessage(jid, {
-      text: '❌ *A vítima não possui nenhum investimento ativo no banco!*',
+      text: sortearFala('roubarBancoSemInvestimento'),
     }, { quoted: msg });
     return;
   }
@@ -1281,6 +1593,10 @@ module.exports = {
   ITENS_ROUBO_BANCO,
   ITENS_SEGURANCA,
   resolverChaveFerramenta,
+  selecionarFerramentaRoubo,
+  selecionarFerramentaBanco,
+  sortearFala,
+  FALAS_VARIADAS,
   handleMenuRoubo,
   handleMenuSec,
   handleComprarRoubo,

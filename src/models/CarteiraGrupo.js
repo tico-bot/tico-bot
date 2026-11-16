@@ -19,6 +19,7 @@ const emprestimoSchema = new mongoose.Schema(
   {
     ativo:             { type: Boolean, default: false },
     valor:             { type: Number,  default: 0,   min: 0 },
+    iof:               { type: Number,  default: 0,   min: 0 },
     vencimento:        { type: Date,    default: null },
     solicitadoEm:      { type: Date,    default: null },
     prazo:             { type: Number,  default: 7,   min: 1 },

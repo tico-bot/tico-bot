@@ -765,7 +765,7 @@ function buildMensagemVendedor({
 
 async function executarCompra({
   compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome,
-  buyerWalletLinked = false, sellerWalletLinked = false, purchaseId,
+  buyerWalletLinked = false, sellerWalletLinked = false, purchaseId, idGrupo,
 }, session) {
 
   // 1. Leitura paralela — sem writes ainda
@@ -815,6 +815,12 @@ async function executarCompra({
   const taxa         = Math.floor(totalBruto * CONFIG.TAXA_MERCADO_PCT / 100);
   const totalLiquido = totalBruto - taxa;
   const saldoAtual   = saldoDoc.gold ?? 0;
+
+  // A taxa de mercado pré-existente é direccionada ao Tesouro do grupo
+  // onde a transação foi concluída, apenas enquanto o Modo República estiver activo.
+  const republicaAtiva = idGrupo && idGrupo.endsWith('@g.us') && !buyerWalletLinked && !sellerWalletLinked
+    ? await require('../republica/economia').modoAtivo(idGrupo)
+    : false;
 
   if (!buyerWalletLinked && saldoAtual < totalBruto) {
     const err = new Error('SALDO_INSUFICIENTE');
@@ -905,6 +911,17 @@ async function executarCompra({
     const err = new Error('VENDEDOR_NAO_ENCONTRADO');
     err.userMsg = `⚠️ O vendedor não foi encontrado. Contate um administrador.`;
     throw err;
+  }
+
+  // A comissão antiga de 5% passa a compor a arrecadação do Tesouro.
+  // Usa a mesma sessão da compra para manter carteira, oferta e Tesouro atómicos.
+  if (republicaAtiva && taxa > 0) {
+    const requestIdTesouro = 'market-' + String(purchaseId || crypto.randomUUID());
+    await require('../republica/economia').arrecadar(
+      idGrupo, taxa, 'Comissão do marketplace', 'Venda no marketplace',
+      requestIdTesouro,
+      { session, usuarioId: compradorId, responsavelId: vendedorId }
+    );
   }
 
   // 5. Registrar log (com nomes para exibição no histórico)
@@ -1626,7 +1643,7 @@ async function handleBuy(sock, msg, jid, caption) {
       executarCompra(
         {
           compradorId, vendedorId, itemKey, quantidade, compradorNome, vendedorNome,
-          buyerWalletLinked, sellerWalletLinked, purchaseId,
+          buyerWalletLinked, sellerWalletLinked, purchaseId, idGrupo: jid,
         },
         session
       )

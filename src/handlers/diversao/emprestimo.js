@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
 const { resolverJidCarteira, getCarteira, alterarGold, formatarSaldo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
+const republicaEconomia = require('../republica/economia');
 // Usuario removido — level agora vem do grupo
 
 // ─── Configuração ─────────────────────────────────────────────────────────────
@@ -207,17 +208,21 @@ async function getUserId(msg, idGrupo) {
 async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
   const vencimento = new Date(Date.now() + prazoArg * MS_POR_DIA);
   const requestId = crypto.randomUUID();
+  const carteira = await getCarteira(userId, idGrupo);
+  const carteiraVinculada = Boolean(carteira.currencyInfo || carteira.walletLinked);
+  const iof = carteiraVinculada ? 0 : (await republicaEconomia.calcularIOF(idGrupo, valor)).imposto;
+  const valorLiquido = Math.max(0, valor - iof);
   const emprestimo = {
     ativo: true,
     valor,
+    iof,
     vencimento,
     solicitadoEm: new Date(),
     prazo: prazoArg,
     requestId,
   };
-  const carteira = await getCarteira(userId, idGrupo);
 
-  if (carteira.currencyInfo) {
+  if (carteiraVinculada) {
     const criada = await CarteiraGrupo.findOneAndUpdate(
       { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': { $ne: true } },
       { $set: { emprestimo } },
@@ -244,20 +249,42 @@ async function _criarEmprestimo(userId, idGrupo, valor, prazoArg) {
     }
   }
 
-  return CarteiraGrupo.findOneAndUpdate(
+  if (valorLiquido <= 0) throw new Error('O IOF não pode consumir todo o valor do empréstimo.');
+  const criada = await CarteiraGrupo.findOneAndUpdate(
     { idWhatsApp: userId, idGrupo, 'emprestimo.ativo': { $ne: true } },
     {
-      $inc: { gold: valor },
+      $inc: { gold: valorLiquido },
       $set: { emprestimo },
       $push: {
         goldHistory: {
-          $each:  [{ type: 'recebido', item: `Empréstimo (${prazoArg} dias)`, amount: valor }],
+          $each: [{
+            type: 'recebido',
+            item: `Empréstimo (${prazoArg} dias)${iof ? ` — IOF: ${iof}` : ''}`,
+            amount: valorLiquido,
+          }],
           $slice: -50,
         },
       },
     },
     { upsert: true, new: true }
   );
+  if (!criada?.emprestimo?.ativo || criada.emprestimo.requestId !== requestId) return null;
+  if (iof > 0) {
+    try {
+      await republicaEconomia.arrecadar(idGrupo, iof, 'IOF-Tico', 'Concessão de empréstimo', 'iof:' + requestId, { usuarioId: userId });
+    } catch (erroTesouro) {
+      await CarteiraGrupo.updateOne(
+        { idWhatsApp: userId, idGrupo, 'emprestimo.requestId': requestId, 'emprestimo.ativo': true },
+        {
+          $inc: { gold: -valorLiquido },
+          $set: { 'emprestimo.ativo': false },
+          $push: { goldHistory: { $each: [{ type: 'gasto', item: 'Estorno de empréstimo sem registo do IOF', amount: valorLiquido }], $slice: -50 } },
+        }
+      ).catch(() => {});
+      throw erroTesouro;
+    }
+  }
+  return criada;
 }
 
 /**

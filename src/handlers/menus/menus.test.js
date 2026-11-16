@@ -103,15 +103,16 @@ test('main and category menus include key working commands', async () => {
 
   const games = await renderMenu('jogos', () =>
     utilidade.handleMenuJogos(sock, msg, jid, getPrefix));
-  for (const command of ['quizhelp', 'quizfut', 'quizfutebol', 'quiztiktok', 'quizmoda', 'forca', 'pescar', 'minerios', 'eredivisie', 'mundial', 'campeonatozoeira']) {
+  for (const command of ['quizhelp', 'quizfut', 'quizfutebol', 'quiztiktok', 'quizmoda', 'forca', 'pescar', 'garimpar', 'minerar', 'minerios', 'eredivisie', 'mundial', 'campeonatozoeira']) {
     assert.ok(games.includes(command), 'menujogos should include ' + command);
   }
+  assert.match(games, /!garimpar \/ !minerar — obter minérios/);
   assert.match(games, /Limite: 30 quizzes por jogador a cada 30 minutos/);
   assert.match(games, /quiztiktok — trends, memes e casos de famosos \(150 perguntas\)/);
   assert.match(games, /quizmoda — história, marcas, estilos e tecidos \(150 perguntas\)/);
   assert.match(games, /Cada acerto: \+450 Pratas e \+10 pontos/);
   assert.match(games, /3 acertos = \+500 Pratas extras/);
-  assert.match(games, /Top 3 diário às 18h30: 10\.000 \/ 5\.000 \/ 3\.500 Pratas/);
+  assert.match(games, /Top 3 diário: 18h30 no primeiro grupo; \+40 min por grupo/);
 
   const downloads = await renderMenu('downloads', () =>
     utilidade.handleMenuBaixar(sock, msg, jid, getPrefix));
@@ -136,6 +137,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(prata, /rankingpesca/);
   assert.match(prata, /!prata/);
   assert.match(prata, /!rankprata/);
+  assert.match(prata, /!garimpar \/ !minerar — garimpar recursos/);
   assert.match(prata, /!minerios — catálogo, raridades, valores e probabilidades/);
 
   const effects = await renderMenu('efeitos', () =>

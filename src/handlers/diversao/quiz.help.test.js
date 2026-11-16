@@ -32,6 +32,7 @@ test('/quizhelp explica os temas, os comandos e as regras', async () => {
   assert.match(text, new RegExp(perguntasQuizModa.length + ' perguntas'));
   assert.match(text, /500 Pratas extras/);
   assert.match(text, /18h30/);
+  assert.match(text, /intervalos de 40 minutos/);
   assert.equal(sent[0].options.quoted, msg);
 });
 

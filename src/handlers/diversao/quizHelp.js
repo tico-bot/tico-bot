@@ -55,7 +55,7 @@ async function handleQuizHelp(sock, msg, jid, prefix = '/') {
     '🏆 PONTOS E RECOMPENSAS',
     '  • Cada acerto: +10 pontos e +' + numero.format(QUIZ_GOLD_REWARD) + ' Pratas.',
     '  • Três respostas certas no dia: +500 Pratas extras.',
-    '  • Os três primeiros do ranking diário recebem às 18h30:',
+    '  • Top 3 diário: primeiro grupo às 18h30; os demais recebem em intervalos de 40 minutos:',
     '    🥇 10.000 · 🥈 5.000 · 🥉 3.500 Pratas.',
     '  • Consulte sua pontuação com ' + P + 'pontos e o ranking com ' + P + 'rankjogos.',
     '',

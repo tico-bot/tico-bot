@@ -39,7 +39,7 @@ function formatarCatalogoMinerios(prefix = '!') {
     `📚 Existem *${MINERIOS.length} minérios* para descobrir.`,
     '🎲 Cada tentativa sorteia um minério; as probabilidades individuais somam 100%.',
     `⚡ Acontecimento especial: *${formatarChance(EVENTOS_GARIMPO.reduce((soma, evento) => soma + evento.chance, 0))}%* de chance por tentativa.`,
-    `⏳ Cooldown do ${prefix}garimpar: *15 minutos*.`,
+    `⏳ Cooldown de ${prefix}garimpar / ${prefix}minerar: *15 minutos*.`,
   ];
 
   for (const raridade of ORDEM_RARIDADES) {
@@ -52,7 +52,7 @@ function formatarCatalogoMinerios(prefix = '!') {
     }
   }
 
-  linhas.push('', '━━━━━━━━━━━━━━━━━━━━', `Use *${prefix}garimpar* para tentar a sorte!`);
+  linhas.push('', '━━━━━━━━━━━━━━━━━━━━', `Use *${prefix}garimpar* ou *${prefix}minerar* para tentar a sorte!`);
   return linhas.join('\n');
 }
 

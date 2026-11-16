@@ -49,6 +49,7 @@ const futebolApiHandler     = require('./handlers/futebol-api');
 const relacionamentoHandler = require('./handlers/relacionamento');
 const grupoHandler          = require('./handlers/grupo');
 const medievalHandler       = require('./handlers/medieval');
+const republicaHandler       = require('./handlers/republica');
 const imagemHandler         = require('./handlers/imagem');
 const textoHandler          = require('./handlers/texto');
 const utilidadeHandler      = require('./handlers/utilidade');
@@ -521,7 +522,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'graveprofundo'))   { await alteradoresHandler.handleGraveProfundo(sock, msg, jid); return; }
 
   // ── ACESSÓRIOS DE CASAL ───────────────────────────────────────
-  const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'saquear', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval'];
+  const CMDS_MEDIEVAIS = ['invmed', 'sellmed', 'givemed', 'saquear', 'lojamedieval', 'lojamed', 'ficha', 'atacar', 'magia', 'missaomed', 'recargamana', 'historico', 'rankmedieval', 'menumediev', 'comprar', 'equipar', 'desequipar', 'usarpocao', 'medieval', 'sistemmedieval', 'republica'];
   if (!CMDS_MEDIEVAIS.includes(cmdWord.slice(1)) && cmdWord.startsWith('.')) {
     const itemKey = cmdWord.slice(1);
     const { handleEquiparAcessorio } = require(path.join(__dirname, 'handlers', 'diversao', 'acessoriosCasal'));
@@ -808,8 +809,8 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleExtrato(sock, msg, jid, contactNames); return; }
   if (matchCmd(cmdWord, 'rankprata') || matchCmd(cmdWord, 'rankgold'))
     { await handleRankGold(sock, msg, jid, contactNames); return; }
-  if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
-    { await diversaoHandler.handleGarimpar(sock, msg, jid); return; }
+  if (matchCmd(cmdWord, 'garimpar') || matchCmd(cmdWord, 'minerar') || matchCmd(cmdWord, 'explorar') || matchCmd(cmdWord, 'pesquisar'))
+    { await diversaoHandler.handleGarimpar(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'minerios') || matchCmd(cmdWord, 'minérios') || matchCmd(cmdWord, 'catalogominerios'))
     { await diversaoHandler.handleMinerios(sock, msg, jid, getPrefix); return; }
   if (matchCmd(cmdWord, 'emprestimo') || matchCmdStart(cmd, 'emprestimo '))
@@ -828,6 +829,17 @@ async function handleMessage(sock, msg) {
   // ── MISSÕES ───────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'missao') || matchCmd(cmdWord, 'missoes'))
     { await diversaoHandler.handleMissao(sock, msg, jid, caption, getPrefix); return; }
+
+  // ── MODO REPÚBLICA ────────────────────────────────────────────
+  if (matchCmd(cmdWord, 'republica') || matchCmdStart(cmd, 'republica ')) {
+    const mentionsRepublica = content?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    const adminRepublica = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids);
+    await republicaHandler.handleRepublica(
+      sock, msg, jid, caption, senderJid, senderAlternateJids,
+      mentionsRepublica, adminRepublica, author, getPrefix(jid)
+    );
+    return;
+  }
 
   // ── MEDIEVAL ──────────────────────────────────────────────────
   if (matchCmd(cmdWord, 'medieval') || matchCmdStart(cmd, 'medieval '))

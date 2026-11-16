@@ -9,6 +9,7 @@ const { incrementMission } = require('./missoes');
 const { BANCO_CONFIG } = require(path.join(__dirname, '..', '..', 'config', 'banco'));
 const { getWalletBalance } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'wallet'));
 const { normalizarJid } = require(path.join(__dirname, '..', '..', 'utils', 'jid'));
+const republicaEconomia = require('../republica/economia');
 
 // ─── Helpers puros ────────────────────────────────────────────────────────────
 
@@ -390,6 +391,8 @@ async function handleResgatar(sock, msg, jid) {
 
   const futureAmount = calcularResgate(banco.amount, banco.interest);
   const ganho        = futureAmount - banco.amount;
+  let impostoBanco = 0;
+  let liquidoResgate = futureAmount;
 
   const entradaHistorico = {
     data:      new Date(),
@@ -440,10 +443,15 @@ async function handleResgatar(sock, msg, jid) {
       throw new Error('O investimento mudou durante o resgate; o saldo foi protegido para uma nova tentativa.');
     }
   } else {
-    carteiraFinal = await CarteiraGrupo.findOneAndUpdate(
-      { idWhatsApp: userId, idGrupo },
+    // Primeiro reserva o investimento para impedir dois resgates simultâneos.
+    const investimentoRetirado = await CarteiraGrupo.findOneAndUpdate(
       {
-        $inc: { gold: futureAmount },
+        idWhatsApp: userId,
+        idGrupo,
+        'banco.amount': banco.amount,
+        'banco.startDate': banco.startDate,
+      },
+      {
         $set: {
           'banco.amount': 0,
           'banco.interest': 0,
@@ -454,14 +462,34 @@ async function handleResgatar(sock, msg, jid) {
             $each: [entradaHistorico],
             $slice: -BANCO_CONFIG.HISTORICO_LIMITE,
           },
-          goldHistory: {
-            $each: [{ type: 'recebido', item: 'Resgate banco', amount: futureAmount }],
-            $slice: -50,
-          },
         },
       },
       { new: true },
     );
+    if (!investimentoRetirado) {
+      throw new Error('O investimento já foi resgatado ou mudou. Consulte o banco novamente.');
+    }
+    try {
+      const liquidacaoBanco = await republicaEconomia.liquidarRenda(
+        userId, idGrupo, futureAmount, ganho, 'Resgate do banco (juros tributáveis)'
+      );
+      carteiraFinal = liquidacaoBanco.carteira;
+      impostoBanco = liquidacaoBanco.imposto;
+      liquidoResgate = liquidacaoBanco.liquido;
+    } catch (erroResgate) {
+      await CarteiraGrupo.updateOne(
+        { idWhatsApp: userId, idGrupo, 'banco.amount': 0, 'banco.startDate': null },
+        {
+          $set: {
+            'banco.amount': banco.amount,
+            'banco.interest': banco.interest,
+            'banco.startDate': banco.startDate,
+          },
+          $pop: { 'banco.historico': 1 },
+        }
+      ).catch(() => {});
+      throw erroResgate;
+    }
   }
 
   // ── Progresso de missão no Usuario ──────────────────────────────────────────
@@ -480,8 +508,10 @@ async function handleResgatar(sock, msg, jid) {
       `*RESUMO:*\n` +
       `  💵 Investimento inicial: *${carteiraService.formatarSaldo(banco.amount, carteira)}*\n` +
       `  📈 Taxa de juros: *${banco.interest}%*\n` +
-      `  💰 Resgate total: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
-      `  💹 Lucro obtido: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n\n` +
+      `  💰 Resgate bruto: *${carteiraService.formatarSaldo(futureAmount, carteira)}*\n` +
+      `  💹 Lucro bruto: *+${carteiraService.formatarSaldo(ganho, carteira)}*\n` +
+      (impostoBanco > 0 ? `  🧾 IRPF-Tico sobre juros: *-${carteiraService.formatarSaldo(impostoBanco, carteira)}*\n` : '') +
+      `  💵 Total líquido recebido: *+${carteiraService.formatarSaldo(liquidoResgate, carteira)}*\n\n` +
       `━━━━━━━━━━━━━━━━\n` +
       `*SALDO FINAL (grupo):*\n` +
       `  ✅ Total na conta: *${carteiraService.formatarSaldo(carteiraFinal.gold, carteiraFinal)}*`,
