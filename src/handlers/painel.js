@@ -59,13 +59,16 @@ async function handleMeuPainel(sock, msg, jid) {
 
   } catch (err) {
     console.error('[painel] Erro ao processar !meupainel:', err);
-    const falhaTunel = err?.code === 'ENOENT'
-      || /cloudflared|túnel HTTPS|túnel.*conectar/i.test(String(err?.message || ''));
-    await sock.sendMessage(jid, {
-      text: falhaTunel
-        ? '❌ Não consegui criar a ligação segura com o site. Verifique se o cloudflared está instalado e se o computador tem acesso à internet; depois tente /meupainel novamente.'
-        : '❌ Erro ao gerar link do painel. Tente novamente em instantes.',
-    }, { quoted: msg }).catch(() => {});
+    let mensagemErro = '❌ Erro ao gerar link do painel. Tente novamente em instantes.';
+    if (err?.code === 'CLOUDFLARED_NOT_FOUND') {
+      mensagemErro = '❌ O cloudflared não foi encontrado neste computador. Instale-o ou configure CLOUDFLARED_PATH e tente /meupainel novamente.';
+    } else if (['CLOUDFLARED_START_FAILED', 'CLOUDFLARED_EXIT', 'TUNNEL_TIMEOUT'].includes(err?.code)) {
+      mensagemErro = '❌ Não consegui estabelecer o túnel seguro do painel. Verifique a conexão com a internet e os logs do Tico; depois tente novamente.';
+    } else if (err?.code === 'PUBLIC_API_URL_MISSING') {
+      mensagemErro = '❌ O Render não forneceu a URL pública da API do Tico. Verifique se o serviço está configurado como Web Service e tente novamente.';
+    }
+
+    await sock.sendMessage(jid, { text: mensagemErro }, { quoted: msg }).catch(() => {});
   }
 }
 

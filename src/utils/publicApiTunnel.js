@@ -23,15 +23,39 @@ function extractQuickTunnelUrl(output = '') {
   return matches?.[matches.length - 1] || null;
 }
 
-function normalisePublicApiUrl(value) {
+function normaliseConfiguredApiUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
     const parsed = new URL(value.trim());
-    if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith(TUNNEL_DOMAIN)) return null;
+    if (parsed.protocol !== 'https:' || !parsed.hostname) return null;
     if (parsed.username || parsed.password || parsed.search || parsed.hash) return null;
     const pathname = parsed.pathname.replace(/\/+$/, '');
     if (pathname !== '' && pathname !== '/api') return null;
     return `${parsed.origin}/api`;
+  } catch {
+    return null;
+  }
+}
+
+function normalisePublicApiUrl(value) {
+  const normalised = normaliseConfiguredApiUrl(value);
+  if (!normalised) return null;
+  try {
+    const hostname = new URL(normalised).hostname;
+    return hostname.endsWith(TUNNEL_DOMAIN) ? normalised : null;
+  } catch {
+    return null;
+  }
+}
+
+function normaliseRenderExternalUrl(value) {
+  const normalised = normaliseConfiguredApiUrl(value);
+  if (!normalised) return null;
+  try {
+    const hostname = new URL(normalised).hostname;
+    return hostname === 'onrender.com' || hostname.endsWith('.onrender.com')
+      ? normalised
+      : null;
   } catch {
     return null;
   }
@@ -97,8 +121,10 @@ function startQuickTunnel({
       });
       tunnelProcess = child;
     } catch (error) {
+      const failure = new Error(`Não foi possível iniciar o cloudflared: ${error.message}`, { cause: error });
+      failure.code = error.code === 'ENOENT' ? 'CLOUDFLARED_NOT_FOUND' : 'CLOUDFLARED_START_FAILED';
       startPromise = null;
-      reject(error);
+      reject(failure);
       return;
     }
 
@@ -111,10 +137,16 @@ function startQuickTunnel({
 
     child.stdout?.on('data', onOutput);
     child.stderr?.on('data', onOutput);
-    child.once('error', error => finish(error));
+    child.once('error', error => {
+      const failure = new Error(`Não foi possível executar o cloudflared: ${error.message}`, { cause: error });
+      failure.code = error.code === 'ENOENT' ? 'CLOUDFLARED_NOT_FOUND' : 'CLOUDFLARED_START_FAILED';
+      finish(failure);
+    });
     child.once('exit', (code, signal) => {
       if (!settled) {
-        finish(new Error(`cloudflared encerrou antes de conectar (código ${code ?? signal ?? 'desconhecido'}).`));
+        const failure = new Error(`cloudflared encerrou antes de conectar (código ${code ?? signal ?? 'desconhecido'}).`);
+        failure.code = 'CLOUDFLARED_EXIT';
+        finish(failure);
       } else if (tunnelProcess === child) {
         tunnelProcess = null;
         tunnelUrl = null;
@@ -123,7 +155,9 @@ function startQuickTunnel({
     });
 
     timer = setTimeout(() => {
-      finish(new Error('Tempo esgotado ao criar o túnel HTTPS do painel.'));
+      const failure = new Error('Tempo esgotado ao aguardar o cloudflared estabelecer a ligação.');
+      failure.code = 'TUNNEL_TIMEOUT';
+      finish(failure);
     }, timeoutMs);
     timer.unref?.();
   }).catch(error => {
@@ -135,8 +169,26 @@ function startQuickTunnel({
 }
 
 async function getPublicApiUrl() {
-  const configured = normalisePublicApiUrl(process.env.PUBLIC_API_URL);
+  // URL explícita pode ser de um domínio próprio, de um Quick Tunnel ou de outro
+  // endpoint HTTPS público configurado pelo administrador.
+  const configured = normaliseConfiguredApiUrl(process.env.PUBLIC_API_URL);
   if (configured) return configured;
+
+  // Serviços Web do Render já recebem HTTPS público pelo proxy da plataforma.
+  // Não iniciar cloudflared no Render: o próprio serviço atende /api.
+  if (String(process.env.RENDER || '').toLowerCase() === 'true') {
+    const renderUrl = normaliseRenderExternalUrl(process.env.RENDER_EXTERNAL_URL)
+      || normaliseRenderExternalUrl(
+        process.env.RENDER_EXTERNAL_HOSTNAME
+          ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
+          : ''
+      );
+    if (renderUrl) return renderUrl;
+
+    const error = new Error('O Render foi detectado, mas não informou uma URL pública válida para a API do Tico.');
+    error.code = 'PUBLIC_API_URL_MISSING';
+    throw error;
+  }
 
   const url = await startQuickTunnel();
   return `${url}/api`;
@@ -146,7 +198,9 @@ process.once('exit', stopPublicApiTunnel);
 
 module.exports = {
   extractQuickTunnelUrl,
+  normaliseConfiguredApiUrl,
   normalisePublicApiUrl,
+  normaliseRenderExternalUrl,
   startQuickTunnel,
   getPublicApiUrl,
   stopPublicApiTunnel,
