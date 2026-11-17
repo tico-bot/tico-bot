@@ -13,6 +13,7 @@ const { normalizarJid, normalizarJidUsuario, normalizarJidComDominio, extrairNum
 const { resolveDisplayName, validarNomeExibicao } = require('../utils/identity');
 const { getCarteira, alterarGold, transferirGold, formatarSaldo } = require('../utils/carteira');
 const { mapParaObjeto, somarMap } = require('../utils/mapas');
+const { resolverDestinoInventarioAdmin, listarInventarioAdmin } = require('../utils/adminInventory');
 const { calcularTotalMensagens, calcularTotalAcumulado } = require('../utils/message-count');
 const rateLimit      = require('express-rate-limit');
 
@@ -2296,184 +2297,182 @@ router.patch('/admin/usuario/:idWhatsApp/level', adminAuth, async (req, res) => 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/admin/usuario/:idWhatsApp/inventario?idGrupo=xxx
-// Retorna o inventário do usuário (do grupo ou global).
-// ─────────────────────────────────────────────────────────────────────────────
+// Retorna os inventários reais do usuário e da carteira do grupo.
 router.get('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
     const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
-    const idGrupo       = req.query.idGrupo;
-    const eGlobal       = !idGrupo || idGrupo === 'global';
+    const idGrupo = String(req.query.idGrupo || 'global');
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
 
-    if (!eGlobal) {
-      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
-      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
-      const carteira   = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-        .select('inventario')
-        .lean();
+    const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } })
+      .select('inventory')
+      .lean();
 
-      let inventario = carteira?.inventario || [];
-      if (!Array.isArray(inventario)) {
-        const obj = inventario instanceof Map ? Object.fromEntries(inventario) : (inventario || {});
-        inventario = Object.entries(obj).map(([nome, quantidade]) => ({
-          nome,
-          quantidade: Number(quantidade) || 1,
-        }));
-      }
-      return res.json({ inventario });
-    } else {
-      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
-      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
-      const jidNorm = jidsBusca[0];
-
-      const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } })
-        .select('inventory')
-        .lean();
-
-      const invObj = mapParaObjeto(usuario?.inventory || {});
-      const inventario = Object.entries(invObj).map(([nome, quantidade]) => ({
-        nome,
-        quantidade: Number(quantidade) || 1,
-      }));
-
-      return res.json({ inventario });
+    if (idGrupo === 'global') {
+      return res.json({ inventario: listarInventarioAdmin(usuario, null, { incluirGlobal: true }) });
     }
+    if (!idGrupo.endsWith('@g.us')) return res.status(400).json({ error: 'Grupo inválido.' });
+
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
+    const carteira = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
+      .select('inventario itensPets itensPesca itensRoubo itensRouboBanco itensSec')
+      .lean();
+
+    return res.json({
+      inventario: listarInventarioAdmin(usuario, carteira, { incluirGlobal: true }),
+    });
   } catch (err) {
     console.error('[API] GET /admin/usuario/inventario:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
+    return res.status(500).json({ error: 'Não foi possível carregar os inventários deste usuário.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/usuario/:idWhatsApp/inventario
-// Adiciona um item ao inventário do usuário em um grupo ou globalmente.
-// Body: { idGrupo, item, quantidade }
-// ─────────────────────────────────────────────────────────────────────────────
+// Body: { idGrupo, area, item (chave do catálogo), quantidade, nome? }
 router.post('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
-    const termoOriginal                 = decodeURIComponent(req.params.idWhatsApp);
-    const { idGrupo, item, quantidade } = req.body || {};
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo, area, item, nome, quantidade } = req.body || {};
+    const qtd = Number(quantidade);
 
-    if (!item || typeof item !== 'string' || !item.trim())
-      return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
-    const qtd = parseInt(quantidade, 10) || 1;
-    if (qtd < 1)
-      return res.status(400).json({ error: 'quantidade deve ser >= 1.' });
-
-    const nomeItem = item.trim();
-    const eGlobal  = !idGrupo || idGrupo === 'global';
-
-    if (!eGlobal) {
-      const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
-      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
-      const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-        .select('inventario')
-        .lean();
-
-      const invAtual = carteiraAtual?.inventario;
-      const ehArray  = Array.isArray(invAtual);
-
-      let carteira;
-      if (ehArray) {
-        const idx = (invAtual || []).findIndex(i => i.nome === nomeItem);
-        if (idx >= 0) {
-          carteira = await CarteiraGrupo.findOneAndUpdate(
-            { idWhatsApp, idGrupo, 'inventario.nome': nomeItem },
-            { $inc: { 'inventario.$.quantidade': qtd } },
-            { new: true }
-          ).lean();
-        } else {
-          carteira = await CarteiraGrupo.findOneAndUpdate(
-            { idWhatsApp, idGrupo },
-            { $push: { inventario: { nome: nomeItem, quantidade: qtd } } },
-            { new: true, upsert: true }
-          ).lean();
-        }
-      } else {
-        carteira = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp, idGrupo },
-          { $inc: { [`inventario.${nomeItem}`]: qtd } },
-          { new: true, upsert: true }
-        ).lean();
-      }
-
-      return res.json({ ok: true, inventario: carteira?.inventario });
-    } else {
-      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
-      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
-      const jidNorm = jidsBusca[0];
-
-      const u = await Usuario.findOneAndUpdate(
-        { idWhatsApp: { $in: jidsBusca } },
-        { $inc: { [`inventory.${nomeItem}`]: qtd } },
-        { new: true }
-      ).lean();
-
-      return res.json({ ok: true, inventory: mapParaObjeto(u?.inventory ?? {}) });
+    if (!Number.isSafeInteger(qtd) || qtd < 1 || qtd > 1_000_000) {
+      return res.status(400).json({ error: 'quantidade deve ser um inteiro entre 1 e 1000000.' });
     }
+    if (typeof item !== 'string' || !item.trim()) {
+      return res.status(400).json({ error: 'Selecione um item válido.' });
+    }
+
+    const destino = resolverDestinoInventarioAdmin(area, item, nome);
+    if (!destino) {
+      return res.status(400).json({ error: 'O item não pertence à área escolhida ou não existe no catálogo atual.' });
+    }
+
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+
+    if (destino.escopo === 'global') {
+      const usuario = await Usuario.findOneAndUpdate(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $inc: { [`inventory.${destino.key}`]: qtd } },
+        { new: true }
+      ).select('idWhatsApp inventory').lean();
+      if (!usuario) return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
+
+      return res.json({
+        ok: true,
+        nome: destino.nome,
+        quantidade: qtd,
+        escopo: 'global',
+        inventario: listarInventarioAdmin(usuario, null, { incluirGlobal: true }),
+      });
+    }
+
+    if (!idGrupo || idGrupo === 'global' || !String(idGrupo).endsWith('@g.us')) {
+      return res.status(400).json({ error: 'Este item pertence ao inventário de um grupo. Selecione um grupo antes de adicionar.' });
+    }
+
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
+    const carteira = await CarteiraGrupo.findOneAndUpdate(
+      { idWhatsApp, idGrupo },
+      { $inc: { [`${destino.campo}.${destino.key}`]: qtd } },
+      { new: true, upsert: true }
+    ).select('inventario itensPets itensPesca itensRoubo itensRouboBanco itensSec').lean();
+
+    const usuario = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } })
+      .select('inventory').lean();
+    return res.json({
+      ok: true,
+      nome: destino.nome,
+      quantidade: qtd,
+      escopo: 'grupo',
+      inventario: listarInventarioAdmin(usuario, carteira, { incluirGlobal: true }),
+    });
   } catch (err) {
     console.error('[API] POST /admin/usuario/inventario:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
+    return res.status(500).json({ error: 'Não foi possível adicionar o item ao inventário.' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/admin/usuario/:idWhatsApp/inventario
-// Remove um item do inventário do usuário em um grupo ou globalmente.
-// Body: { idGrupo, item }
-// ─────────────────────────────────────────────────────────────────────────────
+// Body: { idGrupo, area, item (chave técnica) }
 router.delete('/admin/usuario/:idWhatsApp/inventario', adminAuth, async (req, res) => {
   try {
-    const termoOriginal     = decodeURIComponent(req.params.idWhatsApp);
-    const { idGrupo, item } = req.body || {};
-
-    if (!item || typeof item !== 'string' || !item.trim())
-      return res.status(400).json({ error: 'item deve ser uma string não vazia.' });
-
-    const nomeItem = item.trim();
-    const eGlobal  = !idGrupo || idGrupo === 'global';
-
-    if (!eGlobal) {
-      const idWhatsApp    = await resolverIdWhatsApp(termoOriginal, idGrupo);
-      if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
-      const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo })
-        .select('inventario')
-        .lean();
-
-      const invAtual = carteiraAtual?.inventario;
-      const ehArray  = Array.isArray(invAtual);
-
-      let carteira;
-      if (ehArray) {
-        carteira = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp, idGrupo },
-          { $pull: { inventario: { nome: nomeItem } } },
-          { new: true }
-        ).lean();
-      } else {
-        carteira = await CarteiraGrupo.findOneAndUpdate(
-          { idWhatsApp, idGrupo },
-          { $unset: { [`inventario.${nomeItem}`]: '' } },
-          { new: true }
-        ).lean();
-      }
-
-      return res.json({ ok: true, inventario: carteira?.inventario });
-    } else {
-      const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
-      if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
-      const jidNorm = jidsBusca[0];
-
-      const u = await Usuario.findOneAndUpdate(
-        { idWhatsApp: { $in: jidsBusca } },
-        { $unset: { [`inventory.${nomeItem}`]: '' } },
-        { new: true }
-      ).lean();
-
-      return res.json({ ok: true, inventory: mapParaObjeto(u?.inventory ?? {}) });
+    const termoOriginal = decodeURIComponent(req.params.idWhatsApp);
+    const { idGrupo, area, item } = req.body || {};
+    if (typeof item !== 'string' || !item.trim()) {
+      return res.status(400).json({ error: 'Selecione um item válido.' });
     }
+
+    const jidsBusca = await resolverIdentidadesUsuario(termoOriginal);
+    if (!jidsBusca.length) return res.status(400).json({ error: 'Identificador inválido.' });
+
+    // Itens personalizados criados pela versão anterior do painel podiam ter
+    // sido guardados com o nome digitado (incluindo espaços) como chave literal.
+    if (area === '__personalizado__') {
+      const chavePersonalizada = item.trim();
+      if (!chavePersonalizada || chavePersonalizada.length > 100 || chavePersonalizada.includes('.') || chavePersonalizada.startsWith('$')) {
+        return res.status(400).json({ error: 'Nome de item personalizado inválido.' });
+      }
+      await Usuario.updateOne(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $unset: { [`inventory.${chavePersonalizada}`]: '' } }
+      );
+      return res.json({ ok: true });
+    }
+
+    // Compatibilidade com itens genéricos criados pelas versões antigas do painel.
+    if (!area || area === '__legado__') {
+      const nomeItem = item.trim();
+      if (nomeItem.includes('.') || nomeItem.startsWith('$')) {
+        return res.status(400).json({ error: 'Nome de item legado inválido.' });
+      }
+      if (!idGrupo || idGrupo === 'global') {
+        const usuarioAtual = await Usuario.findOne({ idWhatsApp: { $in: jidsBusca } }).select('inventory').lean();
+        if (Array.isArray(usuarioAtual?.inventory)) {
+          await Usuario.updateOne({ idWhatsApp: { $in: jidsBusca } }, { $pull: { inventory: { nome: nomeItem } } });
+        } else {
+          await Usuario.updateOne({ idWhatsApp: { $in: jidsBusca } }, { $unset: { [`inventory.${nomeItem}`]: '' } });
+        }
+        return res.json({ ok: true });
+      }
+      if (!String(idGrupo).endsWith('@g.us')) return res.status(400).json({ error: 'Grupo inválido.' });
+      const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+      const carteiraAtual = await CarteiraGrupo.findOne({ idWhatsApp, idGrupo }).select('inventario').lean();
+      if (Array.isArray(carteiraAtual?.inventario)) {
+        await CarteiraGrupo.updateOne({ idWhatsApp, idGrupo }, { $pull: { inventario: { nome: nomeItem } } });
+      } else {
+        await CarteiraGrupo.updateOne({ idWhatsApp, idGrupo }, { $unset: { [`inventario.${nomeItem}`]: '' } });
+      }
+      return res.json({ ok: true });
+    }
+
+    const destino = resolverDestinoInventarioAdmin(area, item, item);
+    if (!destino) return res.status(400).json({ error: 'O item não pertence à área escolhida.' });
+
+    if (destino.escopo === 'global') {
+      await Usuario.updateOne(
+        { idWhatsApp: { $in: jidsBusca } },
+        { $unset: { [`inventory.${destino.key}`]: '' } }
+      );
+      return res.json({ ok: true });
+    }
+
+    if (!idGrupo || idGrupo === 'global' || !String(idGrupo).endsWith('@g.us')) {
+      return res.status(400).json({ error: 'Selecione o grupo ao qual este item pertence.' });
+    }
+    const idWhatsApp = await resolverIdWhatsApp(termoOriginal, idGrupo);
+    if (!idWhatsApp) return res.status(400).json({ error: 'Identificador inválido.' });
+    await CarteiraGrupo.updateOne(
+      { idWhatsApp, idGrupo },
+      { $unset: { [`${destino.campo}.${destino.key}`]: '' } }
+    );
+    return res.json({ ok: true });
   } catch (err) {
     console.error('[API] DELETE /admin/usuario/inventario:', err);
-    return res.status(500).json({ error: 'Erro interno.' });
+    return res.status(500).json({ error: 'Não foi possível remover o item do inventário.' });
   }
 });
 

@@ -69,7 +69,7 @@ const {
   VARAS_PESCA, ISCAS, CATALOGO_PESCA, PEIXES_E_ITENS
 } = require('./pesca');
 
-registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...PEIXES_E_ITENS });
+registerCatalog({ ...VARAS_PESCA, ...ISCAS, ...CATALOGO_PESCA });
 
 // Quiz
 // ✅ Correto

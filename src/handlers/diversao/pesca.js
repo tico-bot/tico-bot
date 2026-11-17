@@ -30,7 +30,19 @@ const CONFIG_PESCA = {
   CHANCE_FALHA_BASE: 30,             // 30% de falha sem vara
   CHANCE_FALHA_MIN:  5,              // mínimo de 5% de falha
   PERCENTUAL_VENDA:  0.70,           // 70% do valor base na venda
+  MULTIPLICADOR_RECOMPENSA: 20,       // recompensas e valores de venda dos achados ×20
 };
+
+function valorBaseRecompensaPesca(item) {
+  const gold = Number(item?.gold) || 0;
+  return Math.max(0, Math.floor(gold * CONFIG_PESCA.MULTIPLICADOR_RECOMPENSA));
+}
+
+function calcularPrecoVendaPesca(valor, percentual = CONFIG_PESCA.PERCENTUAL_VENDA) {
+  const base = Math.max(0, Math.floor(Number(valor) || 0));
+  const percentualInteiro = Math.max(0, Math.round((Number(percentual) || 0) * 100));
+  return Math.floor((base * percentualInteiro) / 100);
+}
 
 // ─── VARAS DE PESCA ───────────────────────────────────────────────────────────
 
@@ -188,7 +200,116 @@ const ITENS_BONUS_PESCA = {
   amuleto_poseidon: { nome: '🔱 Amuleto de Poseidon',    raridade: 'lendario', peso: 1,  gold: 1150},
 };
 
-const CATALOGO_PESCA = { ...PEIXES_E_ITENS, ...ITENS_BONUS_PESCA };
+// ─── 100 NOVOS ACHADOS (conteúdo adicional por raridade) ─────────────────────
+const NOVOS_ACHADOS_PESCA = {
+  // ── Comum (30) ─────────────────────────────────────────────
+  tilapia_juvenil: { nome: "🐟 Tilápia Juvenil", raridade: 'comum', peso: 10, gold: 14 },
+  lambari_prateado: { nome: "🐠 Lambari Prateado", raridade: 'comum', peso: 10, gold: 12 },
+  acara_listrado: { nome: "🐟 Acará-Listrado", raridade: 'comum', peso: 10, gold: 16 },
+  cascudo_pequeno: { nome: "🪨 Cascudo Pequeno", raridade: 'comum', peso: 10, gold: 18 },
+  curimata: { nome: "🐟 Curimatã", raridade: 'comum', peso: 10, gold: 20 },
+  piaba: { nome: "🐟 Piaba de Rio", raridade: 'comum', peso: 10, gold: 11 },
+  manjuba: { nome: "🐟 Manjuba", raridade: 'comum', peso: 10, gold: 13 },
+  jundia: { nome: "🐟 Jundiá", raridade: 'comum', peso: 10, gold: 22 },
+  carpa_comum: { nome: "🐟 Carpa Comum", raridade: 'comum', peso: 10, gold: 24 },
+  pacu_juvenil: { nome: "🐟 Pacu Juvenil", raridade: 'comum', peso: 10, gold: 25 },
+  tambaqui_juvenil: { nome: "🐟 Tambaqui Juvenil", raridade: 'comum', peso: 10, gold: 28 },
+  piau: { nome: "🐟 Piau", raridade: 'comum', peso: 10, gold: 17 },
+  saicanga: { nome: "🦷 Saicanga", raridade: 'comum', peso: 10, gold: 19 },
+  peixe_folha: { nome: "🍃 Peixe-Folha", raridade: 'comum', peso: 10, gold: 15 },
+  peixe_pedra: { nome: "🪨 Peixe-Pedra", raridade: 'comum', peso: 10, gold: 18 },
+  camarao_rio: { nome: "🦐 Camarão de Rio", raridade: 'comum', peso: 10, gold: 20 },
+  caranguejo_mirim: { nome: "🦀 Caranguejo-Mirim", raridade: 'comum', peso: 10, gold: 21 },
+  siri_pequeno: { nome: "🦀 Siri Pequeno", raridade: 'comum', peso: 10, gold: 23 },
+  caramujo_agua_doce: { nome: "🐌 Caramujo de Água Doce", raridade: 'comum', peso: 10, gold: 9 },
+  mexilhao_pequeno: { nome: "🐚 Mexilhão Pequeno", raridade: 'comum', peso: 10, gold: 16 },
+  concha_rosa: { nome: "🐚 Concha Rosa", raridade: 'comum', peso: 10, gold: 12 },
+  estrela_pequena: { nome: "⭐ Estrela-do-Mar Pequena", raridade: 'comum', peso: 10, gold: 15 },
+  ourico_marinho: { nome: "🦔 Ouriço-do-Mar", raridade: 'comum', peso: 10, gold: 18 },
+  madeira_flutuante: { nome: "🪵 Madeira Flutuante", raridade: 'comum', peso: 10, gold: 8 },
+  folha_dourada: { nome: "🍂 Folha Dourada", raridade: 'comum', peso: 10, gold: 14 },
+  pena_azul: { nome: "🪶 Pena Azul", raridade: 'comum', peso: 10, gold: 17 },
+  vidro_polido: { nome: "🧊 Vidro Polido pelo Mar", raridade: 'comum', peso: 10, gold: 10 },
+  peixe_rajado: { nome: "🐠 Peixe-Rajado", raridade: 'comum', peso: 10, gold: 26 },
+  cascudinho: { nome: "🐟 Cascudinho", raridade: 'comum', peso: 10, gold: 13 },
+  peixe_barrigudo: { nome: "🐡 Peixe-Barrigudo", raridade: 'comum', peso: 10, gold: 19 },
+  // ── Incomum (25) ─────────────────────────────────────────────
+  peixe_borboleta: { nome: "🦋 Peixe-Borboleta", raridade: 'incomum', peso: 5, gold: 48 },
+  robalo_jovem: { nome: "🐟 Robalo Jovem", raridade: 'incomum', peso: 5, gold: 56 },
+  dourada_prateada: { nome: "🐠 Dourada Prateada", raridade: 'incomum', peso: 5, gold: 62 },
+  linguado: { nome: "🐟 Linguado", raridade: 'incomum', peso: 5, gold: 58 },
+  cavala: { nome: "🐟 Cavala", raridade: 'incomum', peso: 5, gold: 52 },
+  anchova: { nome: "🐟 Anchova", raridade: 'incomum', peso: 5, gold: 46 },
+  tainha: { nome: "🐟 Tainha", raridade: 'incomum', peso: 5, gold: 50 },
+  garoupa_jovem: { nome: "🐟 Garoupa Jovem", raridade: 'incomum', peso: 5, gold: 68 },
+  lula_prateada: { nome: "🦑 Lula Prateada", raridade: 'incomum', peso: 5, gold: 72 },
+  polvo_miniatura: { nome: "🐙 Polvo em Miniatura", raridade: 'incomum', peso: 5, gold: 75 },
+  lagosta_pedra: { nome: "🦞 Lagosta-das-Pedras", raridade: 'incomum', peso: 5, gold: 88 },
+  camarao_tigre: { nome: "🦐 Camarão-Tigre", raridade: 'incomum', peso: 5, gold: 82 },
+  caracol_perolado: { nome: "🐚 Caracol Perolado", raridade: 'incomum', peso: 5, gold: 60 },
+  ostra_pequena: { nome: "🦪 Ostra Pequena", raridade: 'incomum', peso: 5, gold: 64 },
+  buzio_listrado: { nome: "🐚 Búzio Listrado", raridade: 'incomum', peso: 5, gold: 44 },
+  concha_perolada: { nome: "🐚 Concha Perolada", raridade: 'incomum', peso: 5, gold: 86 },
+  coral_rosa: { nome: "🪸 Coral Rosa", raridade: 'incomum', peso: 5, gold: 78 },
+  chave_submersa: { nome: "🗝️ Chave Submersa", raridade: 'incomum', peso: 5, gold: 90 },
+  medalhao_metal: { nome: "🏅 Medalhão de Metal", raridade: 'incomum', peso: 5, gold: 84 },
+  pulseira_prata: { nome: "📿 Pulseira de Prata", raridade: 'incomum', peso: 5, gold: 92 },
+  moeda_prateada: { nome: "🪙 Moeda Prateada", raridade: 'incomum', peso: 5, gold: 66 },
+  mapa_fragmentado: { nome: "🗺️ Fragmento de Mapa", raridade: 'incomum', peso: 5, gold: 80 },
+  frasco_vidro_azul: { nome: "🧪 Frasco de Vidro Azul", raridade: 'incomum', peso: 5, gold: 70 },
+  relogio_parado: { nome: "⌚ Relógio Parado", raridade: 'incomum', peso: 5, gold: 95 },
+  broche_antigo: { nome: "📌 Broche Antigo", raridade: 'incomum', peso: 5, gold: 89 },
+  // ── Raro (20) ─────────────────────────────────────────────
+  peixe_serra: { nome: "🦈 Peixe-Serra", raridade: 'raro', peso: 2.4, gold: 125 },
+  peixe_agulhao: { nome: "🐟 Peixe-Agulhão", raridade: 'raro', peso: 2.4, gold: 138 },
+  peixe_mandarim: { nome: "🐠 Peixe-Mandarim", raridade: 'raro', peso: 2.4, gold: 155 },
+  peixe_leao: { nome: "🦁 Peixe-Leão", raridade: 'raro', peso: 2.4, gold: 165 },
+  peixe_martelo_jovem: { nome: "🔨 Tubarão-Martelo Jovem", raridade: 'raro', peso: 2.4, gold: 190 },
+  peixe_napoleao: { nome: "🐟 Peixe-Napoleão", raridade: 'raro', peso: 2.4, gold: 210 },
+  cavalo_marinho_raro: { nome: "🦄 Cavalo-Marinho Raro", raridade: 'raro', peso: 2.4, gold: 175 },
+  polvo_anel_azul: { nome: "🔵 Polvo-de-Anéis-Azuis", raridade: 'raro', peso: 2.4, gold: 220 },
+  lula_gigante_jovem: { nome: "🦑 Lula-Gigante Jovem", raridade: 'raro', peso: 2.4, gold: 235 },
+  lagosta_azul: { nome: "🦞 Lagosta Azul", raridade: 'raro', peso: 2.4, gold: 245 },
+  caranguejo_real: { nome: "🦀 Caranguejo-Real", raridade: 'raro', peso: 2.4, gold: 230 },
+  manta_pintada: { nome: "🌊 Manta Pintada", raridade: 'raro', peso: 2.4, gold: 185 },
+  peixe_eletrico_azul: { nome: "⚡ Peixe Elétrico Azul", raridade: 'raro', peso: 2.4, gold: 205 },
+  arraia_manchada: { nome: "🐟 Arraia-Manchada", raridade: 'raro', peso: 2.4, gold: 170 },
+  perola_negra: { nome: "⚫ Pérola Negra", raridade: 'raro', peso: 2.4, gold: 250 },
+  colar_corais: { nome: "📿 Colar de Corais", raridade: 'raro', peso: 2.4, gold: 215 },
+  bussola_navegante: { nome: "🧭 Bússola de Navegação", raridade: 'raro', peso: 2.4, gold: 225 },
+  relicario_naufragio: { nome: "📿 Relicário de Naufrágio", raridade: 'raro', peso: 2.4, gold: 240 },
+  caixa_moedas: { nome: "🪙 Caixa de Moedas Antigas", raridade: 'raro', peso: 2.4, gold: 260 },
+  peixe_fita: { nome: "🎗️ Peixe-Fita", raridade: 'raro', peso: 2.4, gold: 195 },
+  // ── Epico (15) ─────────────────────────────────────────────
+  peixe_fenix_aquatico: { nome: "🔥 Peixe-Fênix Aquático", raridade: 'epico', peso: 1, gold: 340 },
+  peixe_cristalino: { nome: "💎 Peixe Cristalino", raridade: 'epico', peso: 1, gold: 375 },
+  tubarao_lua: { nome: "🌙 Tubarão-Lua", raridade: 'epico', peso: 1, gold: 410 },
+  raia_fantasma: { nome: "👻 Raia Fantasma", raridade: 'epico', peso: 1, gold: 390 },
+  serpente_marinha_jovem: { nome: "🐉 Serpente Marinha Jovem", raridade: 'epico', peso: 1, gold: 455 },
+  polvo_rubi: { nome: "🔴 Polvo de Rubi", raridade: 'epico', peso: 1, gold: 425 },
+  lula_abissal: { nome: "🌌 Lula Abissal", raridade: 'epico', peso: 1, gold: 470 },
+  cavalo_marinho_dourado: { nome: "🐴 Cavalo-Marinho Dourado", raridade: 'epico', peso: 1, gold: 360 },
+  baleia_celeste: { nome: "🌠 Baleia Celeste", raridade: 'epico', peso: 1, gold: 520 },
+  tesouro_coracao_oceano: { nome: "💙 Coração do Oceano", raridade: 'epico', peso: 1, gold: 550 },
+  ancora_prateada: { nome: "⚓ Âncora Prateada", raridade: 'epico', peso: 1, gold: 315 },
+  coroa_escamas: { nome: "👑 Coroa de Escamas", raridade: 'epico', peso: 1, gold: 490 },
+  cetro_marinheiro: { nome: "🔱 Cetro do Marinheiro", raridade: 'epico', peso: 1, gold: 500 },
+  mapa_atlantida: { nome: "🗺️ Mapa de Atlântida", raridade: 'epico', peso: 1, gold: 460 },
+  diamante_marinho: { nome: "💠 Diamante Marinho", raridade: 'epico', peso: 1, gold: 535 },
+  // ── Lendario (10) ─────────────────────────────────────────────
+  peixe_sol_dourado: { nome: "☀️ Peixe-Sol Dourado", raridade: 'lendario', peso: 0.5, gold: 850 },
+  leviata_ancestral: { nome: "🐋 Leviatã Ancestral", raridade: 'lendario', peso: 0.5, gold: 1450 },
+  dragao_marinho_ancestral: { nome: "🐉 Dragão Marinho Ancestral", raridade: 'lendario', peso: 0.5, gold: 1550 },
+  kraken_ancestral: { nome: "🐙 Kraken Ancestral", raridade: 'lendario', peso: 0.5, gold: 1600 },
+  fenix_marinha: { nome: "🔥 Fênix Marinha", raridade: 'lendario', peso: 0.5, gold: 1350 },
+  baleia_estelar: { nome: "🌌 Baleia Estelar", raridade: 'lendario', peso: 0.5, gold: 1500 },
+  perola_cosmica: { nome: "✨ Pérola Cósmica", raridade: 'lendario', peso: 0.5, gold: 1250 },
+  tridente_tritao: { nome: "🔱 Tridente de Tritão", raridade: 'lendario', peso: 0.5, gold: 1400 },
+  coroa_atlantida: { nome: "👑 Coroa de Atlântida", raridade: 'lendario', peso: 0.5, gold: 1300 },
+  coracao_tita_oceano: { nome: "💎 Coração Titã do Oceano", raridade: 'lendario', peso: 0.5, gold: 1750 },
+};
+
+const CATALOGO_PESCA = { ...PEIXES_E_ITENS, ...ITENS_BONUS_PESCA, ...NOVOS_ACHADOS_PESCA };
 
 const LIXO_KEYS        = new Set(['bota_velha', 'lata_enferrujada', 'alga', 'pneu_velho', 'garrafa_vazia']);
 const DESCARTAVEL_KEYS = new Set([
@@ -476,7 +597,8 @@ async function handlePescar(sock, msg, jid) {
     const ehDesc = DESCARTAVEL_KEYS.has(item.key);
 
     // ── Persistência de Recompensas e Inventário ──────────────────────────
-    const pescaAjustada = await republicaEconomia.aplicarMultiplicadorRecompensa(groupId, item.gold);
+    const recompensaBase = valorBaseRecompensaPesca(item);
+    const pescaAjustada = await republicaEconomia.aplicarMultiplicadorRecompensa(groupId, recompensaBase);
     const liquidacaoPesca = pescaAjustada > 0
       ? await republicaEconomia.liquidarRenda(userId, groupId, pescaAjustada, pescaAjustada, `Pesca: ${item.nome}`)
       : { carteira: await getCarteira(userId, groupId), imposto: 0, liquido: 0 };
@@ -499,7 +621,7 @@ async function handlePescar(sock, msg, jid) {
     };
 
     const taxaVenda  = CONFIG_PESCA.PERCENTUAL_VENDA;
-    const precoVenda = item.gold > 0 ? Math.floor(item.gold * taxaVenda) : null;
+    const precoVenda = recompensaBase > 0 ? calcularPrecoVendaPesca(recompensaBase, taxaVenda) : null;
 
     let resultado =
       cabecalho +
@@ -782,7 +904,7 @@ async function handleInventarioPesca(sock, msg, jid) {
       for (const k of varas) {
         const info  = VARAS_PESCA[k];
         const ativa = k === melhorVara ? ' ✅ _(em uso)_' : '';
-        const precoVenda = Math.floor(info.preco * 0.50);
+        const precoVenda = calcularPrecoVendaPesca(info.preco, 0.50);
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
         texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${info.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
@@ -797,7 +919,7 @@ async function handleInventarioPesca(sock, msg, jid) {
         const info  = ISCAS[k];
         const ativa = k === melhorIsca ? ' ✅ _(próxima a usar)_' : '';
         // Para iscas (consumíveis vendem a 70% assim como itens pescados):
-const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.70
+const precoVenda = calcularPrecoVendaPesca(info.preco); // 0.70
         texto += `   ${info.nome} × ${inv[k]}${ativa}\n`;
         texto += `   ├ Bônus raridade: *+${info.bonus_raridade}* · Reduz falha: *-${info.reduce_falha}%*\n`;
         texto += `   └ Venda: *${formatarSaldo(precoVenda, carteira)}* → \`!sellpesca ${info.nome.replace(/^[^\p{L}\p{N}]+/u, '')}\`\n\n`;
@@ -812,8 +934,8 @@ const precoVenda = Math.floor(info.preco * CONFIG_PESCA.PERCENTUAL_VENDA); // 0.
         const info       = CATALOGO_PESCA[k];
         const nome       = info?.nome ?? k;
         const rarLabel   = RARIDADE_LABEL[info?.raridade] ?? '';
-        const goldBase   = info?.gold ?? 0;
-        const precoVenda = goldBase > 0 ? Math.floor(goldBase * taxaVenda) : null;
+        const goldBase   = valorBaseRecompensaPesca(info);
+        const precoVenda = goldBase > 0 ? calcularPrecoVendaPesca(goldBase, taxaVenda) : null;
 
         texto += `   ${nome} × ${inv[k]} ${rarLabel}\n`;
         if (precoVenda) {
@@ -912,9 +1034,9 @@ async function handleVenderPesca(sock, msg, jid, caption) {
   // BUG 9 FIX: antes "ehEquip" (vara OU isca) usava 50%, mas o preço mostrado
   // em !inventariopesca pras iscas já calculava com 70% — o jogador via um
   // valor no inventário e recebia outro (menor) ao vender de fato.
-  const valorBase     = ehEquip ? (info.preco ?? 0) : (info.gold ?? 0);
+  const valorBase     = ehEquip ? (info.preco ?? 0) : valorBaseRecompensaPesca(info);
   const taxaVenda     = ehVara ? 0.50 : CONFIG_PESCA.PERCENTUAL_VENDA;
-  const precoUnitario = Math.floor(valorBase * taxaVenda);
+  const precoUnitario = calcularPrecoVendaPesca(valorBase, taxaVenda);
 
   if (valorBase <= 0 || precoUnitario <= 0) {
     return reply(sock, jid, msg,
@@ -1403,9 +1525,15 @@ module.exports = {
   handleRankingPesca,
   handleStatsPesca,
 
+  // Configuração e cálculo de recompensas (também usados nos testes).
+  CONFIG_PESCA,
+  valorBaseRecompensaPesca,
+  calcularPrecoVendaPesca,
+
   // Catálogos (usados pelo marketplace.js)
   VARAS_PESCA,
   ISCAS,
   CATALOGO_PESCA,
   PEIXES_E_ITENS,
+  NOVOS_ACHADOS_PESCA,
 };
