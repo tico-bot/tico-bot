@@ -65,6 +65,8 @@ const republicaEstadoSchema = new mongoose.Schema({
     presidenteNome: { type: String, default: null },
     viceNome: { type: String, default: null },
     eleitoEm: { type: Date, default: null },
+    viceEleitoEm: { type: Date, default: null },
+    viceVagaDesde: { type: Date, default: null },
     mandatoAte: { type: Date, default: null },
     numeroMandato: { type: Number, default: 0, min: 0 },
   },

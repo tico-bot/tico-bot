@@ -75,7 +75,11 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
 ╰━━━━━━━━━━━━━━━━━━━━━━╯
 
 👨‍👩‍👧 *FAMÍLIA*
-  ▸ ${P}tentarfilho — tentar ter um filho
+  ▸ ${P}tentarfilho — tentar ter um filho biológico
+  ▸ ${P}adotarfilho <nome> — pedir adoção ao parceiro
+  ▸ ${P}adotarfilho aceitar <código> — confirmar adoção
+  ▸ ${P}adotarfilho recusar <código> — recusar pedido
+  ▸ ${P}adotarfilho cancelar <código> — cancelar o próprio pedido
   ▸ ${P}filho — ver filhos e situação atual
   ▸ ${P}cuidarfilho — cuidar dos filhos
 
@@ -85,7 +89,9 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
   • Se tiver mais de um: ${P}renomearfilho <número> <nome>
 
 📋 *COMO FUNCIONA*
-  • Limite de até *3 filhos por casal*.
+  • Limite de até *3 filhos por casal*, incluindo adoções.
+  • A adoção exige confirmação dos dois responsáveis e expira em 15 minutos.
+  • Com o Modo República activo, responsáveis empregados recebem até 48 horas de licença por adoção.
   • Cada *7 dias* equivalem a 1 ano de idade.
   • Os atributos diminuem com o tempo; cuide da família.
   • Felicidade zerada pode deixar o filho doente.

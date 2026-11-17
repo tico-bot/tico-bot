@@ -31,6 +31,7 @@ const {
   // ── Filhos (6 itens) ────────────────────────────────────────────────────
 const {
   handleTentarFilho,
+  handleAdotarFilho,
   handleVerFilho,
   handleCuidarFilho,
   handleRemedioFilho,
@@ -265,8 +266,9 @@ module.exports = {
   findDailyMission,
   dailyMissionDefinitions,
 
-  // ── Filhos (6 itens) ─────────────────────────────────────────────────────
+  // ── Filhos (7 itens) ─────────────────────────────────────────────────────
 handleTentarFilho,
+handleAdotarFilho,
 handleVerFilho,
 handleCuidarFilho,
 handleRemedioFilho,

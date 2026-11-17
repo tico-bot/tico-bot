@@ -22,6 +22,11 @@ const FilhoSchema = new mongoose.Schema({
   sono:       { type: Number, default: 100, min: 0, max: 100 },
   alegria:    { type: Number, default: 100, min: 0, max: 100 },
 
+  // Origem e identificação de adopções (sem alterar a lógica dos filhos biológicos).
+  adotado: { type: Boolean, default: false, index: true },
+  adotadoEm: { type: Date, default: null },
+  adocaoSolicitacaoId: { type: mongoose.Schema.Types.ObjectId, default: null },
+
   // Estado
   doente: { type: Boolean, default: false },
 
@@ -35,6 +40,10 @@ const FilhoSchema = new mongoose.Schema({
 
 // Índice composto para buscas comuns por grupo + casal
 FilhoSchema.index({ idGrupo: 1, jidA: 1, jidB: 1 });
+FilhoSchema.index(
+  { adocaoSolicitacaoId: 1 },
+  { unique: true, partialFilterExpression: { adocaoSolicitacaoId: { $type: 'objectId' } } }
+);
 
 // ── Idade calculada em "anos" (1 ano = 7 dias reais) com fallback seguro ──
 FilhoSchema.virtual('idade').get(function () {

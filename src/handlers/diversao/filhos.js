@@ -4,10 +4,13 @@ const path   = require('path');
 const Filho  = require(path.join(__dirname, '..', '..', 'models', 'Filho'));
 const Usuario= require(path.join(__dirname, '..', '..', 'models', 'Usuario'));
 const CarteiraGrupo = require(path.join(__dirname, '..', '..', 'models', 'CarteiraGrupo'));
+const Relacionamento = require(path.join(__dirname, '..', '..', 'models', 'Relacionamento'));
+const AdocaoSolicitacao = require(path.join(__dirname, '..', '..', 'models', 'AdocaoSolicitacao'));
 const { resolverJidCarteira, formatarSaldo, alterarGold } = require(path.join(__dirname, '..', '..', 'utils', 'carteira'));
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 const republicaEconomia = require('../republica/economia');
 const republicaSocial = require('../republica/social');
+const { getParticipantJids } = require('../../utils/identity');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CHANCE_FILHO       = 0.40;  // 40% de chance
@@ -17,6 +20,7 @@ const COOLDOWN_CUIDAR    = 20 * 60 * 60 * 1000; // 20h
 const COOLDOWN_TENTAR = 20 * 60 * 1000; // 20 minutos
 const CUSTO_REMEDIO      = 300;   // gold
 const RENOMEAR_MAX_LEN   = 20;    // tamanho máximo do nome do filho
+const PRAZO_ADOCAO_MS = 15 * 60 * 1000;
 
 const PERSONALIDADES = [
   'curioso 🔍', 'agitado ⚡', 'tímido 🌸', 'corajoso 🦁',
@@ -255,6 +259,355 @@ async function handleTentarFilho(sock, msg, jid) {
     return sock.sendMessage(jid, {
       text: '⚠️ Erro ao tentar ter um filho. Tente novamente.',
     }, { quoted: msg }).catch(() => {});
+  }
+}
+
+
+// ─── !adotarfilho ─────────────────────────────────────────────────────────────
+async function obterCasalAdocao(sock, idGrupo, usuarioRaw) {
+  const usuarioId = await resolverJidCarteira(usuarioRaw, idGrupo);
+  const usuario = await Usuario.findOne({ idWhatsApp: usuarioId }).lean();
+  if (!usuario?.casadoCom) return null;
+
+  const parceiroId = await resolverJidCarteira(usuario.casadoCom, idGrupo);
+  if (!parceiroId || parceiroId === usuarioId) return null;
+  const parceiro = await Usuario.findOne({ idWhatsApp: parceiroId }).lean();
+  if (!parceiro?.casadoCom) return null;
+  const parceiroDoParceiro = await resolverJidCarteira(parceiro.casadoCom, idGrupo);
+  if (parceiroDoParceiro !== usuarioId) return null;
+
+  const relacionamento = await Relacionamento.findOne({
+    idGrupo,
+    $or: [
+      { jidA: usuarioId, jidB: parceiroId },
+      { jidA: parceiroId, jidB: usuarioId },
+      { participantes: { $all: [usuarioId, parceiroId] } },
+    ],
+  }).lean();
+  if (!relacionamento) return null;
+
+  const metadados = await sock.groupMetadata(idGrupo);
+  const membros = new Set();
+  for (const participante of (metadados?.participants || [])) {
+    for (const raw of getParticipantJids(participante)) {
+      const canonico = await resolverJidCarteira(raw, idGrupo);
+      if (canonico) membros.add(canonico);
+    }
+  }
+  if (!membros.has(usuarioId) || !membros.has(parceiroId)) return null;
+  return { usuarioId, parceiroId };
+}
+
+function gerarDadosAdocao(nome = '') {
+  const sexo = Math.random() < 0.5 ? 'menino' : 'menina';
+  const listaNomes = sexo === 'menino' ? NOMES_MENINO : NOMES_MENINA;
+  const nomeLimpo = String(nome || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const nomeFinal = nomeLimpo || listaNomes[Math.floor(Math.random() * listaNomes.length)];
+  if (nomeFinal.length > RENOMEAR_MAX_LEN) {
+    throw new Error('O nome da criança pode ter no máximo ' + RENOMEAR_MAX_LEN + ' caracteres.');
+  }
+  return {
+    nome: nomeFinal,
+    sexo,
+    personalidade: PERSONALIDADES[Math.floor(Math.random() * PERSONALIDADES.length)],
+  };
+}
+
+async function criarFilhoAdotivo(idGrupo, pedido) {
+  let filho = await Filho.findOne({ adocaoSolicitacaoId: pedido._id });
+  if (filho) return filho;
+  const agora = new Date();
+  const dados = {
+    jidA: pedido.solicitanteId,
+    jidB: pedido.parceiroId,
+    idGrupo,
+    nome: pedido.nome,
+    sexo: pedido.sexo,
+    personalidade: pedido.personalidade,
+    adotado: true,
+    adotadoEm: agora,
+    adocaoSolicitacaoId: pedido._id,
+    felicidade: 100,
+    fome: 100,
+    sono: 100,
+    alegria: 100,
+    doente: false,
+    guardaAtual: null,
+    ultimaTroca: agora,
+    nascidoEm: agora,
+  };
+  try {
+    filho = await Filho.create(dados);
+  } catch (erro) {
+    if (erro?.code !== 11000) throw erro;
+    filho = await Filho.findOne({ adocaoSolicitacaoId: pedido._id });
+    if (!filho) throw erro;
+  }
+  return filho;
+}
+
+async function handleAdotarFilho(sock, msg, jid, caption) {
+  if (!String(jid || '').endsWith('@g.us')) {
+    return sock.sendMessage(jid, { text: '👨‍👩‍👧 O processo de adoção deve ser iniciado e confirmado no grupo do casal.' }, { quoted: msg });
+  }
+
+  const autorRaw = msg.key.participant || msg.key.remoteJid;
+  const partes = String(caption || '').trim().split(/\s+/).filter(Boolean);
+  const primeiraOpcao = String(partes[1] || '').toLowerCase();
+  const acao = ['aceitar', 'recusar', 'cancelar'].includes(primeiraOpcao) ? primeiraOpcao : '';
+  const argumento = (acao ? partes.slice(2) : partes.slice(1)).join(' ').trim();
+
+  try {
+    const casal = await obterCasalAdocao(sock, jid, autorRaw);
+    if (!casal) {
+      return sock.sendMessage(jid, {
+        text: '❌ Para adoptar, os dois responsáveis precisam ter um relacionamento activo registado neste grupo e continuar como membros.',
+      }, { quoted: msg });
+    }
+    const { usuarioId, parceiroId } = casal;
+
+    if (acao === 'cancelar' || acao === 'recusar') {
+      if (!argumento) return sock.sendMessage(jid, {
+        text: '⚠️ Informe o código do pedido: /adotarfilho ' + acao + ' <código>.',
+      }, { quoted: msg });
+      const pedido = await AdocaoSolicitacao.findOne({
+        idGrupo: jid,
+        codigo: argumento.toUpperCase(),
+        status: 'pendente',
+        expiresAt: { $gt: new Date() },
+      });
+      if (!pedido) return sock.sendMessage(jid, { text: '❌ Pedido não encontrado, expirado ou já processado.' }, { quoted: msg });
+      const podeAgir = acao === 'cancelar'
+        ? pedido.solicitanteId === usuarioId
+        : pedido.parceiroId === usuarioId;
+      if (!podeAgir) return sock.sendMessage(jid, {
+        text: acao === 'cancelar'
+          ? '❌ Apenas quem iniciou o pedido pode cancelá-lo.'
+          : '❌ Apenas o parceiro convidado pode recusar a adoção.',
+      }, { quoted: msg });
+      pedido.status = acao === 'cancelar' ? 'cancelada' : 'recusada';
+      await pedido.save();
+      return sock.sendMessage(jid, {
+        text: acao === 'cancelar'
+          ? '🛑 Pedido de adoção cancelado.'
+          : '📩 O parceiro recusou o pedido de adoção. Nenhuma criança foi registada.',
+      }, { quoted: msg });
+    }
+
+    if (acao === 'aceitar') {
+      if (!argumento) return sock.sendMessage(jid, {
+        text: '⚠️ Informe o código enviado no grupo: /adotarfilho aceitar <código>.',
+      }, { quoted: msg });
+      let pedido = await AdocaoSolicitacao.findOne({
+        idGrupo: jid,
+        codigo: argumento.toUpperCase(),
+      });
+      if (!pedido) return sock.sendMessage(jid, { text: '❌ Pedido de adoção não encontrado.' }, { quoted: msg });
+      if (pedido.parceiroId !== usuarioId) {
+        return sock.sendMessage(jid, { text: '❌ Apenas o parceiro convidado pode aceitar este pedido.' }, { quoted: msg });
+      }
+      if (pedido.status === 'aceita') {
+        return sock.sendMessage(jid, { text: '✅ Esta adoção já foi confirmada e a criança já está registada.' }, { quoted: msg });
+      }
+      if (pedido.status === 'pendente' && pedido.expiresAt <= new Date()) {
+        pedido.status = 'expirada';
+        await pedido.save();
+        return sock.sendMessage(jid, { text: '⌛ O pedido expirou. O parceiro precisa iniciar uma nova solicitação.' }, { quoted: msg });
+      }
+      if (!['pendente', 'processando'].includes(pedido.status)) {
+        return sock.sendMessage(jid, { text: '❌ Este pedido já foi recusado, cancelado ou expirou.' }, { quoted: msg });
+      }
+
+      const reservado = await AdocaoSolicitacao.findOneAndUpdate(
+        {
+          _id: pedido._id,
+          status: 'pendente',
+          expiresAt: { $gt: new Date() },
+        },
+        { $set: { status: 'processando', processamentoEm: new Date() } },
+        { new: true }
+      );
+      if (reservado) {
+        pedido = reservado;
+      } else if (pedido.status === 'pendente') {
+        const estadoAtual = await AdocaoSolicitacao.findById(pedido._id).lean();
+        if (estadoAtual?.status === 'pendente' && new Date(estadoAtual.expiresAt) <= new Date()) {
+          await AdocaoSolicitacao.updateOne(
+            { _id: pedido._id, status: 'pendente' },
+            { $set: { status: 'expirada' } }
+          );
+          return sock.sendMessage(jid, { text: '⌛ O pedido expirou antes da confirmação. Inicie uma nova solicitação.' }, { quoted: msg });
+        }
+        return sock.sendMessage(jid, { text: '⏳ Este pedido já foi aceite, recusado ou está a ser processado.' }, { quoted: msg });
+      } else if (pedido.status === 'processando' &&
+        pedido.processamentoEm &&
+        Date.now() - new Date(pedido.processamentoEm).getTime() < 2 * 60 * 1000) {
+        return sock.sendMessage(jid, { text: '⏳ Esta adoção já está a ser processada. Aguarde a confirmação.' }, { quoted: msg });
+      } else if (pedido.status === 'processando') {
+        const retomado = await AdocaoSolicitacao.findOneAndUpdate(
+          {
+            _id: pedido._id,
+            status: 'processando',
+            processamentoEm: { $lte: new Date(Date.now() - 2 * 60 * 1000) },
+          },
+          { $set: { processamentoEm: new Date() } },
+          { new: true }
+        );
+        if (!retomado) return sock.sendMessage(jid, { text: '⏳ Esta adoção já está a ser processada. Aguarde a confirmação.' }, { quoted: msg });
+        pedido = retomado;
+      }
+
+      const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, pedido.solicitanteId, pedido.parceiroId));
+      if (totalFilhos >= MAX_FILHOS) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: pedido._id, status: 'processando' },
+          { $set: { status: 'cancelada' } }
+        );
+        return sock.sendMessage(jid, {
+          text: '❌ O casal já atingiu o limite de ' + MAX_FILHOS + ' filhos. O pedido foi cancelado.',
+        }, { quoted: msg });
+      }
+
+      let filho;
+      try {
+        filho = await criarFilhoAdotivo(jid, pedido);
+        await AdocaoSolicitacao.updateOne(
+          { _id: pedido._id, status: 'processando' },
+          { $set: { status: 'aceita', aceitaEm: new Date(), filhoId: filho._id } }
+        );
+      } catch (erro) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: pedido._id, status: 'processando' },
+          { $set: { status: 'pendente', processamentoEm: null } }
+        ).catch(() => {});
+        throw erro;
+      }
+
+      let licencas = [];
+      let falhaLicenca = false;
+      if (await republicaEconomia.modoAtivo(jid)) {
+        try {
+          licencas = await republicaSocial.registrarLicencasAdocao(
+            jid, [pedido.solicitanteId, pedido.parceiroId], filho
+          );
+          for (const licenca of licencas) {
+            await sock.sendMessage(licenca.usuarioId, {
+              text: '👶 *LICENÇA PARENTAL POR ADOÇÃO ACTIVADA*\n\n' +
+                'A adoção foi confirmada e você recebeu 48 horas de licença remunerada.\n' +
+                'Remuneração diária prevista: *' + Math.floor(licenca.salarioDiario || 0).toLocaleString('pt-BR') + ' Pratas*.\n' +
+                'O Fundo de Licença Parental pagará até dois salários diários, e o seu emprego fica protegido durante este período.',
+            }).catch(() => {});
+          }
+        } catch (erroLicenca) {
+          falhaLicenca = true;
+          console.error('[handleAdotarFilho] Adoção concluída, mas a licença parental falhou:', erroLicenca?.stack || erroLicenca?.message || erroLicenca);
+        }
+      }
+
+      const emoji = filho.sexo === 'menino' ? '👦' : '👧';
+      return sock.sendMessage(jid, {
+        text: '🏡 *ADOÇÃO CONFIRMADA!*\n\n' +
+          emoji + ' *' + filho.nome + '* passou a fazer parte da família.\n' +
+          '✨ Personalidade: *' + filho.personalidade + '*\n' +
+          '👨‍👩‍👧 Os dois responsáveis foram registados e podem usar /filho e /cuidarfilho normalmente.\n' +
+          (licencas.length
+            ? '👶 *' + licencas.length + '* responsável(is) empregado(s) recebeu(ram) 48 horas de licença parental remunerada.'
+            : falhaLicenca
+              ? '⚠️ A adoção foi concluída, mas não consegui registar a licença parental. A família foi actualizada; consulte um administrador.'
+              : 'ℹ️ Nenhuma licença foi emitida: o Modo República está desligado ou os responsáveis não possuem emprego elegível.'),
+        mentions: [pedido.solicitanteId, pedido.parceiroId],
+      }, { quoted: msg });
+    }
+
+    const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, usuarioId, parceiroId));
+    if (totalFilhos >= MAX_FILHOS) {
+      return sock.sendMessage(jid, {
+        text: '❌ Vocês já têm ' + totalFilhos + ' filhos. O limite é ' + MAX_FILHOS + '.',
+      }, { quoted: msg });
+    }
+
+    const chaveCasal = [usuarioId, parceiroId].sort().join('|');
+    const agora = new Date();
+    await AdocaoSolicitacao.updateMany(
+      { idGrupo: jid, chaveCasal, status: 'pendente', expiresAt: { $lte: agora } },
+      { $set: { status: 'expirada' } }
+    );
+
+    const processosParados = await AdocaoSolicitacao.find({
+      idGrupo: jid,
+      chaveCasal,
+      status: 'processando',
+      processamentoEm: { $lte: new Date(agora.getTime() - 2 * 60 * 1000) },
+    });
+    for (const processo of processosParados) {
+      const filhoExistente = await Filho.findOne({ adocaoSolicitacaoId: processo._id });
+      if (filhoExistente) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: processo._id, status: 'processando' },
+          { $set: { status: 'aceita', aceitaEm: processo.aceitaEm || agora, filhoId: filhoExistente._id } }
+        );
+      } else if (processo.expiresAt <= agora) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: processo._id, status: 'processando' },
+          { $set: { status: 'expirada' } }
+        );
+      } else {
+        await AdocaoSolicitacao.updateOne(
+          { _id: processo._id, status: 'processando' },
+          { $set: { status: 'pendente', processamentoEm: null } }
+        );
+      }
+    }
+
+    const existente = await AdocaoSolicitacao.findOne({
+      idGrupo: jid,
+      status: { $in: ['pendente', 'processando'] },
+      chaveCasal,
+    });
+    if (existente) return sock.sendMessage(jid, {
+      text: '⏳ Já existe um pedido de adoção em andamento para este casal. Código: *' + existente.codigo + '*.',
+    }, { quoted: msg });
+
+    const dados = gerarDadosAdocao(argumento);
+    let pedido;
+    try {
+      pedido = await AdocaoSolicitacao.create({
+        idGrupo: jid,
+        codigo: require('node:crypto').randomBytes(4).toString('hex').toUpperCase(),
+        solicitanteId: usuarioId,
+        parceiroId,
+        chaveCasal: [usuarioId, parceiroId].sort().join('|'),
+        ...dados,
+        status: 'pendente',
+        expiresAt: new Date(Date.now() + PRAZO_ADOCAO_MS),
+      });
+    } catch (erroCriacao) {
+      if (erroCriacao?.code !== 11000) throw erroCriacao;
+      const pedidoExistente = await AdocaoSolicitacao.findOne({
+        idGrupo: jid,
+        chaveCasal: [usuarioId, parceiroId].sort().join('|'),
+        status: { $in: ['pendente', 'processando'] },
+      });
+      if (!pedidoExistente) throw erroCriacao;
+      return sock.sendMessage(jid, {
+        text: '⏳ Já existe um pedido de adoção em andamento para este casal. Código: *' + pedidoExistente.codigo + '*.',
+      }, { quoted: msg });
+    }
+    return sock.sendMessage(jid, {
+      text: '🏡 *PEDIDO DE ADOÇÃO ENVIADO*\n\n' +
+        '👶 Criança: *' + pedido.nome + '* (' + pedido.sexo + ')\n' +
+        '📋 Código: *' + pedido.codigo + '*\n' +
+        '⌛ Prazo de confirmação: *15 minutos*.\n\n' +
+        '@' + parceiroId.split('@')[0] + ', confirme com */adotarfilho aceitar ' + pedido.codigo + '* ou recuse com */adotarfilho recusar ' + pedido.codigo + '*.\n' +
+        'Quem iniciou o pedido pode cancelá-lo com */adotarfilho cancelar ' + pedido.codigo + '*.',
+      mentions: [parceiroId, usuarioId],
+    }, { quoted: msg });
+  } catch (erro) {
+    console.error('[handleAdotarFilho] Erro:', erro?.stack || erro?.message || erro);
+    const mensagem = /no máximo\s+\d+\s+caracteres/i.test(String(erro?.message || ''))
+      ? '⚠️ ' + erro.message
+      : '⚠️ Não foi possível processar a adoção. Confirme se os dois responsáveis continuam ligados neste grupo e tente novamente.';
+    return sock.sendMessage(jid, { text: mensagem }, { quoted: msg }).catch(() => {});
   }
 }
 
@@ -563,6 +916,7 @@ function initFilhosScheduler() {
 
 module.exports = {
   handleTentarFilho,
+  handleAdotarFilho,
   handleVerFilho,
   handleCuidarFilho,
   handleRemedioFilho,

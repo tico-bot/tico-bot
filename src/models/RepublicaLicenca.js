@@ -5,7 +5,7 @@ const republicaLicencaSchema = new mongoose.Schema({
   idGrupo: { type: String, required: true, index: true },
   usuarioId: { type: String, required: true },
   filhoId: { type: mongoose.Schema.Types.ObjectId, required: true },
-  tipo: { type: String, enum: ['maternidade', 'paternidade'], required: true },
+  tipo: { type: String, enum: ['maternidade', 'paternidade', 'adocao'], required: true },
   inicio: { type: Date, required: true },
   fim: { type: Date, required: true },
   salarioDiario: { type: Number, default: 0, min: 0 },

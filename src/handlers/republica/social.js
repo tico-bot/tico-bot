@@ -389,15 +389,65 @@ async function processarLicencasGrupo(idGrupo) {
   return pagamentos;
 }
 
-async function solicitarLicencaAdocao(idGrupo, usuarioId, dias = 2) {
-  if (!(await modoAtivo(idGrupo))) return { ok: false, motivo: 'MODO_DESLIGADO' };
-  const id = await resolveJidComLid(usuarioId, idGrupo);
-  const carteira = await CarteiraGrupo.findOne({
-    idGrupo, idWhatsApp: id,
-    empregoAtual: { $nin: [null, '', 'desempregado'] },
-  }).lean();
-  if (!carteira) return { ok: false, motivo: 'SEM_EMPREGO' };
-  return { ok: false, motivo: 'ADOCAO_NAO_INTEGRADA', mensagem: 'O Tico ainda não tem um fluxo de adoção para validar o início desta licença.' };
+async function registrarLicencasAdocao(idGrupo, responsaveis = [], filho) {
+  if (!(await modoAtivo(idGrupo)) || !filho?._id) return [];
+  const ids = [...new Set(await Promise.all(
+    responsaveis.filter(Boolean).map(id => resolveJidComLid(id, idGrupo))
+  ))].filter(Boolean);
+  const criadas = [];
+
+  for (const usuarioId of ids) {
+    const carteira = await CarteiraGrupo.findOne({
+      idGrupo,
+      idWhatsApp: usuarioId,
+      empregoAtual: { $nin: [null, '', 'desempregado'] },
+    }).lean();
+    if (!carteira) continue;
+
+    let salarioDiario = Math.max(0, Math.floor(await salarioDiarioMedio(idGrupo, usuarioId, 7)));
+    if (salarioDiario <= 0) {
+      const catalogoEmpregos = require('../diversao/emprego');
+      const cargoAtual = catalogoEmpregos.CARGO_MAP?.get(carteira.empregoAtual);
+      const faixa = cargoAtual?.tierInfo;
+      if (faixa) {
+        salarioDiario = Math.floor(
+          ((Number(faixa.salarioMin) || 0) + (Number(faixa.salarioMax) || 0)) / 2
+        );
+      }
+    }
+
+    const inicio = new Date();
+    const fim = new Date(inicio.getTime() + LICENCA_MS);
+    const filtroLicenca = { idGrupo, usuarioId, filhoId: filho._id };
+    let licenca = await RepublicaLicenca.findOne(filtroLicenca);
+    const licencaNova = !licenca;
+    if (!licenca) {
+      try {
+        licenca = await RepublicaLicenca.create({
+          ...filtroLicenca,
+          tipo: 'adocao',
+          inicio,
+          fim,
+          salarioDiario,
+          ativa: true,
+          pagamentosRealizados: 0,
+        });
+      } catch (erroCriacao) {
+        if (erroCriacao?.code !== 11000) throw erroCriacao;
+        licenca = await RepublicaLicenca.findOne(filtroLicenca);
+      }
+    }
+    if (!licenca) continue;
+    criadas.push(licenca);
+
+    if (licencaNova) {
+      await CarteiraGrupo.updateOne(
+        { _id: carteira._id },
+        { $set: { ultimoTrabalho: new Date(fim.getTime() - 40 * 60 * 1000), avisosEmprego: [] } }
+      );
+    }
+  }
+  return criadas;
 }
 
 module.exports = {
@@ -416,5 +466,5 @@ module.exports = {
   registrarLicencasNascimento,
   obterLicencaAtiva,
   processarLicencasGrupo,
-  solicitarLicencaAdocao,
+  registrarLicencasAdocao,
 };

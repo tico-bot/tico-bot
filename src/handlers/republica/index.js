@@ -31,10 +31,15 @@ function textoAjuda(prefixo) {
     '🇧🇷 *MODO REPÚBLICA — CENTRAL DO GOVERNO*',
     '',
     '*ELEIÇÕES*',
-    p + 'republica candidatura @vice | <propostas> — formar chapa e apresentar plano',
-    p + 'republica aceitar — o vice confirma',
-    p + 'republica votar @presidente — voto secreto',
-    p + 'republica eleicao — consultar eleição',
+    p + 'republica candidatura @vice | <plano> — formar chapa presidencial',
+    p + 'republica aceitar — o vice confirma a chapa',
+    p + 'republica candidatura-vice | <plano> — candidatar-se à vice-presidência vaga',
+    p + 'republica campanha <texto> — publicar campanha na fase própria',
+    p + 'republica votar — receber cédula privada por mensagem directa',
+    p + 'republica votar <código> <número> — concluir a votação no privado',
+    p + 'republica eleicao — consultar fase, chapas e prazo',
+    p + 'republica historico — consultar resultados anteriores',
+    p + 'republica cancelar/reiniciar — gestão eleitoral (administradores)',
     '',
     '*GOVERNO E CONTAS*',
     p + 'republica status — presidente, vice e mandato',
@@ -510,35 +515,81 @@ async function processarCiclo(sock) {
   for (const grupo of ativos) {
     const idGrupo = grupo.idGrupo;
     try {
-      const estado = await getEstado(idGrupo);
+      let estado = await getEstado(idGrupo);
       await obterTaxasEfetivas(idGrupo);
-      let aberta = await eleicoes.obterEleicaoAberta(idGrupo);
-      const agora = new Date();
-      if (aberta && new Date(aberta.encerraEm).getTime() <= agora.getTime()) {
-        await eleicoes.processarEleicao(sock, idGrupo, agora);
-        aberta = await eleicoes.obterEleicaoAberta(idGrupo);
+      await eleicoes.verificarCargos(sock, idGrupo, estado);
+      estado = await getEstado(idGrupo);
+
+      let aberta = await eleicoes.obterEleicaoAberta(idGrupo, sock);
+      let agora = new Date();
+      let mandatoAte = estado.governo?.mandatoAte ? new Date(estado.governo.mandatoAte).getTime() : 0;
+
+      if (aberta?.tipoEleicao === 'vice' && (!mandatoAte || mandatoAte <= agora.getTime())) {
+        await eleicoes.cancelarEleicao(idGrupo, 'sistema', 'O mandato presidencial terminou; será realizada uma eleição geral.');
+        aberta = null;
       }
+
+      if (aberta && new Date(aberta.faseEncerraEm || aberta.encerraEm).getTime() <= agora.getTime()) {
+        await eleicoes.processarEleicao(sock, idGrupo, agora);
+        aberta = await eleicoes.obterEleicaoAberta(idGrupo, sock);
+        estado = await getEstado(idGrupo);
+        agora = new Date();
+        mandatoAte = estado.governo?.mandatoAte ? new Date(estado.governo.mandatoAte).getTime() : 0;
+      }
+
       if (!aberta) {
-        const ultimaEleicaoSemResultado = await RepublicaEleicao.findOne({ idGrupo, status: { $in: ['sem_candidatos', 'sem_votos'] } }).sort({ createdAt: -1 }).lean();
-        const mandatoAte = estado.governo?.mandatoAte ? new Date(estado.governo.mandatoAte).getTime() : 0;
-        const eleitoEm = estado.governo?.eleitoEm ? new Date(estado.governo.eleitoEm).getTime() : 0;
-        const falhaNesteMandato = Boolean(ultimaEleicaoSemResultado &&
-          (!eleitoEm || new Date(ultimaEleicaoSemResultado.createdAt).getTime() > eleitoEm));
-        const espera = Boolean(falhaNesteMandato &&
-          agora.getTime() - new Date(ultimaEleicaoSemResultado.createdAt).getTime() >= eleicoes.NOVA_ELEICAO_SEM_CANDIDATOS_MS);
-        const mandatoExpirado = mandatoAte > 0 && mandatoAte <= agora.getTime();
-        const semMandatoInicial = !mandatoAte && !ultimaEleicaoSemResultado;
-        const abrirAntesDoFim = mandatoAte > agora.getTime() &&
-          mandatoAte <= agora.getTime() + eleicoes.DURACAO_ELEICAO_MS && !falhaNesteMandato;
-        const tentarNovamenteSemGoverno = (!mandatoAte || mandatoExpirado) && espera;
-        const mandatoExpirouSemFalha = mandatoExpirado && !falhaNesteMandato;
-        if (semMandatoInicial || abrirAntesDoFim || tentarNovamenteSemGoverno || mandatoExpirouSemFalha) {
-          const novaEleicao = await eleicoes.abrirEleicao(idGrupo, agora);
-          if (sock && sock.sendMessage && novaEleicao) await sock.sendMessage(idGrupo, {
-            text: '🗳️ *NOVA ELEIÇÃO — MODO REPÚBLICA*\n\nA votação para presidente e vice-presidente foi aberta.\nEncerra em: *' + new Date(novaEleicao.encerraEm).toLocaleString('pt-BR') + '*\n\nUse /republica candidatura @vice para formar uma chapa e /republica votar @presidente para votar.',
-          }).catch(() => {});
+        const falhas = ['sem_candidatos', 'sem_votos', 'sem_quorum', 'rejeitada', 'empate', 'cancelada'];
+        const presidenteAtual = estado.governo?.presidenteId || null;
+        const viceAtual = estado.governo?.viceId || null;
+        const viceVagoComMandato = Boolean(presidenteAtual && !viceAtual && mandatoAte > agora.getTime());
+
+        if (viceVagoComMandato) {
+          const ultimaViceFalha = await RepublicaEleicao.findOne({
+            idGrupo,
+            tipoEleicao: 'vice',
+            status: { $in: falhas },
+          }).sort({ encerradaEm: -1, createdAt: -1 }).lean();
+          const dataFalha = ultimaViceFalha
+            ? new Date(ultimaViceFalha.encerradaEm || ultimaViceFalha.createdAt).getTime()
+            : 0;
+          if (!ultimaViceFalha || agora.getTime() - dataFalha >= eleicoes.NOVA_ELEICAO_SEM_CANDIDATOS_MS) {
+            await eleicoes.abrirEleicaoVice(idGrupo, agora, sock);
+          }
+        } else {
+          const ultimaEleicaoSemResultado = await RepublicaEleicao.findOne({
+            idGrupo,
+            tipoEleicao: { $ne: 'vice' },
+            status: { $in: falhas },
+          }).sort({ encerradaEm: -1, createdAt: -1 }).lean();
+          const eleitoEm = estado.governo?.eleitoEm ? new Date(estado.governo.eleitoEm).getTime() : 0;
+          const falhaNesteMandato = Boolean(ultimaEleicaoSemResultado &&
+            (!eleitoEm || new Date(ultimaEleicaoSemResultado.encerradaEm || ultimaEleicaoSemResultado.createdAt).getTime() > eleitoEm));
+          const dataFalha = ultimaEleicaoSemResultado
+            ? new Date(ultimaEleicaoSemResultado.encerradaEm || ultimaEleicaoSemResultado.createdAt).getTime()
+            : 0;
+          const espera = Boolean(falhaNesteMandato &&
+            agora.getTime() - dataFalha >= eleicoes.NOVA_ELEICAO_SEM_CANDIDATOS_MS);
+          const mandatoExpirado = mandatoAte > 0 && mandatoAte <= agora.getTime();
+          const semMandatoInicial = !mandatoAte && !ultimaEleicaoSemResultado;
+          const abrirAntesDoFim = mandatoAte > agora.getTime() &&
+            mandatoAte <= agora.getTime() + eleicoes.DURACAO_ELEICAO_MS && !falhaNesteMandato;
+          const mandatoDentroDoCiclo = !mandatoAte ||
+            mandatoAte <= agora.getTime() + eleicoes.DURACAO_ELEICAO_MS;
+          const tentarNovamente = falhaNesteMandato && espera && mandatoDentroDoCiclo;
+          const mandatoExpirouSemFalha = mandatoExpirado && !falhaNesteMandato;
+
+          if (semMandatoInicial || abrirAntesDoFim || tentarNovamente || mandatoExpirouSemFalha) {
+            const novaEleicao = await eleicoes.abrirEleicao(idGrupo, agora, sock);
+            if (sock && sock.sendMessage && novaEleicao) await sock.sendMessage(idGrupo, {
+              text: '🗳️ *NOVA ELEIÇÃO — MODO REPÚBLICA*\n\nA fase de candidaturas para presidente e vice-presidente foi aberta.\nCódigo: *' +
+                novaEleicao.codigo + '*\nEncerra esta fase em: *' +
+                new Date(novaEleicao.faseEncerraEm).toLocaleString('pt-BR') +
+                '*\n\nUse /republica candidatura @vice para formar uma chapa.',
+            }).catch(() => {});
+          }
         }
       }
+
       await processarConsultas(sock, idGrupo);
       const pagamentosBolsa = await social.processarBolsaGrupo(idGrupo);
       for (const pagamento of pagamentosBolsa) {
@@ -583,14 +634,48 @@ function pararCiclo() {
 }
 
 async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlternateJids, mentions, isAdmin, author, prefixo) {
-  if (!ehGrupo(idGrupo)) return sock.sendMessage(idGrupo, { text: '🇧🇷 O Modo República funciona apenas em grupos.' }, { quoted: msg });
   const textoComando = String(caption || '').trim();
   const prefixoSeguro = String(prefixo || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regexPrefixo = prefixoSeguro ? new RegExp('^' + prefixoSeguro + 'republica\\s*', 'i') : /^[!.,/#]republica\s*/i;
+  const regexPrefixo = ehGrupo(idGrupo)
+    ? (prefixoSeguro ? new RegExp('^' + prefixoSeguro + 'republica\\s*', 'i') : /^[!.,/#]republica\s*/i)
+    : /^[!.,/#]republica\s*/i;
   const argsTexto = textoComando.replace(regexPrefixo, '').trim();
   const args = argsTexto.split(/\s+/).filter(Boolean);
   const acao = String(args[0] || 'ajuda').toLowerCase();
   const men = Array.isArray(mentions) ? mentions : [];
+
+  if (!ehGrupo(idGrupo)) {
+    if (acao !== 'votar') {
+      return sock.sendMessage(idGrupo, {
+        text: '🗳️ No privado, o Modo República só aceita a conclusão de uma cédula. Peça a cédula no grupo com /republica votar.',
+      }, { quoted: msg });
+    }
+    const codigo = args[1];
+    const numero = args[2];
+    if (!codigo || !numero) return sock.sendMessage(idGrupo, {
+      text: '⚠️ Use o código e a opção recebidos na cédula: /republica votar <código> <número>.',
+    }, { quoted: msg });
+    const eleicaoCodigo = await RepublicaEleicao.findOne({
+      codigo: String(codigo).toUpperCase(), status: 'aberta',
+    }).select('idGrupo').lean();
+    if (!eleicaoCodigo || !(await modoAtivo(eleicaoCodigo.idGrupo))) {
+      return sock.sendMessage(idGrupo, { text: '❌ Esta eleição não está activa ou o código não é válido.' }, { quoted: msg });
+    }
+    const resultado = await eleicoes.votarPorCodigo(sock, codigo, senderJid || idGrupo, senderAlternateJids, numero);
+    const mensagens = {
+      FORA_DA_VOTACAO: 'O prazo para votar terminou ou o segundo turno ainda não começou.',
+      NAO_ELEITOR: 'Esta cédula só pode ser utilizada por um membro elegível do grupo.',
+      OPCAO_INVALIDA: 'Número de opção inválido. Solicite uma nova cédula no grupo.',
+      SEM_CHAPAS: 'Não há candidatos elegíveis nesta votação.',
+      ELEICAO_NAO_ENCONTRADA: 'Código de eleição inválido ou encerrado.',
+    };
+    if (!resultado.ok) return sock.sendMessage(idGrupo, {
+      text: '❌ ' + (mensagens[resultado.motivo] || 'Não foi possível registar o voto.'),
+    }, { quoted: msg });
+    return sock.sendMessage(idGrupo, {
+      text: '✅ *VOTO REGISTADO PRIVADAMENTE*\n\nA sua cédula foi guardada sem o JID do eleitor. Pode alterar a escolha enquanto a votação estiver aberta.',
+    }, { quoted: msg });
+  }
 
   if (acao === 'on' || acao === 'off') {
     if (!isAdmin) return sock.sendMessage(idGrupo, { text: '❌ Apenas administradores do WhatsApp podem ligar ou desligar modos.' }, { quoted: msg });
@@ -601,8 +686,16 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     if (ativo) {
       await getEstado(idGrupo);
       await obterTaxasEfetivas(idGrupo);
-      const aberta = await eleicoes.obterEleicaoAberta(idGrupo);
-      if (!aberta) await eleicoes.abrirEleicao(idGrupo);
+      const aberta = await eleicoes.obterEleicaoAberta(idGrupo, sock);
+      if (!aberta) {
+        const estadoAtivo = await getEstado(idGrupo);
+        const mandatoAte = new Date(estadoAtivo.governo?.mandatoAte || 0).getTime();
+        if (estadoAtivo.governo?.presidenteId && !estadoAtivo.governo?.viceId && mandatoAte > Date.now()) {
+          await eleicoes.abrirEleicaoVice(idGrupo, new Date(), sock);
+        } else {
+          await eleicoes.abrirEleicao(idGrupo, new Date(), sock);
+        }
+      }
       return sock.sendMessage(idGrupo, {
         text: '🇧🇷 *MODO REPÚBLICA ACTIVADO!*\n\nEleições, governo, tributação, Tesouro e políticas sociais estão disponíveis neste grupo.\n\n🗳️ A primeira eleição foi aberta. Use /republica para ver os comandos.\n\nOs fundos começam separados e vazios. A presidência não concede poderes de administrador do WhatsApp.',
       }, { quoted: msg });
@@ -620,7 +713,7 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     const estado = await getEstado(idGrupo);
     const g = estado.governo || {};
     const falta = g.mandatoAte ? Math.max(0, new Date(g.mandatoAte).getTime() - Date.now()) : 0;
-    const eleicao = await eleicoes.consultarEleicao(idGrupo);
+    const eleicao = await eleicoes.consultarEleicao(idGrupo, sock);
     return sock.sendMessage(idGrupo, {
       text:
         '🇧🇷 *GOVERNO DO GRUPO*\n\n' +
@@ -632,17 +725,57 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     }, { quoted: msg });
   }
   if (acao === 'eleicao') {
-    const resultado = await eleicoes.consultarEleicao(idGrupo);
+    const resultado = await eleicoes.consultarEleicao(idGrupo, sock);
     if (!resultado) return sock.sendMessage(idGrupo, { text: '🗳️ Não há eleição aberta neste momento.' }, { quoted: msg });
+    const faseNomes = {
+      candidaturas: 'Registo de candidaturas',
+      campanha: 'Campanha eleitoral',
+      votacao: 'Votação',
+      segundo_turno: 'Segundo turno',
+    };
     const chapas = resultado.eleicao.candidaturas.map((c, i) =>
-      (i + 1) + '. ' + c.presidenteNome + ' / ' + c.viceNome + (c.viceAceitou ? ' ✅ confirmada' : ' ⏳ aguarda o vice') +
-      (c.plano ? '\n   📋 Plano: ' + String(c.plano).slice(0, 350) : '\n   📋 Plano ainda não apresentado.')
+      (i + 1) + '. ' + (resultado.eleicao.tipoEleicao === 'vice'
+        ? c.viceNome
+        : c.presidenteNome + ' / ' + c.viceNome) + (c.viceAceitou ? ' ✅ confirmada' : ' ⏳ aguarda o vice') +
+      (c.plano ? '\n   📋 Plano: ' + String(c.plano).slice(0, 300) : '') +
+      (c.campanha ? '\n   📣 Campanha: ' + String(c.campanha).slice(0, 300) : '')
     );
     return sock.sendMessage(idGrupo, {
       text: '🗳️ *ELEIÇÃO EM ANDAMENTO*\n\n' +
-        (chapas.length ? chapas.join('\n') : '_Ainda não há chapas._') +
-        '\n\nVotos registados: *' + resultado.votos + '*\nEncerra em: *' +
-        new Date(resultado.eleicao.encerraEm).toLocaleString('pt-BR') + '*',
+        'Tipo: *' + (resultado.eleicao.tipoEleicao === 'vice' ? 'Complementar — vice-presidência' : 'Geral — presidente e vice') + '*\n' +
+        'Fase: *' + (faseNomes[resultado.eleicao.fase] || 'Votação') + '*\n' +
+        'Código: *' + resultado.eleicao.codigo + '*\n' +
+        'Eleitorado registado: *' + (resultado.eleicao.totalEleitores || 0) + '*\n' +
+        'Quórum mínimo: *' + resultado.quorum + '*\n\n' +
+        (chapas.length ? chapas.join('\n') : '_Ainda não há candidaturas._') +
+        '\n\nVotos registados: *' + resultado.votos + '*\nEncerra esta fase em: *' +
+        new Date(resultado.eleicao.faseEncerraEm || resultado.eleicao.encerraEm).toLocaleString('pt-BR') + '*',
+    }, { quoted: msg });
+  }
+  if (acao === 'candidatura-vice') {
+    const partes = argsTexto.split('|');
+    const plano = partes.slice(1).join('|').trim();
+    const resultado = await eleicoes.candidatarVice(
+      idGrupo, senderJid, author || msg.pushName || 'Candidato', plano, sock, senderAlternateJids
+    );
+    const mensagens = {
+      SEM_ELEICAO_VICE: 'Não há eleição complementar para vice-presidente aberta.',
+      PRAZO_ENCERRADO: 'O prazo para candidatura terminou.',
+      CARGO_NAO_DISPONIVEL: 'O cargo de vice-presidente já está ocupado ou não há presidente em exercício.',
+      CANDIDATO_INVALIDO: 'Não consegui validar a sua identidade.',
+      CANDIDATO_FORA_DO_GRUPO: 'Apenas membros actuais do grupo podem candidatar-se.',
+      CANDIDATO_E_BOT: 'O próprio Tico não pode ocupar um cargo político.',
+      PRESIDENTE_NAO_PODE_SER_VICE: 'O presidente em exercício não pode candidatar-se à própria vice-presidência.',
+      JA_CANDIDATADO: 'Você já está inscrito nesta eleição complementar.',
+    };
+    if (!resultado.ok) return sock.sendMessage(idGrupo, {
+      text: '❌ ' + (mensagens[resultado.motivo] || 'Não foi possível registar a candidatura.'),
+    }, { quoted: msg });
+    return sock.sendMessage(idGrupo, {
+      text: '📋 *CANDIDATURA À VICE-PRESIDÊNCIA REGISTADA*\n\nCandidato: *' +
+        (author || msg.pushName || 'Candidato') + '*\n' +
+        (plano ? 'Plano: ' + plano.slice(0, 450) : 'Plano não apresentado.') +
+        '\n\nEsta eleição escolherá apenas o vice-presidente; o presidente actual e o prazo do mandato serão preservados.',
     }, { quoted: msg });
   }
   if (acao === 'candidatura') {
@@ -650,7 +783,8 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     const partesCandidatura = argsTexto.split('|');
     const plano = partesCandidatura.slice(1).join('|').trim();
     const resultado = await eleicoes.candidatar(
-      idGrupo, senderJid, men[0], author || msg.pushName || 'Candidato', 'Vice indicado', plano
+      idGrupo, senderJid, men[0], author || msg.pushName || 'Candidato', 'Vice indicado', plano,
+      sock, senderAlternateJids
     );
     const mensagens = {
       SEM_ELEICAO: 'Não existe eleição aberta.',
@@ -658,6 +792,9 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
       CANDIDATOS_INVALIDOS: 'A chapa tem integrantes inválidos ou iguais.',
       JA_CANDIDATADO: 'Você já registou candidatura nesta eleição.',
       VICE_JA_EM_CHAPA: 'Esse vice já está noutra chapa.',
+      CANDIDATO_FORA_DO_GRUPO: 'O presidente e o vice precisam ser membros actuais deste grupo.',
+      CANDIDATO_E_BOT: 'O próprio Tico não pode ocupar um cargo político.',
+      NAO_FOI_POSSIVEL_VALIDAR_MEMBROS: 'Não consegui verificar os membros do grupo. Tente novamente.',
     };
     if (!resultado.ok) return sock.sendMessage(idGrupo, { text: '❌ ' + (mensagens[resultado.motivo] || 'Não foi possível criar a chapa.') }, { quoted: msg });
     return sock.sendMessage(idGrupo, {
@@ -669,7 +806,9 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     }, { quoted: msg });
   }
   if (acao === 'aceitar') {
-    const resultado = await eleicoes.aceitarVice(idGrupo, senderJid, author || msg.pushName || 'Vice-presidente');
+    const resultado = await eleicoes.aceitarVice(
+      idGrupo, senderJid, author || msg.pushName || 'Vice-presidente', sock, senderAlternateJids
+    );
     if (!resultado.ok) return sock.sendMessage(idGrupo, {
       text: resultado.motivo === 'PRAZO_ENCERRADO'
         ? '❌ O prazo para confirmar a chapa terminou.'
@@ -677,15 +816,130 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
     }, { quoted: msg });
     return sock.sendMessage(idGrupo, { text: '✅ Você aceitou ser vice-presidente. A chapa está confirmada e pode receber votos.' }, { quoted: msg });
   }
-  if (acao === 'votar') {
-    if (!men[0]) return sock.sendMessage(idGrupo, { text: '⚠️ Marque o candidato a presidente: /republica votar @presidente.' }, { quoted: msg });
-    const resultado = await eleicoes.votar(idGrupo, senderJid, men[0]);
+  if (acao === 'campanha') {
+    const textoCampanha = argsTexto.replace(/^campanha\s*/i, '').trim();
+    const resultado = await eleicoes.publicarCampanha(idGrupo, senderJid, textoCampanha, sock, senderAlternateJids);
+    const mensagens = {
+      SEM_ELEICAO: 'Não existe eleição aberta.',
+      FORA_DA_CAMPANHA: 'A campanha só pode ser publicada na fase própria.',
+      TEXTO_INVALIDO: 'Escreva uma mensagem de campanha com pelo menos cinco caracteres.',
+      NAO_E_CANDIDATO: 'Apenas candidatos de chapas confirmadas podem publicar a campanha oficial.',
+    };
     if (!resultado.ok) return sock.sendMessage(idGrupo, {
-      text: resultado.motivo === 'CHAPA_NAO_CONFIRMADA'
-        ? '❌ Essa chapa ainda não foi confirmada pelo vice.'
-        : '❌ Não foi possível registar o voto. Verifique a eleição.',
+      text: '❌ ' + (mensagens[resultado.motivo] || 'Não foi possível publicar a campanha.'),
     }, { quoted: msg });
-    return sock.sendMessage(idGrupo, { text: '🗳️ Seu voto secreto foi registado. Você pode alterá-lo enquanto a votação estiver aberta.' }, { quoted: msg });
+    return sock.sendMessage(idGrupo, {
+      text: '📣 *CAMPANHA ELEITORAL*\n\n' +
+        (resultado.tipoEleicao === 'vice'
+          ? 'Candidato a vice: *' + resultado.candidatura.viceNome + '*'
+          : 'Chapa: *' + resultado.candidatura.presidenteNome + ' / ' + resultado.candidatura.viceNome + '*') +
+        '\n\n' + resultado.candidatura.campanha,
+    }, { quoted: msg });
+  }
+  if (acao === 'votar') {
+    const resultado = await eleicoes.solicitarVoto(sock, idGrupo, senderJid, senderAlternateJids);
+    const mensagens = {
+      SEM_ELEICAO: 'Não existe eleição aberta neste momento.',
+      FORA_DA_VOTACAO: 'A votação ainda não começou ou já terminou.',
+      ELEITOR_INVALIDO: 'Não consegui validar a sua identidade.',
+      NAO_ELEITOR: 'Só pode votar quem fazia parte do grupo quando o eleitorado foi registado e continua membro.',
+      SEM_CHAPAS: 'Não há candidatos elegíveis nesta votação.',
+    };
+    if (!resultado.ok) return sock.sendMessage(idGrupo, {
+      text: '❌ ' + (mensagens[resultado.motivo] || 'Não foi possível preparar a sua cédula.'),
+    }, { quoted: msg });
+
+    const destinos = [senderJid, ...(senderAlternateJids || [])]
+      .filter((id, i, arr) => typeof id === 'string' && id.includes('@') && !id.endsWith('@g.us') && arr.indexOf(id) === i)
+      .sort((a, b) => Number(b.endsWith('@s.whatsapp.net')) - Number(a.endsWith('@s.whatsapp.net')));
+    const opcoes = resultado.eleicao.tipoVotacao === 'aprovacao'
+      ? '1 — Aprovar a candidatura única\n2 — Rejeitar a candidatura'
+      : resultado.chapas.map((c, i) => (i + 1) + ' — ' + (resultado.eleicao.tipoEleicao === 'vice'
+        ? c.viceNome
+        : c.presidenteNome + ' / ' + c.viceNome)).join('\n');
+    const textoPrivado =
+      '🗳️ *CÉDULA ELEITORAL PRIVADA — MODO REPÚBLICA*\n\n' +
+      'Grupo: *' + idGrupo + '*\n' +
+      'Código da eleição: *' + resultado.eleicao.codigo + '*\n' +
+      'Fase: *' + (resultado.eleicao.fase === 'segundo_turno' ? 'Segundo turno' : 'Votação') + '*\n\n' +
+      opcoes + '\n\n' +
+      'Envie apenas nesta conversa: */republica votar ' + resultado.eleicao.codigo + ' <número>*\n' +
+      'Exemplo: */republica votar ' + resultado.eleicao.codigo + ' 1*\n\n' +
+      'A sua escolha não será associada ao seu identificador na tabela de cédulas. O voto pode ser alterado até ao encerramento da votação. Não envie o número da opção no grupo.';
+    let enviado = false;
+    for (const destinoJid of destinos) {
+      try {
+        await sock.sendMessage(destinoJid, { text: textoPrivado });
+        enviado = true;
+        break;
+      } catch {}
+    }
+    if (!enviado) return sock.sendMessage(idGrupo, {
+      text: '⚠️ Não consegui abrir a sua cédula por mensagem privada. Envie uma mensagem ao Tico no privado e tente novamente. A sua escolha ainda não foi registada.',
+    }, { quoted: msg });
+    return sock.sendMessage(idGrupo, {
+      text: '📩 Enviei a sua cédula por mensagem privada. A sua escolha não aparece no grupo e ainda não foi registada; conclua o voto na conversa privada com o Tico.',
+    }, { quoted: msg });
+  }
+  if (acao === 'historico' || acao === 'historicoeleicoes') {
+    const historico = await RepublicaEleicao.find({ idGrupo }).sort({ createdAt: -1 }).limit(10).lean();
+    const statusNomes = {
+      encerrada: 'Concluída',
+      sem_candidatos: 'Sem candidaturas',
+      sem_votos: 'Sem votos',
+      sem_quorum: 'Sem quórum',
+      rejeitada: 'Candidatura rejeitada',
+      empate: 'Empate no segundo turno',
+      cancelada: 'Cancelada',
+      aberta: 'Em andamento',
+    };
+    const linhas = historico.map((e, i) => {
+      const data = new Date(e.encerradaEm || e.createdAt || e.iniciaEm).toLocaleString('pt-BR');
+      const vencedor = e.tipoEleicao === 'vice'
+        ? ((e.candidaturas || []).find(c => c.viceId === e.resultado?.viceId)?.viceNome || null)
+        : (e.resultado?.presidenteId
+          ? ((e.candidaturas || []).find(c => c.presidenteId === e.resultado.presidenteId)?.presidenteNome || 'Chapa eleita')
+          : null);
+      const resultadoResumo = e.resultado?.votosTotais
+        ? ' — ' + e.resultado.votosTotais + ' votos (quórum: ' + (e.resultado.quorum || 0) + ')'
+        : '';
+      const segundoTurno = e.resultado?.segundoTurno ? ' — decidido no segundo turno' : '';
+      return (i + 1) + '. *' + (statusNomes[e.status] || e.status) + '* — ' + data +
+        (vencedor ? (e.tipoEleicao === 'vice' ? ' — Vice eleito: ' : ' — Presidente: ') + vencedor : '') +
+        resultadoResumo + segundoTurno +
+        (e.motivoEncerramento ? ' — ' + e.motivoEncerramento : '');
+    });
+    return sock.sendMessage(idGrupo, {
+      text: '📚 *HISTÓRICO ELEITORAL*\n\n' + (linhas.length ? linhas.join('\n') : '_Ainda não há eleições registadas._'),
+    }, { quoted: msg });
+  }
+  if (acao === 'cancelar' || acao === 'reiniciar') {
+    if (!isAdmin) return sock.sendMessage(idGrupo, {
+      text: '❌ Apenas administradores do WhatsApp podem cancelar ou reiniciar uma eleição.',
+    }, { quoted: msg });
+    const motivo = args.slice(1).join(' ').trim() || (acao === 'reiniciar' ? 'Reinício administrativo' : 'Cancelada por um administrador');
+    const cancelamento = await eleicoes.cancelarEleicao(idGrupo, senderJid, motivo);
+    if (!cancelamento.ok && cancelamento.motivo === 'SEM_ELEICAO' && acao !== 'reiniciar') {
+      return sock.sendMessage(idGrupo, { text: 'Não há eleição aberta para cancelar.' }, { quoted: msg });
+    }
+    if (acao === 'reiniciar') {
+      const estadoAtual = await getEstado(idGrupo);
+      const eleicaoVice = cancelamento.eleicao?.tipoEleicao === 'vice' ||
+        (!cancelamento.eleicao && estadoAtual.governo?.presidenteId && !estadoAtual.governo?.viceId &&
+          new Date(estadoAtual.governo?.mandatoAte || 0).getTime() > Date.now());
+      const nova = eleicaoVice
+        ? await eleicoes.abrirEleicaoVice(idGrupo, new Date(), sock)
+        : await eleicoes.abrirEleicao(idGrupo, new Date(), sock);
+      if (!nova) return sock.sendMessage(idGrupo, {
+        text: '❌ Não foi possível reiniciar a eleição porque os cargos actuais não permitem esse tipo de votação.',
+      }, { quoted: msg });
+      return sock.sendMessage(idGrupo, {
+        text: '🔄 *ELEIÇÃO REINICIADA*\n\nA eleição anterior foi encerrada e uma nova fase de candidaturas começou. Código: *' + nova.codigo + '*.',
+      }, { quoted: msg });
+    }
+    return sock.sendMessage(idGrupo, {
+      text: '🛑 *ELEIÇÃO CANCELADA*\n\nMotivo: ' + motivo + '\nO histórico foi preservado. Uma nova eleição será convocada automaticamente.',
+    }, { quoted: msg });
   }
   if (acao === 'tesouro') return mostrarTesouro(sock, msg, idGrupo);
   if (acao === 'contas') return mostrarContas(sock, msg, idGrupo);
@@ -799,6 +1053,7 @@ async function handleRepublica(sock, msg, idGrupo, caption, senderJid, senderAlt
           'governo.presidenteNome': governo.viceNome || 'Presidente em exercício',
           'governo.viceId': null,
           'governo.viceNome': null,
+          'governo.viceVagaDesde': new Date(),
         } }
       );
       return sock.sendMessage(idGrupo, {

@@ -833,7 +833,7 @@ async function handleMessage(sock, msg) {
   // ── MODO REPÚBLICA ────────────────────────────────────────────
   if (matchCmd(cmdWord, 'republica') || matchCmdStart(cmd, 'republica ')) {
     const mentionsRepublica = content?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const adminRepublica = await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids);
+    const adminRepublica = isGroup ? await grupoHandler.isAdmin(sock, jid, senderJid, senderAlternateJids) : false;
     await republicaHandler.handleRepublica(
       sock, msg, jid, caption, senderJid, senderAlternateJids,
       mentionsRepublica, adminRepublica, author, getPrefix(jid)
@@ -1154,6 +1154,7 @@ async function handleMessage(sock, msg) {
   if (matchCmd(cmdWord, 'rankcasais'))       { await relacionamentoHandler.handleRankCasais(sock, msg, jid, relacionamentos); return; }
   if (matchCmd(cmdWord, 'surpresa'))
     { await relacionamentoHandler.handleSurpresa(sock, msg, jid, author, senderJid, relacionamentos); return; }
+  if (matchCmd(cmdWord, 'adotarfilho')) { await diversaoHandler.handleAdotarFilho(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'tentarfilho'))  { await diversaoHandler.handleTentarFilho(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'filho'))        { await diversaoHandler.handleVerFilho(sock, msg, jid); return; }
   if (matchCmd(cmdWord, 'cuidarfilho'))  { await diversaoHandler.handleCuidarFilho(sock, msg, jid); return; }
