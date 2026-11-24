@@ -4,6 +4,7 @@ const axios = require('axios');
 const dns = require('node:dns').promises;
 const net = require('node:net');
 const sharp = require('sharp');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { createYoutubeRequestQueue } = require('./youtube-request-queue');
 const { getSenderJid, getAlternateSenderJids, normalizarJid } = require('../../utils/identity');
 
@@ -1553,11 +1554,155 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
+// Extrai o áudio de um vídeo citado no comando /audio.
+function unwrapQuotedMessage(message) {
+  let current = message;
+  for (let i = 0; i < 6 && current; i++) {
+    if (current.ephemeralMessage?.message) current = current.ephemeralMessage.message;
+    else if (current.viewOnceMessage?.message) current = current.viewOnceMessage.message;
+    else if (current.viewOnceMessageV2?.message) current = current.viewOnceMessageV2.message;
+    else if (current.viewOnceMessageV2Extension?.message) current = current.viewOnceMessageV2Extension.message;
+    else if (current.documentWithCaptionMessage?.message) current = current.documentWithCaptionMessage.message;
+    else break;
+  }
+  return current;
+}
+
+function getQuotedVideoContext(msg, jid) {
+  const content = unwrapQuotedMessage(msg?.message);
+  const contextInfo =
+    content?.extendedTextMessage?.contextInfo ||
+    content?.imageMessage?.contextInfo ||
+    content?.videoMessage?.contextInfo ||
+    content?.documentMessage?.contextInfo;
+  const quotedMessage = contextInfo?.quotedMessage;
+  if (!quotedMessage) return null;
+
+  const quotedContent = unwrapQuotedMessage(quotedMessage);
+  const isVideo = Boolean(
+    quotedContent?.videoMessage ||
+    String(quotedContent?.documentMessage?.mimetype || '').toLowerCase().startsWith('video/')
+  );
+  if (!isVideo) return null;
+
+  const stanzaId = contextInfo.stanzaId;
+  const key = stanzaId ? {
+    remoteJid: msg?.key?.remoteJid || jid,
+    id: stanzaId,
+    fromMe: Boolean(contextInfo.fromMe),
+    ...(contextInfo.participant ? { participant: contextInfo.participant } : {}),
+  } : null;
+
+  return { key, message: quotedContent };
+}
+
+async function handleQuotedVideoAudio(sock, msg, jid, quotedVideo) {
+  if (!quotedVideo.key) {
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui identificar o vídeo citado. Responda ao vídeo novamente com /audio.',
+    }, { quoted: msg });
+    return;
+  }
+
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
+  const inputPath = tmpPath(id, '_quoted_video.bin');
+  const outputPath = tmpPath(id, '_quoted_audio.mp3');
+
+  await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } }).catch(() => {});
+
+  try {
+    const downloaded = await downloadMediaMessage(
+      { key: quotedVideo.key, message: quotedVideo.message },
+      'buffer',
+      {},
+      { logger: _logger, reuploadRequest: sock.updateMediaMessage }
+    );
+    const videoBuffer = Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded || []);
+
+    if (!videoBuffer.length) {
+      await sock.sendMessage(jid, {
+        text: '❌ O vídeo citado está vazio ou indisponível. Envie-o novamente e tente outra vez.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      return;
+    }
+    if (videoBuffer.length > SIZE_LIMIT) {
+      await sock.sendMessage(jid, {
+        text: '❌ O vídeo ultrapassa o limite de 64 MB para extrair o áudio.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      return;
+    }
+
+    fs.writeFileSync(inputPath, videoBuffer, { flag: 'wx', mode: 0o600 });
+    const converted = await ffmpeg(getFfmpegPath(), [
+      '-y',
+      '-i', inputPath,
+      '-map', '0:a:0',
+      '-vn',
+      '-c:a', 'libmp3lame',
+      '-b:a', '192k',
+      '-ar', '44100',
+      '-ac', '2',
+      outputPath,
+    ], 180000);
+
+    if (!converted || !fs.existsSync(outputPath)) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Não foi possível extrair o áudio. Verifique se o vídeo possui uma faixa de áudio e tente novamente.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      return;
+    }
+
+    const audioBuffer = fs.readFileSync(outputPath);
+    if (!audioBuffer.length) {
+      await sock.sendMessage(jid, {
+        text: '❌ O FFmpeg gerou um áudio vazio. Tente enviar o vídeo novamente.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      return;
+    }
+    if (audioBuffer.length > SIZE_LIMIT) {
+      await sock.sendMessage(jid, {
+        text: '❌ O áudio extraído ultrapassa o limite de 64 MB do WhatsApp.',
+      }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      return;
+    }
+
+    await sock.sendMessage(jid, {
+      audio: audioBuffer,
+      mimetype: 'audio/mpeg',
+      ptt: false,
+    }, { quoted: msg });
+    await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } }).catch(() => {});
+    log.info('✅ Áudio extraído de vídeo citado e enviado.');
+  } catch (error) {
+    log.error('[audio] Falha ao extrair áudio do vídeo citado:', error.message);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui processar o vídeo citado. Ele pode ter expirado ou estar danificado.',
+    }, { quoted: msg }).catch(() => {});
+    await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+  } finally {
+    safeDel(inputPath, outputPath);
+  }
+}
+
 // !audio
 async function handleAudioDownload(sock, msg, jid, caption) {
+  const quotedVideo = getQuotedVideoContext(msg, jid);
+  if (quotedVideo) {
+    await handleQuotedVideoAudio(sock, msg, jid, quotedVideo);
+    return;
+  }
+
   let link = caption.replace(/^[!.,\/]*audio\s*/i, '').trim();
   if (!link || !link.startsWith('http')) {
-    return sock.sendMessage(jid, { text: '⚠️ Envie o link do vídeo.\nExemplo: *!audio https://youtu.be/xxx*' }, { quoted: msg });
+    return sock.sendMessage(jid, {
+      text: '⚠️ Envie um link de vídeo ou responda diretamente a um vídeo com /audio.\nExemplo: */audio https://youtu.be/xxx*',
+    }, { quoted: msg });
   }
   link = await aceitarLinkDownload(sock, msg, jid, link);
   if (!link) return;
@@ -2008,6 +2153,7 @@ module.exports = {
   _createTikTokCookieContext: createTikTokCookieContext,
   _argsWithoutYoutubeCookies: argsWithoutYoutubeCookies,
   _findPendingMusicForMessage: findPendingMusicForMessage,
+  _getQuotedVideoContext: getQuotedVideoContext,
   _storePendingMusicForMessage: storePendingMusicForMessage,
   _getYtDlpFfmpegLocation: getYtDlpFfmpegLocation,
   getYtDlpYouTubeArgs,

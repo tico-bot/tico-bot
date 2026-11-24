@@ -64,7 +64,7 @@ async function handleMenuBaixar(sock, msg, jid, getPrefix) {
     '🎵 *MÚSICA & ÁUDIO*',
     '  ▸ ' + P + 'som <nome/música> — pesquisar e baixar áudio',
     '  ▸ ' + P + 'play <nome/música> — alias de som',
-    '  ▸ ' + P + 'audio <link> — baixar áudio de um link',
+    '  ▸ ' + P + 'audio <link> — baixar áudio de link ou responder a um vídeo para extrair o áudio',
     '  ▸ ' + P + 'playmp4 — baixar o vídeo da música pesquisada mais recentemente',
     '  ▸ ' + P + 'playdoc — enviar a música recente como documento',
     '  ▸ ' + P + 'letramúsica <música/artista> — pesquisar letra',

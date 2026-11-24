@@ -14,11 +14,74 @@ const {
   _createTikTokCookieContext,
   _argsWithoutYoutubeCookies,
   _listTiktokPhotoFiles,
+  _getQuotedVideoContext,
 } = require('./downloads');
 
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
 const YOUTUBE_COOKIE = '.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\ttest-session-value';
 const TIKTOK_COOKIE = '.tiktok.com\tTRUE\t/\tTRUE\t1893456000\tsid_tt\ttest-tiktok-session';
+
+test('identifica vídeo citado em mensagem efémera e monta a chave para descarregar a mídia', () => {
+  const msg = {
+    key: { remoteJid: '120363000000000000@g.us' },
+    message: {
+      ephemeralMessage: {
+        message: {
+          extendedTextMessage: {
+            contextInfo: {
+              stanzaId: 'video-message-id',
+              participant: '5565993354137@s.whatsapp.net',
+              fromMe: false,
+              quotedMessage: {
+                documentWithCaptionMessage: {
+                  message: { videoMessage: { mimetype: 'video/mp4' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const quoted = _getQuotedVideoContext(msg, '120363000000000000@g.us');
+  assert.ok(quoted);
+  assert.equal(quoted.key.remoteJid, '120363000000000000@g.us');
+  assert.equal(quoted.key.id, 'video-message-id');
+  assert.equal(quoted.key.participant, '5565993354137@s.whatsapp.net');
+  assert.equal(quoted.key.fromMe, false);
+  assert.ok(quoted.message.videoMessage);
+});
+
+test('reconhece vídeo enviado como documento, mas ignora áudio citado', () => {
+  const quotedVideo = _getQuotedVideoContext({
+    key: { remoteJid: 'chat@s.whatsapp.net' },
+    message: {
+      extendedTextMessage: {
+        contextInfo: {
+          stanzaId: 'document-video-id',
+          quotedMessage: { documentMessage: { mimetype: 'video/mp4' } },
+        },
+      },
+    },
+  }, 'chat@s.whatsapp.net');
+  assert.ok(quotedVideo);
+  assert.equal(quotedVideo.message.documentMessage.mimetype, 'video/mp4');
+
+  const quotedAudio = _getQuotedVideoContext({
+    key: { remoteJid: 'chat@s.whatsapp.net' },
+    message: {
+      extendedTextMessage: {
+        contextInfo: {
+          stanzaId: 'audio-id',
+          quotedMessage: { audioMessage: { mimetype: 'audio/ogg' } },
+        },
+      },
+    },
+  }, 'chat@s.whatsapp.net');
+  assert.equal(quotedAudio, null);
+});
+
 
 test('normaliza cookies Netscape e preserva linhas HttpOnly', () => {
   const input = '\uFEFF' + COOKIE_HEADER + '\r\n' +
