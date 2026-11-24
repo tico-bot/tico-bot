@@ -68,22 +68,28 @@ function runExec(file, args, timeout = 60_000) {
 
 async function getDuration(buffer, ext, hint = 0) {
   const known = Number(hint);
-  if (Number.isFinite(known) && known > 0) return known;
-
-  const ffprobe = require('ffprobe-static').path;
+  let ffprobe = null;
+  try { ffprobe = require('ffprobe-static').path; } catch { /* usa o valor do WhatsApp se disponível */ }
   const id = crypto.randomUUID();
   const inputPath = path.join(os.tmpdir(), 'tico_sound_probe_' + id + '.' + ext);
+
   try {
     fs.writeFileSync(inputPath, buffer);
-    const result = await runExec(ffprobe, [
-      '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=noprint_wrappers=1:nokey=1',
-      inputPath,
-    ], 15_000);
-    const duration = Number(result.stdout.trim());
-    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Não consegui identificar a duração da mídia.');
-    return duration;
+    if (ffprobe) {
+      try {
+        const result = await runExec(ffprobe, [
+          '-v', 'error',
+          '-show_entries', 'format=duration',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          inputPath,
+        ], 15_000);
+        const duration = Number(result.stdout.trim());
+        if (Number.isFinite(duration) && duration > 0) return duration;
+      } catch { /* usa a duração do WhatsApp apenas como fallback */ }
+    }
+
+    if (Number.isFinite(known) && known > 0) return known;
+    throw new Error('Não consegui identificar a duração da mídia.');
   } finally {
     try { fs.unlinkSync(inputPath); } catch { /* ignore */ }
   }
@@ -99,6 +105,28 @@ function buildAtempoFilter(speed) {
   }
   if (remaining > 1.001) filters.push('atempo=' + remaining.toFixed(5));
   return filters.join(',');
+}
+
+function getVideoSoundAccelerationNotice(durationSeconds) {
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= VIDEO_SOUND_SECONDS) return null;
+
+  const durationLabel = Number.isInteger(duration) ? String(duration) : duration.toFixed(1);
+  return '🎬 O vídeo tem *' + durationLabel + ' segundos*, acima do limite de *' +
+    VIDEO_SOUND_SECONDS + ' segundos* da figurinha sonora. Vou acelerar o vídeo e o áudio ' +
+    'proporcionalmente para caber nesse tempo, mantendo o conteúdo inteiro.\n\n' +
+    'Se não quiser a figurinha acelerada, envie um vídeo de até *' +
+    VIDEO_SOUND_SECONDS + ' segundos*.';
+}
+
+function getVideoOnlyAccelerationNotice(durationSeconds) {
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= 9) return null;
+
+  const durationLabel = Number.isInteger(duration) ? String(duration) : duration.toFixed(1);
+  return '🎬 O vídeo tem *' + durationLabel + ' segundos*. Vou acelerar apenas a animação ' +
+    'para caber no limite de *9 segundos*. Depois, envie um áudio de até *10 segundos*; ' +
+    'o áudio não será acelerado.';
 }
 
 async function toOpusAudio(buffer, ext, outputSeconds, speed = 1) {
@@ -195,7 +223,7 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
 
   if (!video) {
     await sock.sendMessage(jid, {
-      text: 'Responda a um *vídeo com áudio* usando */su*.\nO vídeo pode ter até 20 segundos; a figurinha leva até 5 segundos de imagem e som.',
+      text: 'Responda a um *vídeo com áudio* usando */sa*.\nO vídeo pode ter até 20 segundos; a figurinha leva até 5 segundos de imagem e som.',
     }, { quoted: msg });
     return;
   }
@@ -209,21 +237,30 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
     const ext = detectExt(buffer, video.mimetype || '');
     const duration = await getDuration(buffer, ext, video.seconds);
     if (duration > 20.25) {
-      await sock.sendMessage(jid, { text: 'O vídeo tem *' + Math.ceil(duration) + 's*. O limite do */su* é *20 segundos*.' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: 'O vídeo tem *' + Math.ceil(duration) + 's*. O limite do */sa* é *20 segundos*.' }, { quoted: msg });
       await sendReaction(sock, msg, '❌');
       return;
     }
 
     const visualSeconds = Math.min(VIDEO_SOUND_SECONDS, duration);
     const speed = duration > VIDEO_SOUND_SECONDS ? duration / VIDEO_SOUND_SECONDS : 1;
-    const sticker = await videoToStickerBuffer(buffer, ext, duration, VIDEO_SOUND_SECONDS);
+    const sticker = await videoToStickerBuffer(
+      buffer,
+      ext,
+      duration,
+      VIDEO_SOUND_SECONDS,
+      async (actualDuration) => {
+        const notice = getVideoSoundAccelerationNotice(actualDuration);
+        if (notice) await sock.sendMessage(jid, { text: notice }, { quoted: msg });
+      },
+    );
     if (!sticker || sticker.length < 100) throw new Error('Não consegui converter o vídeo em WebP animado.');
 
     const audio = await toOpusAudio(buffer, ext, visualSeconds, speed);
     const senderJid = msg.key.participant || msg.key.remoteJid;
     await sendSoundSticker(sock, msg, jid, sticker, audio, senderJid, stickerCount);
   } catch (error) {
-    console.error('[su] Falha ao criar figurinha sonora:', error.message);
+    console.error('[sa] Falha ao criar figurinha sonora:', error.message);
     const detail = /matches no streams|does not contain any stream|Stream map/i.test(error.stderr || error.message)
       ? 'O vídeo não contém uma faixa de áudio.'
       : error.code === 'VIDEO_TOO_LONG'
@@ -236,28 +273,30 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
 
 async function handleSoundStickerImage(sock, msg, content, jid, author) {
   if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
-    await sock.sendMessage(jid, { text: 'Não consigo usar imagens de visualização única em figurinhas sonoras.' }, { quoted: msg });
+    await sock.sendMessage(jid, { text: 'Não consigo usar mídias de visualização única em figurinhas sonoras.' }, { quoted: msg });
     return;
   }
 
   let image = content.imageMessage;
+  let video = content.videoMessage;
   let sourceMsg = msg;
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quotedRaw = contextInfo?.quotedMessage;
 
-  if (!image && quotedRaw) {
+  if (!image && !video && quotedRaw) {
     if (isViewOnceMessage(quotedRaw)) {
-      await sock.sendMessage(jid, { text: 'A imagem citada é de visualização única. Envie-a normalmente e tente novamente.' }, { quoted: msg });
+      await sock.sendMessage(jid, { text: 'A mídia citada é de visualização única. Envie-a normalmente e tente novamente.' }, { quoted: msg });
       return;
     }
     const quoted = unwrapMessageContent(quotedRaw);
     image = quoted?.imageMessage;
-    if (image) sourceMsg = buildQuotedMsg(jid, contextInfo, quoted);
+    video = quoted?.videoMessage;
+    if (image || video) sourceMsg = buildQuotedMsg(jid, contextInfo, quoted);
   }
 
-  if (!image) {
+  if (!image && !video) {
     await sock.sendMessage(jid, {
-      text: 'Responda a uma *imagem* com */saudio*. Depois, envie o áudio ou nota de voz que será anexado à figurinha (até 10 segundos).',
+      text: 'Responda a uma *imagem ou vídeo* com */saudio*. Depois, envie um áudio ou nota de voz de até *10 segundos*. O áudio não será acelerado.',
     }, { quoted: msg });
     return;
   }
@@ -268,40 +307,66 @@ async function handleSoundStickerImage(sock, msg, content, jid, author) {
       sourceMsg, 'buffer', {},
       { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage },
     );
+
     let sticker;
-    try {
-      sticker = await convertImageToSticker(buffer);
-    } catch (error) {
-      sticker = await sharp(buffer, { limitInputPixels: 16_000_000 })
-        .rotate()
-        .flatten({ background: { r: 255, g: 255, b: 255 } })
-        .resize(384, 384, { fit: 'fill' })
-        .webp({ quality: 85 })
-        .toBuffer();
+    if (video) {
+      const ext = detectExt(buffer, video.mimetype || '');
+      const duration = await getDuration(buffer, ext, video.seconds);
+      if (duration > 20.25) {
+        await sock.sendMessage(jid, {
+          text: '❌ O vídeo tem *' + Math.ceil(duration) + ' segundos*. O limite de entrada do */saudio* é *20 segundos*. Envie um vídeo mais curto.',
+        }, { quoted: msg });
+        await sendReaction(sock, msg, '❌');
+        return;
+      }
+
+      sticker = await videoToStickerBuffer(
+        buffer,
+        ext,
+        duration,
+        9,
+        async (actualDuration) => {
+          const notice = getVideoOnlyAccelerationNotice(actualDuration);
+          if (notice) await sock.sendMessage(jid, { text: notice }, { quoted: msg });
+        },
+      );
+      if (!sticker || sticker.length < 100) throw new Error('Vídeo não pôde ser convertido para WebP animado.');
+    } else {
+      try {
+        sticker = await convertImageToSticker(buffer);
+      } catch (error) {
+        sticker = await sharp(buffer, { limitInputPixels: 16_000_000 })
+          .rotate()
+          .flatten({ background: { r: 255, g: 255, b: 255 } })
+          .resize(384, 384, { fit: 'fill' })
+          .webp({ quality: 85 })
+          .toBuffer();
+      }
+      if (!sticker || sticker.length < 100) throw new Error('Imagem não pôde ser convertida para WebP.');
     }
-    if (!sticker || sticker.length < 100) throw new Error('Imagem não pôde ser convertida para WebP.');
 
     const senderJid = msg.key.participant || msg.key.remoteJid;
     const key = pendingKey(jid, senderJid);
     clearPending(key);
-    const pending = { sticker, author, senderJid, timer: null };
+    const pending = { sticker, author, senderJid, mediaType: video ? 'vídeo' : 'imagem', timer: null };
     pending.timer = setTimeout(async () => {
       if (pendingSoundStickers.get(key) !== pending) return;
       pendingSoundStickers.delete(key);
       await sock.sendMessage(jid, {
-        text: '⌛ O pedido de figurinha sonora expirou. Responda novamente à imagem com */saudio* para começar de novo.',
+        text: '⌛ O pedido de figurinha sonora expirou. Responda novamente à imagem ou vídeo com */saudio* para começar de novo.',
       }).catch(() => {});
     }, PENDING_TTL_MS);
     pending.timer.unref?.();
     pendingSoundStickers.set(key, pending);
 
-    await sock.sendMessage(jid, {
-      text: '🖼️ Imagem preparada! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar os dois numa única figurinha sonora.',
-    }, { quoted: msg });
+    const readyText = video
+      ? '🎬 Vídeo preparado! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar a animação e o áudio numa única figurinha sonora. O áudio não será acelerado.'
+      : '🖼️ Imagem preparada! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar os dois numa única figurinha sonora. O áudio não será acelerado; acima desse limite, será necessário enviar um arquivo mais curto.';
+    await sock.sendMessage(jid, { text: readyText }, { quoted: msg });
     await sendReaction(sock, msg, '✅');
   } catch (error) {
-    console.error('[saudio] Falha ao preparar a imagem:', error.message);
-    await sock.sendMessage(jid, { text: '❌ Não consegui preparar essa imagem. Tente outra.' }, { quoted: msg }).catch(() => {});
+    console.error('[saudio] Falha ao preparar imagem/vídeo:', error.message);
+    await sock.sendMessage(jid, { text: '❌ Não consegui preparar essa imagem ou vídeo. Tente outra mídia de até 20 segundos.' }, { quoted: msg }).catch(() => {});
     await sendReaction(sock, msg, '❌');
   }
 }
@@ -329,7 +394,7 @@ async function handlePendingAudio(sock, msg, content, jid, author, senderJid, st
     if (duration > MAX_SOUND_SECONDS + 0.25) {
       clearPending(key);
       await sock.sendMessage(jid, {
-        text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é *10 segundos*. Responda novamente à imagem com */saudio* e envie um áudio mais curto.',
+        text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é *10 segundos*. Não vou acelerar o áudio. Envie novamente uma imagem ou vídeo com */saudio* e depois um áudio de até *10 segundos*.',
       }, { quoted: msg });
       await sendReaction(sock, msg, '❌');
       return true;
@@ -342,7 +407,7 @@ async function handlePendingAudio(sock, msg, content, jid, author, senderJid, st
     console.error('[saudio] Falha ao anexar áudio:', error.message);
     clearPending(key);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui processar esse áudio. Responda novamente à imagem com */saudio* e tente outro ficheiro de até 10 segundos.',
+      text: '❌ Não consegui processar esse áudio. Envie novamente uma imagem ou vídeo com */saudio* e depois tente outro arquivo de até 10 segundos.',
     }, { quoted: msg }).catch(() => {});
     await sendReaction(sock, msg, '❌');
   }
@@ -354,4 +419,7 @@ module.exports = {
   handleVideoSoundSticker,
   handleSoundStickerImage,
   handlePendingAudio,
+  getDuration,
+  getVideoSoundAccelerationNotice,
+  getVideoOnlyAccelerationNotice,
 };

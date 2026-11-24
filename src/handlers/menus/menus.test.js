@@ -65,6 +65,14 @@ test('all active Tico menus render with a configured prefix and no missing value
   }
 });
 
+test('sticker menu lists the sound-sticker commands and explains their duration limits', async () => {
+  const menu = await renderMenu('figurinhas', () =>
+    figurinha.handleMenuFig(sock, msg, jid, getPrefix));
+  assert.match(menu, /▸ !desfig — sticker → imagem\/vídeo/);
+  assert.match(menu, /▸ !sa — vídeo \+ som → figurinha sonora \(até 5s; acelera acima disso\)/);
+  assert.match(menu, /▸ !saudio — imagem\/vídeo \+ áudio separado \(até 10s\)/);
+});
+
 test('sticker menu documents all ATTP styles without a text placeholder', async () => {
   const menu = await renderMenu('figurinhas', () =>
     figurinha.handleMenuFig(sock, msg, jid, getPrefix));
@@ -79,6 +87,8 @@ test('main and category menus include key working commands', async () => {
     utilidade.handleMenu(sock, msg, jid, '!menu', getPrefix, 'Tester'));
   assert.match(main, /menujogos/);
   assert.match(main, /menubaixar/);
+  assert.match(main, /desfig — transformar figurinha em imagem\/vídeo/);
+  assert.match(main, /sa \/ !saudio — criar figurinhas sonoras/);
   assert.match(main, /menufutebol/);
   assert.doesNotMatch(main, /Use o prefixo configurado neste grupo/);
   assert.match(main, /╔══════════════════════╗/);

@@ -497,6 +497,7 @@ async function muxStickerAudioIntoVideo(videoBuffer, audioBuffer, audioMimetype 
   try {
     fs.writeFileSync(videoPath, videoBuffer);
     fs.writeFileSync(audioPath, audioBuffer);
+
     await new Promise((resolve, reject) => {
       execFile(ffmpegBin, [
         '-y',
@@ -1380,8 +1381,8 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
   ▸ ${P}togif — sticker → GIF
 
 🔊 *ÁUDIO*
-  ▸ ${P}su — vídeo com som → figurinha animada sonora (até 5s)
-  ▸ ${P}saudio — responda à imagem; depois envie o áudio (até 10s)
+  ▸ ${P}sa — vídeo + som → figurinha sonora (até 5s; acelera acima disso)
+  ▸ ${P}saudio — imagem/vídeo + áudio separado (até 10s)
   ▸ ${P}estourar — amplificar áudio de uma mídia
 
 🔎 *PACOTES & BUSCA*

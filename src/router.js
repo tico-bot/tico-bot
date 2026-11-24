@@ -1093,7 +1093,7 @@ async function handleMessage(sock, msg) {
     { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
 
   // ── FIGURINHAS COM ÁUDIO ──────────────────────────────────────
-  if (matchCmd(cmdWord, 'su')) {
+  if (matchCmd(cmdWord, 'sa')) {
     await audioStickerHandler.handleVideoSoundSticker(sock, msg, content, jid, author, stickerCount);
     return;
   }
