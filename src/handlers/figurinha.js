@@ -468,6 +468,58 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
 // ─── !desfig / !toimg ─────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+
+async function muxStickerAudioIntoVideo(videoBuffer, audioBuffer, audioMimetype = 'audio/ogg') {
+  const ffmpegBin = resolveFfmpegBin();
+  const id = crypto.randomUUID();
+  const videoPath = path.join(os.tmpdir(), id + '_video.mp4');
+  const audioExt = /mpeg|mp3/i.test(audioMimetype) ? 'mp3'
+    : /mp4|m4a|aac/i.test(audioMimetype) ? 'm4a'
+      : /webm/i.test(audioMimetype) ? 'webm' : 'ogg';
+  const audioPath = path.join(os.tmpdir(), id + '_audio.' + audioExt);
+  const outputPath = path.join(os.tmpdir(), id + '_with_audio.mp4');
+
+  try {
+    fs.writeFileSync(videoPath, videoBuffer);
+    fs.writeFileSync(audioPath, audioBuffer);
+
+    await new Promise((resolve, reject) => {
+      execFile(ffmpegBin, [
+        '-y',
+        '-i', videoPath,
+        '-i', audioPath,
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-shortest',
+        '-movflags', '+faststart',
+        '-map_metadata', '-1',
+        outputPath,
+      ], { timeout: 60000, windowsHide: true }, (error, _stdout, stderr) => {
+        if (error) {
+          error.stderr = String(stderr || '');
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    const result = fs.readFileSync(outputPath);
+    if (result.length < 100 || result.toString('ascii', 4, 8) !== 'ftyp') {
+      throw new Error('O MP4 com áudio gerado é inválido.');
+    }
+    return result;
+  } finally {
+    for (const file of [videoPath, audioPath, outputPath]) {
+      try { fs.unlinkSync(file); } catch { /* ignore */ }
+    }
+  }
+}
+
 async function handleDesfig(sock, msg, content, jid) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quoted      = contextInfo?.quotedMessage;
@@ -556,8 +608,38 @@ async function handleDesfig(sock, msg, content, jid) {
     const videoBuffer = fs.readFileSync(outPath);
     try { fs.unlinkSync(outPath); } catch { /* ignora */ }
 
+    let outputVideo = videoBuffer;
+    const embeddedAudio = quoted.stickerMessage.audioMessage;
+    if (embeddedAudio) {
+      try {
+        const audioMsg = buildQuotedMsg(jid, contextInfo, { audioMessage: embeddedAudio });
+        const audioBuffer = await downloadMediaMessage(
+          audioMsg,
+          'buffer', {},
+          { logger, reuploadRequest: sock.updateMediaMessage }
+        );
+        if (!audioBuffer || audioBuffer.length < 100) {
+          throw new Error('O áudio incorporado na figurinha está vazio.');
+        }
+        outputVideo = await muxStickerAudioIntoVideo(
+          videoBuffer,
+          audioBuffer,
+          embeddedAudio.mimetype || 'audio/ogg'
+        );
+        console.log(`🔊 desfig: áudio incorporado ao MP4 (${(audioBuffer.length / 1024).toFixed(0)}KB)`);
+      } catch (error) {
+        console.error('❌ desfig: falha ao recuperar/juntar o áudio da figurinha:', error.message);
+        await sock.sendMessage(jid, {
+          text: '⚠️ Consegui reconstruir o vídeo, mas não consegui recuperar ou juntar o áudio desta figurinha sonora. Tente novamente.',
+        }, { quoted: msg });
+        return;
+      }
+    }
+
     await sock.sendMessage(jid, {
-      video: videoBuffer, mimetype: 'video/mp4', caption: '🎬 Vídeo da figurinha!',
+      video: outputVideo,
+      mimetype: 'video/mp4',
+      caption: embeddedAudio ? '🎬🔊 Vídeo da figurinha com áudio!' : '🎬 Vídeo da figurinha!',
     }, { quoted: msg });
 
   } else {
@@ -1325,6 +1407,5 @@ module.exports = {
   videoToStickerBuffer,
   isViewOnceMessage,
   getViewOnceStickerWarning,
+  muxStickerAudioIntoVideo,
 };
-
-[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]
