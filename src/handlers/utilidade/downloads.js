@@ -548,6 +548,129 @@ function normalizeYoutubeCookies(raw) {
   return content + '\n';
 }
 
+function normalizeTikTokCookies(raw) {
+  let content = String(raw || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!content) throw new Error('arquivo vazio');
+
+  if (/^base64:/i.test(content)) {
+    const encoded = content.slice(content.indexOf(':') + 1).replace(/\s/g, '');
+    if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      throw new Error('conteúdo base64 inválido');
+    }
+    content = Buffer.from(encoded, 'base64').toString('utf8')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n?/g, '\n')
+      .trim();
+  }
+
+  if (/^[\[{]/.test(content)) {
+    let parsed;
+    try { parsed = JSON.parse(content); } catch {
+      throw new Error('JSON de cookies inválido');
+    }
+    const cookies = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed?.cookies) ? parsed.cookies
+        : Array.isArray(parsed?.Cookies) ? parsed.Cookies : null;
+    if (!cookies) throw new Error('JSON precisa conter uma lista de cookies');
+
+    const rows = [];
+    for (const cookie of cookies) {
+      if (!cookie || typeof cookie !== 'object') continue;
+      const rawDomain = String(cookie.domain || cookie.host || '').trim();
+      const name = String(cookie.name || '');
+      const value = String(cookie.value ?? '');
+      if (!rawDomain || !name || /[\t\r\n]/.test(name + value)) continue;
+
+      const includeSubdomains = rawDomain.startsWith('.') ||
+        cookie.hostOnly === false || cookie.includeSubdomains === true;
+      const domain = rawDomain.replace(/^\./, '').toLowerCase();
+      const domainField = (includeSubdomains ? '.' : '') + domain;
+      const isTiktokDomain = /(^|\.)(?:tiktok(?:cdn|v)?\.com|byteoversea\.com|ibytedtos\.com|musical\.ly)$/.test(domain);
+      if (!isTiktokDomain) continue;
+
+      const cookiePath = String(cookie.path || '/').replace(/[\t\r\n]/g, '') || '/';
+      const secure = cookie.secure === true ? 'TRUE' : 'FALSE';
+      let expires = 0;
+      if (cookie.session !== true) {
+        const rawExpires = cookie.expirationDate ?? cookie.expires ?? cookie.expiration ?? cookie.expiry;
+        const parsedExpires = Number(rawExpires);
+        if (Number.isFinite(parsedExpires) && parsedExpires > 0) {
+          expires = Math.floor(parsedExpires > 1e12 ? parsedExpires / 1000 : parsedExpires);
+        }
+      }
+      const httpOnly = cookie.httpOnly === true || cookie.http_only === true;
+      const finalDomain = httpOnly ? '#HttpOnly_' + domainField : domainField;
+      rows.push([finalDomain, includeSubdomains ? 'TRUE' : 'FALSE', cookiePath, secure, String(expires), name, value].join('\t'));
+    }
+    if (!rows.length) throw new Error('JSON não contém cookies válidos do TikTok');
+    content = '# Netscape HTTP Cookie File\n' + rows.join('\n');
+  }
+
+  const lines = content.split('\n');
+  const header = lines.find(line => line.trim());
+  if (!/^#\s*(?:Netscape HTTP Cookie File|HTTP Cookie File)\b/i.test(header || '')) {
+    throw new Error('formato inválido; esperado Netscape ou JSON exportado');
+  }
+
+  const rows = lines.filter(line => line.trim() && (!line.startsWith('#') || line.startsWith('#HttpOnly_')));
+  const validTikTokRow = rows.some(line => {
+    const fields = line.split('\t');
+    const domain = (fields[0] || '').replace(/^#HttpOnly_/i, '').replace(/^\./, '').toLowerCase();
+    const isTiktokDomain = /(^|\.)(?:tiktok(?:cdn|v)?\.com|byteoversea\.com|ibytedtos\.com|musical\.ly)$/.test(domain);
+    return fields.length === 7 && /^(?:TRUE|FALSE)$/i.test(fields[1]) &&
+      /^(?:TRUE|FALSE)$/i.test(fields[3]) && /^\d+$/.test(fields[4]) &&
+      fields[5] && fields[6] && isTiktokDomain;
+  });
+  if (!validTikTokRow) throw new Error('nenhum cookie Netscape válido do domínio TikTok');
+  return content + '\n';
+}
+
+function createTikTokCookieContext(id) {
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+  const tiktokCookiesEnv = process.env.TIKTOK_COOKIES;
+
+  if (tiktokCookiesEnv?.trim()) {
+    try {
+      const normalizedCookies = normalizeTikTokCookies(tiktokCookiesEnv);
+      cookieTempFile = tmpPath(id, '_tiktok_cookies.txt');
+      fs.writeFileSync(cookieTempFile, normalizedCookies, { encoding: 'utf8', mode: 0o600 });
+      cookieFilePath = cookieTempFile;
+      log.info('✅ TIKTOK_COOKIES válido (' + Buffer.byteLength(normalizedCookies) + ' bytes)');
+    } catch (error) {
+      log.warn('[yt-dlp] TIKTOK_COOKIES inválido:', error.message);
+    }
+  }
+
+  if (!cookieFilePath) {
+    const local = path.join(__dirname, '../../tiktok_cookies.txt');
+    if (fs.existsSync(local)) {
+      try {
+        const normalizedCookies = normalizeTikTokCookies(fs.readFileSync(local, 'utf8'));
+        cookieTempFile = tmpPath(id, '_tiktok_cookies.txt');
+        fs.writeFileSync(cookieTempFile, normalizedCookies, { encoding: 'utf8', mode: 0o600 });
+        cookieFilePath = cookieTempFile;
+        log.info('✅ Usando cookies locais do TikTok');
+      } catch (error) {
+        log.warn('[yt-dlp] tiktok_cookies.txt inválido:', error.message);
+      }
+    } else if (!tiktokCookiesEnv?.trim()) {
+      log.warn('⚠️ Sem cookies TikTok — pode falhar');
+    }
+  }
+
+  return {
+    cookieFilePath,
+    cleanup() {
+      if (cookieTempFile) safeDel(cookieTempFile);
+    },
+  };
+}
+
 function createYoutubeCookieContext(id) {
   let cookieFilePath = null;
   let cookieTempFile = null;
@@ -1284,21 +1407,9 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const { randomUUID } = require('crypto');
   const id = randomUUID();
 
-  const tiktokCookiesEnv = process.env.TIKTOK_COOKIES?.trim();
-  let cookieFilePath = null;
-  let cookieTempFile = null;
-
-  if (tiktokCookiesEnv) {
-    log.info(`✅ TIKTOK_COOKIES encontrado (${tiktokCookiesEnv.length} bytes)`);
-    cookieTempFile = tmpPath(id, '_tiktok_cookies.txt');
-    try { fs.writeFileSync(cookieTempFile, tiktokCookiesEnv, 'utf8'); cookieFilePath = cookieTempFile; } catch (e) { log.warn('Erro ao gravar cookie:', e.message); }
-  } else {
-    const local = path.join(__dirname, '../../tiktok_cookies.txt');
-    if (fs.existsSync(local)) { cookieFilePath = local; log.info('✅ Usando cookies locais'); }
-    else log.warn('⚠️ Sem cookies TikTok — pode falhar');
-  }
-
-  const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
+  const cookieContext = createTikTokCookieContext(id);
+  const cookieFilePath = cookieContext.cookieFilePath;
+  const cleanupCookie = () => cookieContext.cleanup();
   const metaExtraArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
   const isPhotoUrl = (() => {
     try { return /\/photo\/\d+(?:\/|$)/i.test(new URL(link).pathname); }
@@ -1893,6 +2004,8 @@ module.exports = {
   getYtDlpArgs,
   _getPendingMusicKeys: getPendingMusicKeys,
   _createYoutubeCookieContext: createYoutubeCookieContext,
+  _normalizeTikTokCookies: normalizeTikTokCookies,
+  _createTikTokCookieContext: createTikTokCookieContext,
   _argsWithoutYoutubeCookies: argsWithoutYoutubeCookies,
   _findPendingMusicForMessage: findPendingMusicForMessage,
   _storePendingMusicForMessage: storePendingMusicForMessage,
@@ -1909,5 +2022,3 @@ module.exports = {
   _validateExternalUrl: validateExternalUrl,
   _listTiktokPhotoFiles: listTiktokPhotoFiles,
 };
-
-[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

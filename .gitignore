@@ -32,3 +32,5 @@ firestore-debug.log
 .idea/
 
 .yt-dlp-runtime/
+/src/tiktok_cookies.txt
+/src/youtube_cookies.txt

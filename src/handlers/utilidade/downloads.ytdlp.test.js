@@ -10,12 +10,15 @@ const {
   _findPendingMusicForMessage,
   _storePendingMusicForMessage,
   _createYoutubeCookieContext,
+  _normalizeTikTokCookies,
+  _createTikTokCookieContext,
   _argsWithoutYoutubeCookies,
   _listTiktokPhotoFiles,
 } = require('./downloads');
 
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
 const YOUTUBE_COOKIE = '.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\ttest-session-value';
+const TIKTOK_COOKIE = '.tiktok.com\tTRUE\t/\tTRUE\t1893456000\tsid_tt\ttest-tiktok-session';
 
 test('normaliza cookies Netscape e preserva linhas HttpOnly', () => {
   const input = '\uFEFF' + COOKIE_HEADER + '\r\n' +
@@ -26,6 +29,53 @@ test('normaliza cookies Netscape e preserva linhas HttpOnly', () => {
   assert.equal(output.endsWith('\n'), true);
   assert.equal(output.includes('\r'), false);
   assert.match(output, /#HttpOnly_\.youtube\.com/);
+});
+
+
+test('normaliza cookies TikTok em Netscape e descodifica a versão base64 do .env', () => {
+  const fixture = COOKIE_HEADER + '\n' + TIKTOK_COOKIE;
+  const encoded = 'base64:' + Buffer.from(fixture, 'utf8').toString('base64');
+  const normalized = _normalizeTikTokCookies(encoded);
+
+  assert.equal(normalized, fixture + '\n');
+  assert.match(normalized, /\.tiktok\.com\tTRUE\t\/\tTRUE/);
+});
+
+test('converte uma exportação JSON de cookies do TikTok para Netscape', () => {
+  const json = JSON.stringify([{
+    domain: '.tiktok.com',
+    hostOnly: false,
+    path: '/',
+    secure: true,
+    httpOnly: true,
+    expirationDate: 1893456000,
+    name: 'sid_tt',
+    value: 'test-tiktok-session',
+  }]);
+  const normalized = _normalizeTikTokCookies(json);
+
+  assert.match(normalized, /^# Netscape HTTP Cookie File\n/);
+  assert.match(normalized, /#HttpOnly_\.tiktok\.com\tTRUE\t\/\tTRUE\t1893456000\tsid_tt\ttest-tiktok-session/);
+  assert.throws(() => _normalizeTikTokCookies('{"invalid":true}'), /lista de cookies/);
+});
+
+test('cria ficheiro temporário Netscape para o yt-dlp e remove-o ao terminar', () => {
+  const previousCookies = process.env.TIKTOK_COOKIES;
+  const fixture = COOKIE_HEADER + '\n' + TIKTOK_COOKIE;
+  process.env.TIKTOK_COOKIES = 'base64:' + Buffer.from(fixture, 'utf8').toString('base64');
+  const context = _createTikTokCookieContext('test-tiktok-cookie-context');
+
+  try {
+    assert.ok(context.cookieFilePath);
+    const fs = require('node:fs');
+    assert.equal(fs.readFileSync(context.cookieFilePath, 'utf8'), fixture + '\n');
+    context.cleanup();
+    assert.equal(fs.existsSync(context.cookieFilePath), false);
+  } finally {
+    context.cleanup();
+    if (previousCookies === undefined) delete process.env.TIKTOK_COOKIES;
+    else process.env.TIKTOK_COOKIES = previousCookies;
+  }
 });
 
 test('recusa cookies em JSON ou sem entradas do YouTube', () => {
@@ -190,5 +240,3 @@ test('identifica e ordena imagens do carrossel do TikTok, ignorando outros fiche
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-
-[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]
