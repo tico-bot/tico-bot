@@ -45,5 +45,3 @@ for (const installer of installers) {
 }
 
 console.log('[postinstall] ✅ Runtime de downloads preparado no Render.');
-
-[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

@@ -1,36 +1,35 @@
+# Android / IDE / sistema
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+.gradle/
+.local/
+.idea/
 .DS_Store
-/build
-/functions/node_modules/
-/firebase-debug.log
-/firestore-debug.log
-/functions/firestore-debug.log
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+/build/
+/local.properties
+/.externalNativeBuild/
+/.cxx/
+*.swp
 
-node_modules
+# Dependências
+node_modules/
+functions/node_modules/
+
+# Segredos e configuração local
 .env
+**/.env
+.env.*
+!.env.example
 *firebase-adminsdk*.json
-firestore-debug.log
-.idea/
-
-node_modules
-.env
-*firebase-adminsdk*.json
-firestore-debug.log
-
-.idea/
-
-.yt-dlp-runtime/
 /src/tiktok_cookies.txt
 /src/youtube_cookies.txt
+
+# Estado e artefactos gerados pelo bot
+/data.json
+/qrcode.png
+/session/
+/.venv/
+/.yt-dlp-runtime/
+/yt-dlp.exe
+/backups/
+/backup_antes_migracao/
+*.log

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: piroquinhas-bot
+    name: tico-bot
     runtime: node
     buildCommand: npm run build
     startCommand: node src/bot.js

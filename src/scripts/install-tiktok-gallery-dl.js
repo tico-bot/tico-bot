@@ -72,5 +72,3 @@ fs.writeFileSync(
 );
 
 console.log('✅ gallery-dl instalado e validado: ' + version);
-
-[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]
