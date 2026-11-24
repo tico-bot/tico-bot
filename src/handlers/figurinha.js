@@ -132,9 +132,12 @@ function detectExt(buffer) {
  *
  * @param {Buffer} inputBuffer
  * @param {string} [inputExt='mp4']
+ * @param {number} [durationHint=0]
+ * @param {number} [maxStickerSeconds=VIDEO_STICKER_MAX_SECONDS]
+ * @param {(duration:number)=>Promise<void>|void} [onDurationDetected]
  * @returns {Promise<Buffer|null>} WebP animado, ou null em caso de falha.
  */
-async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint = 0, maxStickerSeconds = VIDEO_STICKER_MAX_SECONDS) {
+async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint = 0, maxStickerSeconds = VIDEO_STICKER_MAX_SECONDS, onDurationDetected = null) {
   const ffmpegBin = resolveFfmpegBin();
   const tmpId     = crypto.randomUUID();
   const tmpDir    = os.tmpdir();
@@ -183,6 +186,13 @@ async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint 
       const error = new Error(`VIDEO_TOO_LONG:${Math.ceil(duration)}`);
       error.code = 'VIDEO_TOO_LONG';
       throw error;
+    }
+    if (typeof onDurationDetected === 'function') {
+      try {
+        await onDurationDetected(duration);
+      } catch (notifyError) {
+        console.warn('⚠️ Não consegui enviar o aviso de duração do vídeo:', notifyError.message);
+      }
     }
     // Acelera apenas quando necessário para caber no limite da figurinha,
     // mantendo todo o vídeo e permitindo sincronizar o áudio em sound stickers.
@@ -344,6 +354,13 @@ async function handleSticker(sock, msg, content, jid, author, stickerCount) {
 // ─── processMedia ─────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════
 
+function getVideoAccelerationNotice(durationSeconds) {
+  const duration = Number(durationSeconds);
+  if (!Number.isFinite(duration) || duration <= VIDEO_STICKER_MAX_SECONDS) return null;
+  const durationLabel = Number.isInteger(duration) ? String(duration) : duration.toFixed(1);
+  return `🎬 O vídeo tem *${durationLabel} segundos*, acima do limite de *${VIDEO_STICKER_MAX_SECONDS} segundos* para figurinhas. Vou acelerá-lo para caber no limite, mantendo o vídeo inteiro.\n\nSe não quiser a figurinha acelerada, envie um vídeo de até *${VIDEO_STICKER_MAX_SECONDS} segundos*.`;
+}
+
 async function processMedia(sock, msg, content, jid, author, stickerCount) {
   // Também protege o Auto-Sticker e chamadas diretas que não passam por handleSticker.
   if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
@@ -383,20 +400,18 @@ async function processMedia(sock, msg, content, jid, author, stickerCount) {
 
   if (videoMsg) {
     const durSec = Number(videoMsg.seconds) || 0;
-    if (durSec > VIDEO_INPUT_MAX_SECONDS) {
-      await sock.sendMessage(jid, {
-        text: `⚠️ O vídeo tem *${durSec}s*. O limite para criar figurinha é *${VIDEO_INPUT_MAX_SECONDS} segundos*. Envie um vídeo mais curto.`,
-      }, { quoted: msg });
-      return;
-    }
-    if (durSec > VIDEO_STICKER_MAX_SECONDS) {
-      await sock.sendMessage(jid, {
-        text: `🎬 Vídeo de *${durSec}s* detectado. Vou acelerar para caber em até *${VIDEO_STICKER_MAX_SECONDS}s*, preservando o conteúdo inteiro.`,
-      }, { quoted: msg });
-    }
 
     try {
-      sticker = await videoToStickerBuffer(buffer, detectExt(buffer), durSec);
+      sticker = await videoToStickerBuffer(
+        buffer,
+        detectExt(buffer),
+        durSec,
+        VIDEO_STICKER_MAX_SECONDS,
+        async (actualDuration) => {
+          const notice = getVideoAccelerationNotice(actualDuration);
+          if (notice) await sock.sendMessage(jid, { text: notice }, { quoted: msg });
+        }
+      );
       if (!sticker || sticker.length < 100) {
         console.log('⚠️ Tentando fallback convertVideoToSticker...');
         sticker = await convertVideoToSticker(buffer, durSec);
@@ -482,7 +497,6 @@ async function muxStickerAudioIntoVideo(videoBuffer, audioBuffer, audioMimetype 
   try {
     fs.writeFileSync(videoPath, videoBuffer);
     fs.writeFileSync(audioPath, audioBuffer);
-
     await new Promise((resolve, reject) => {
       execFile(ffmpegBin, [
         '-y',
@@ -1408,4 +1422,5 @@ module.exports = {
   isViewOnceMessage,
   getViewOnceStickerWarning,
   muxStickerAudioIntoVideo,
+  getVideoAccelerationNotice,
 };
