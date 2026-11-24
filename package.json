@@ -28,7 +28,7 @@
     "test:auth-security": "node --test src/routes/api.auth.test.js src/routes/api.privacy.test.js src/utils/cors.test.js src/utils/otp.test.js src/handlers/utilidade/perfil.bio.test.js",
     "postinstall": "node src/scripts/patch-baileys-audio-sticker.js && node src/scripts/render-postinstall.js",
     "check": "node src/scripts/validate-repository.cjs",
-    "test": "npm run check && node --test --test-force-exit src functions/index.test.js",
+    "test": "npm run check && node --test --test-force-exit \"src/*.test.js\" \"src/**/*.test.js\" functions/index.test.js",
     "test:firestore-rules": "npm --prefix functions run test:rules"
   },
   "engines": {
