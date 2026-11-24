@@ -27,5 +27,7 @@ jobs:
         run: npm ci
       - name: Install Firebase Functions dependencies
         run: npm ci --prefix functions
-      - name: Run all tests
+      - name: Run application and callable tests
         run: npm test
+      - name: Run Firestore security rules tests
+        run: npm run test:firestore-rules
