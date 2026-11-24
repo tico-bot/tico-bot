@@ -16,20 +16,34 @@ if (process.platform === 'win32') {
   process.exit(0);
 }
 
-const installer = path.join(__dirname, 'install-ytdlp.js');
-const result = spawnSync(process.execPath, [installer], {
-  stdio: 'inherit',
-  env: process.env,
-});
+const installers = [
+  { file: 'install-ytdlp.js', label: 'yt-dlp' },
+  { file: 'install-tiktok-gallery-dl.js', label: 'gallery-dl (fotos do TikTok)' },
+];
 
-if (result.error) {
-  console.error('[postinstall] Falha ao iniciar instalador do yt-dlp:', result.error.message);
-  process.exit(1);
+for (const installer of installers) {
+  const installerPath = path.join(__dirname, installer.file);
+  const result = spawnSync(process.execPath, [installerPath], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.error) {
+    console.error('[postinstall] Falha ao iniciar instalador de ' + installer.label + ':', result.error.message);
+    process.exit(1);
+  }
+
+  if (result.signal) {
+    console.error('[postinstall] Instalador de ' + installer.label + ' interrompido pelo sinal:', result.signal);
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    console.error('[postinstall] Instalação de ' + installer.label + ' falhou com código:', result.status);
+    process.exit(Number.isInteger(result.status) ? result.status : 1);
+  }
 }
 
-if (result.signal) {
-  console.error('[postinstall] Instalador interrompido pelo sinal:', result.signal);
-  process.exit(1);
-}
+console.log('[postinstall] ✅ Runtime de downloads preparado no Render.');
 
-process.exit(Number.isInteger(result.status) ? result.status : 1);
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

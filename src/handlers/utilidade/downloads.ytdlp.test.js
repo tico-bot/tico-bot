@@ -11,6 +11,7 @@ const {
   _storePendingMusicForMessage,
   _createYoutubeCookieContext,
   _argsWithoutYoutubeCookies,
+  _listTiktokPhotoFiles,
 } = require('./downloads');
 
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
@@ -168,3 +169,26 @@ test('remove apenas os argumentos de cookies ao preparar uma tentativa sem sessÃ
   const args = ['--no-playlist', '--cookies', '/tmp/session.txt', '-o', 'out.mp4', 'https://youtube.com/watch?v=abc'];
   assert.deepEqual(_argsWithoutYoutubeCookies(args), ['--no-playlist', '-o', 'out.mp4', 'https://youtube.com/watch?v=abc']);
 });
+
+
+test('identifica e ordena imagens do carrossel do TikTok, ignorando outros ficheiros', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-tiktok-photos-'));
+
+  try {
+    for (const name of ['post_10.jpg', 'post_02.png', 'post_1.webp', 'readme.txt', 'video.mp4', 'ignored.gif']) {
+      fs.writeFileSync(path.join(dir, name), 'fixture');
+    }
+    fs.mkdirSync(path.join(dir, 'nested'));
+    fs.writeFileSync(path.join(dir, 'nested', 'nested.jpg'), 'fixture');
+
+    const files = _listTiktokPhotoFiles(dir).map(file => path.basename(file));
+    assert.deepEqual(files, ['post_1.webp', 'post_02.png', 'post_10.jpg']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

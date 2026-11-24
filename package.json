@@ -4,7 +4,7 @@
   "description": "Bot de WhatsApp que converte imagens e vídeos em figurinhas com o comando !s",
   "main": "src/bot.js",
   "scripts": {
-    "build": "npm install && node src/scripts/install-ytdlp.js",
+    "build": "npm install && node src/scripts/install-ytdlp.js && node src/scripts/install-tiktok-gallery-dl.js",
     "start": "node src/bot.js",
     "dev": "node --watch src/bot.js",
     "test:security": "node --test src/handlers/utilidade/downloads.security.test.js",
@@ -68,3 +68,5 @@
   ],
   "license": "MIT"
 }
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

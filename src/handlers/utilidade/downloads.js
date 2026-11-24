@@ -1152,6 +1152,122 @@ async function handleSaveRec(sock, msg, jid, caption) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+const TIKTOK_PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const MAX_TIKTOK_PHOTOS = 35;
+const MAX_TIKTOK_PHOTO_TOTAL_BYTES = 256 * 1024 * 1024;
+
+function getGalleryDlRuntime() {
+  const projectRoot = path.resolve(__dirname, '..', '..', '..');
+  const runtimeRoot = path.join(projectRoot, '.yt-dlp-runtime', 'gallery-dl-python');
+  if (!fs.existsSync(path.join(runtimeRoot, 'gallery_dl', '__init__.py'))) return null;
+
+  const configPath = path.join(projectRoot, '.yt-dlp-runtime', 'gallery-dl-python.json');
+  let config = null;
+  try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch {}
+
+  const command = typeof config?.command === 'string' && config.command.trim()
+    ? config.command
+    : (process.platform === 'win32' ? 'py' : 'python3');
+  const prefixArgs = Array.isArray(config?.prefixArgs) && config.prefixArgs.every(arg => typeof arg === 'string')
+    ? config.prefixArgs
+    : (process.platform === 'win32' && command === 'py' ? ['-3'] : []);
+
+  return { command, prefixArgs, runtimeRoot, projectRoot };
+}
+
+function runGalleryDl(args, timeout = 90000) {
+  const runtime = getGalleryDlRuntime();
+  if (!runtime) {
+    return Promise.resolve({
+      ok: false,
+      stdout: '',
+      stderr: 'gallery-dl não instalado. Execute npm run build para instalar o suporte a fotos do TikTok.',
+    });
+  }
+
+  const { execFile } = require('child_process');
+  const pythonPath = [
+    runtime.runtimeRoot,
+    process.env.PYTHONPATH,
+  ].filter(Boolean).join(path.delimiter);
+
+  return new Promise(resolve => {
+    execFile(
+      runtime.command,
+      [...runtime.prefixArgs, '-m', 'gallery_dl', ...args],
+      {
+        cwd: runtime.projectRoot,
+        timeout,
+        maxBuffer: 1024 * 1024 * 20,
+        env: { ...process.env, PYTHONPATH: pythonPath },
+      },
+      (error, stdout, stderr) => {
+        resolve({
+          ok: !error,
+          stdout: typeof stdout === 'string' ? stdout : '',
+          stderr: typeof stderr === 'string' ? stderr : (error?.message || ''),
+        });
+      }
+    );
+  });
+}
+
+function listTiktokPhotoFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter(entry => entry.isFile() && TIKTOK_PHOTO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+    .map(entry => path.join(directory, entry.name))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b), undefined, { numeric: true }));
+}
+
+async function downloadTiktokPhotoPost(link, id, cookieFilePath) {
+  const outputDir = tmpPath(id, '_tiktok_photos');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  try {
+    const args = [
+      '--config-ignore',
+      '-D', outputDir,
+      '-f', '{id}_{num}.{extension}',
+      '-o', 'extractor.tiktok.photos=true',
+      '-o', 'extractor.tiktok.videos=false',
+      '-o', 'extractor.tiktok.audio=false',
+    ];
+    if (cookieFilePath) args.push('--cookies', cookieFilePath);
+    args.push(link);
+
+    const result = await runGalleryDl(args, 120000);
+    if (!result.ok) {
+      const diagnostic = (result.stderr || result.stdout || 'sem detalhes').trim().slice(-1200);
+      throw new Error('gallery-dl não conseguiu extrair as fotos: ' + diagnostic);
+    }
+
+    const files = listTiktokPhotoFiles(outputDir);
+    if (files.length === 0) {
+      throw new Error('O TikTok não devolveu imagens para esse post. Verifique se o post está público e se os cookies ainda são válidos.');
+    }
+    if (files.length > MAX_TIKTOK_PHOTOS) {
+      throw new Error('O post excede o limite de ' + MAX_TIKTOK_PHOTOS + ' imagens.');
+    }
+
+    let totalBytes = 0;
+    for (const file of files) {
+      const size = fs.statSync(file).size;
+      if (size < 1000 || size > SIZE_LIMIT) {
+        throw new Error('Uma das imagens está vazia ou excede o limite permitido.');
+      }
+      totalBytes += size;
+    }
+    if (totalBytes > MAX_TIKTOK_PHOTO_TOTAL_BYTES) {
+      throw new Error('O conjunto de imagens excede o limite de download de 256 MB.');
+    }
+
+    return { outputDir, files };
+  } catch (error) {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 // !tiktok
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const P = getPrefix(jid);
@@ -1184,7 +1300,11 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
 
   const cleanupCookie = () => { if (cookieTempFile) safeDel(cookieTempFile); };
   const metaExtraArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
-  const metaPromise = fetchMeta(ytdlp, link, metaExtraArgs);
+  const isPhotoUrl = (() => {
+    try { return /\/photo\/\d+(?:\/|$)/i.test(new URL(link).pathname); }
+    catch { return false; }
+  })();
+  const metaPromise = isPhotoUrl ? Promise.resolve(null) : fetchMeta(ytdlp, link, metaExtraArgs);
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
   log.info(`🎵 tiktok: baixando ${link}`);
@@ -1203,14 +1323,47 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   if (cookieFilePath) { dlArgs.push('--cookies', cookieFilePath); log.info('🍪 Usando cookies'); }
   dlArgs.push('-o', rawPath, link);
 
-  const { ok: dlOk, stderr: dlStderr } = await ytDlp(ytdlp, dlArgs, 60000);
+  const downloadResult = isPhotoUrl
+    ? { ok: false, stderr: 'TikTok photo post' }
+    : await ytDlp(ytdlp, dlArgs, 60000);
+  const { ok: dlOk, stderr: dlStderr } = downloadResult;
   if (!dlOk) {
+    const isPhoto = /\/photo\/\d+(?:[/?#]|$)|photo.?post|image.?post|no video formats found|no formats found/i.test(link + '\n' + (dlStderr || ''));
+    if (isPhoto) {
+      await metaPromise;
+      safeDel(rawPath, outPath);
+      try {
+        const photoPost = await downloadTiktokPhotoPost(link, id, cookieFilePath);
+        try {
+          const total = photoPost.files.length;
+          const photoCaption = '━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n📸 *Publicação de fotos*\n🖼️ *Imagens:* ' + total + '\n\n🔗 ' + link;
+          for (let index = 0; index < total; index++) {
+            const file = photoPost.files[index];
+            const buffer = fs.readFileSync(file);
+            const ext = path.extname(file).toLowerCase();
+            const mimetype = ext === '.png' ? 'image/png'
+              : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+            const content = { image: buffer, mimetype };
+            if (index === 0) content.caption = photoCaption;
+            await sock.sendMessage(jid, content, index === 0 ? { quoted: msg } : undefined);
+          }
+        } finally {
+          fs.rmSync(photoPost.outputDir, { recursive: true, force: true });
+        }
+        await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+        cleanupCookie();
+        return;
+      } catch (error) {
+        cleanupCookie();
+        log.warn('TikTok: falha ao baixar publicação de fotos:', error.message);
+        return sock.sendMessage(jid, {
+          text: '❌ Não consegui baixar as imagens desse post do TikTok. Confirme se a publicação ainda está disponível e se os cookies do TikTok estão actualizados.',
+        }, { quoted: msg });
+      }
+    }
     cleanupCookie();
-    const isPhoto = /photo/i.test(dlStderr);
     return sock.sendMessage(jid, {
-      text: isPhoto
-        ? '⚠️ Esse link é um *post de foto* do TikTok, não um vídeo!'
-        : '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.'
+      text: '❌ Não consegui baixar o vídeo.\nVerifique se o link é válido.'
     }, { quoted: msg });
   }
 
@@ -1754,4 +1907,7 @@ module.exports = {
   limparTmpAntigos,
   _isPublicAddress: isPublicAddress,
   _validateExternalUrl: validateExternalUrl,
+  _listTiktokPhotoFiles: listTiktokPhotoFiles,
 };
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

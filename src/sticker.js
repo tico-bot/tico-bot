@@ -271,17 +271,23 @@ async function _convertVideoViaFrames(buffer, durationHint = 0) {
   fs.mkdirSync(framesDir, { recursive: true });
 
   try {
-    let duration = Number(durationHint);
-    if (!Number.isFinite(duration) || duration <= 0) {
+    // Mede a duração real sempre que possível: video.seconds pode vir arredondado pelo WhatsApp.
+    // Assim, vídeos de até 9 segundos não são acelerados por uma duração imprecisa.
+    const hintedDuration = Number(durationHint);
+    let probedDuration = 0;
+    try {
       const ffprobeBin = require('ffprobe-static').path;
-      duration = await new Promise((resolve) => {
+      probedDuration = await new Promise((resolve) => {
         execFile(ffprobeBin, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', inPath],
           { timeout: 10_000 }, (err, stdout) => {
             const parsed = Number(String(stdout || '').trim());
             resolve(!err && Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
           });
       });
-    }
+    } catch { /* usa a duração informada pelo WhatsApp se ffprobe falhar */ }
+    const duration = probedDuration > 0
+      ? probedDuration
+      : (Number.isFinite(hintedDuration) && hintedDuration > 0 ? hintedDuration : 0);
     if (duration > VIDEO_INPUT_MAX_SECONDS + 0.25) {
       const error = new Error(`VIDEO_TOO_LONG:${Math.ceil(duration)}`);
       error.code = 'VIDEO_TOO_LONG';
@@ -506,3 +512,5 @@ module.exports = {
   isAnimatedWebp,
   roubarSticker,
 };
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]
