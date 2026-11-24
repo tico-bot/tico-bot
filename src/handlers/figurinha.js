@@ -134,7 +134,7 @@ function detectExt(buffer) {
  * @param {string} [inputExt='mp4']
  * @returns {Promise<Buffer|null>} WebP animado, ou null em caso de falha.
  */
-async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint = 0) {
+async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint = 0, maxStickerSeconds = VIDEO_STICKER_MAX_SECONDS) {
   const ffmpegBin = resolveFfmpegBin();
   const tmpId     = crypto.randomUUID();
   const tmpDir    = os.tmpdir();
@@ -178,9 +178,11 @@ async function videoToStickerBuffer(inputBuffer, inputExt = 'mp4', durationHint 
       error.code = 'VIDEO_TOO_LONG';
       throw error;
     }
-    // Acelera apenas quando necessário para caber em 9s, mantendo o vídeo inteiro.
-    const playbackFactor = duration > VIDEO_STICKER_MAX_SECONDS
-      ? VIDEO_STICKER_MAX_SECONDS / duration
+    // Acelera apenas quando necessário para caber no limite da figurinha,
+    // mantendo todo o vídeo e permitindo sincronizar o áudio em sound stickers.
+    const targetDuration = Math.max(1, Math.min(VIDEO_STICKER_MAX_SECONDS, Number(maxStickerSeconds) || VIDEO_STICKER_MAX_SECONDS));
+    const playbackFactor = duration > targetDuration
+      ? targetDuration / duration
       : 1;
     const videoFilter = [
       ...(playbackFactor < 1 ? [`setpts=${playbackFactor.toFixed(8)}*PTS`] : []),
@@ -1276,6 +1278,8 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
   ▸ ${P}togif — sticker → GIF
 
 🔊 *ÁUDIO*
+  ▸ ${P}su — vídeo com som → figurinha animada sonora (até 5s)
+  ▸ ${P}saudio — responda à imagem; depois envie o áudio (até 10s)
   ▸ ${P}estourar — amplificar áudio de uma mídia
 
 🔎 *PACOTES & BUSCA*

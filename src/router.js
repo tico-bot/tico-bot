@@ -44,6 +44,7 @@ const CarteiraGrupo = require(path.join(__dirname, 'models', 'CarteiraGrupo'));
 // ─── Handlers ─────────────────────────────────────────────────────────────
 const menuHandler           = require('./handlers/menus');
 const figurinhaHandler      = require('./handlers/figurinha');
+const audioStickerHandler   = require('./handlers/audio-sticker');
 const diversaoHandler       = require('./handlers/diversao');
 const futebolApiHandler     = require('./handlers/futebol-api');
 const relacionamentoHandler = require('./handlers/relacionamento');
@@ -430,6 +431,14 @@ async function handleMessage(sock, msg) {
 
   // ── Anti-Link com lista branca e bloqueio de mensagens de pagamento ──
   if (await handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid, senderAlternateJids, cfgGrupo)) return;
+
+  // Se alguém iniciou /saudio neste chat, o próximo áudio dessa pessoa completa a figurinha.
+  if (content.audioMessage) {
+    const soundStickerHandled = await audioStickerHandler.handlePendingAudio(
+      sock, msg, content, jid, author, senderJid, stickerCount
+    );
+    if (soundStickerHandled) return;
+  }
 
   // ── Auto-Sticker ─────────────────────────────────────────────
   if (isGroup && autoStickerGroups.has(jid) && !isAnyCmd(raw)) {
@@ -1082,6 +1091,16 @@ async function handleMessage(sock, msg) {
     { await utilidadeHandler.handleLetraMusica(sock, msg, jid, caption); return; }
   if (matchCmd(cmdWord, 'pinterest') || matchCmd(cmdWord, 'pinterest2'))
     { await downloadsHandler.handlePinterest(sock, msg, jid, caption); return; }
+
+  // ── FIGURINHAS COM ÁUDIO ──────────────────────────────────────
+  if (matchCmd(cmdWord, 'su')) {
+    await audioStickerHandler.handleVideoSoundSticker(sock, msg, content, jid, author, stickerCount);
+    return;
+  }
+  if (matchCmd(cmdWord, 'saudio')) {
+    await audioStickerHandler.handleSoundStickerImage(sock, msg, content, jid, author);
+    return;
+  }
 
   // ── FIGURINHAS ────────────────────────────────────────────────
   if (
