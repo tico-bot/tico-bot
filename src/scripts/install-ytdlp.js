@@ -3,19 +3,99 @@
  * O runtime é instalado em .yt-dlp-runtime (ignorado pelo Git).
  */
 const { execFileSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-if (process.platform === 'win32') {
-  console.log('Windows detectado — pulando instalação do runtime PO Token do Render.');
-  process.exit(0);
-}
+const YTDLP_VERSION = '2026.11.23';
 
+if (process.platform === 'win32') {
+  // O executável Windows é distribuído separadamente do runtime PO Token do Render.
+  // Baixa a mesma versão fixada para Linux e valida o checksum publicado pelo yt-dlp.
+  const projectRoot = path.resolve(__dirname, '..', '..');
+  const targetPath = path.join(projectRoot, 'yt-dlp.exe');
+  const baseUrl = 'https://github.com/yt-dlp/yt-dlp/releases/download/' + YTDLP_VERSION;
+
+  async function installWindowsYtDlp() {
+    console.log('⬇️ Actualizando yt-dlp para Windows: ' + YTDLP_VERSION + '...');
+
+    const fetchOptions = { signal: AbortSignal.timeout(180000) };
+    const [checksumsResponse, binaryResponse] = await Promise.all([
+      fetch(baseUrl + '/SHA2-256SUMS', fetchOptions),
+      fetch(baseUrl + '/yt-dlp.exe', fetchOptions),
+    ]);
+
+    if (!checksumsResponse.ok) {
+      throw new Error('Falha ao obter SHA2-256SUMS: HTTP ' + checksumsResponse.status);
+    }
+    if (!binaryResponse.ok) {
+      throw new Error('Falha ao obter yt-dlp.exe: HTTP ' + binaryResponse.status);
+    }
+
+    const checksums = await checksumsResponse.text();
+    const checksumLine = checksums.split(/\r?\n/).find(line => /\s+\*?yt-dlp\.exe\s*$/.test(line));
+    const expectedHash = checksumLine?.trim().split(/\s+/)[0]?.toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(expectedHash || '')) {
+      throw new Error('O manifesto oficial não contém o SHA-256 esperado para yt-dlp.exe.');
+    }
+
+    const binary = Buffer.from(await binaryResponse.arrayBuffer());
+    if (binary.length < 1024 * 1024) {
+      throw new Error('O executável baixado parece incompleto.');
+    }
+
+    const actualHash = crypto.createHash('sha256').update(binary).digest('hex');
+    if (actualHash !== expectedHash) {
+      throw new Error('SHA-256 do yt-dlp.exe não corresponde ao manifesto oficial.');
+    }
+
+    const tempPath = targetPath + '.download-' + process.pid;
+    const backupPath = targetPath + '.previous';
+    fs.writeFileSync(tempPath, binary);
+
+    let movedOldBinary = false;
+    try {
+      if (fs.existsSync(targetPath)) {
+        fs.rmSync(backupPath, { force: true });
+        fs.renameSync(targetPath, backupPath);
+        movedOldBinary = true;
+      }
+
+      fs.renameSync(tempPath, targetPath);
+      const installedVersion = execFileSync(targetPath, ['--version'], {
+        encoding: 'utf8',
+        timeout: 15000,
+      }).trim();
+
+      if (installedVersion !== YTDLP_VERSION) {
+        throw new Error('Versão instalada inesperada: ' + installedVersion);
+      }
+
+      fs.rmSync(backupPath, { force: true });
+    } catch (error) {
+      fs.rmSync(targetPath, { force: true });
+      if (movedOldBinary && fs.existsSync(backupPath)) {
+        fs.renameSync(backupPath, targetPath);
+      }
+      throw error;
+    } finally {
+      fs.rmSync(tempPath, { force: true });
+    }
+
+    console.log('✅ yt-dlp Windows instalado: ' + YTDLP_VERSION);
+    console.log('✅ SHA-256 validado: ' + actualHash);
+    console.log('✅ Runtime PO Token do Render não é necessário no Windows.');
+  }
+
+  installWindowsYtDlp().catch(error => {
+    console.error('❌ Falha ao actualizar yt-dlp no Windows:', error.message);
+    process.exitCode = 1;
+  });
+} else {
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const RUNTIME_ROOT = path.join(PROJECT_ROOT, '.yt-dlp-runtime');
 const PYTHON_ROOT = path.join(RUNTIME_ROOT, 'python');
 const BIN_ROOT = path.join(RUNTIME_ROOT, 'bin');
-const YTDLP_VERSION = '2026.10.26';
 const PROVIDER_ROOT = path.join(RUNTIME_ROOT, 'bgutil-ytdlp-pot-provider');
 const SERVER_ROOT = path.join(PROVIDER_ROOT, 'server');
 const PROVIDER_VERSION = '2.0.2';
@@ -102,3 +182,4 @@ console.log('✅ Plugin PO Token carregado pelo Python isolado.');
 console.log('✅ PO Token instalado: bgutil ' + providerVersion);
 console.log('✅ Node.js disponível para yt-dlp: ' + nodeVersion);
 console.log('✅ Runtime do YouTube pronto em ' + RUNTIME_ROOT);
+}

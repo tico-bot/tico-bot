@@ -6,6 +6,7 @@ const {
   ITENS_ROUBO,
   ITENS_ROUBO_BANCO,
   ITENS_SEGURANCA,
+  calcularTaxaSucessoRoubo,
   resolverChaveFerramenta,
   selecionarFerramentaRoubo,
   selecionarFerramentaBanco,
@@ -31,6 +32,18 @@ function codigosUnicos(catalogo, contexto) {
     assert.equal(resolverChaveFerramenta(item.codigo, catalogo), chave, `${contexto}: ${item.nome}`);
   }
 }
+
+test('a Central com IA é a melhor defesa, mas nunca torna o jogador imune', () => {
+  assert.equal(ITENS_SEGURANCA.central_ia.defesa, 85);
+  assert.ok(ITENS_SEGURANCA.central_ia.defesa > ITENS_SEGURANCA.cofre_titanio.defesa);
+
+  // Com a melhor ferramenta de roubo comum, ainda há 25% de chance de sucesso.
+  assert.equal(calcularTaxaSucessoRoubo(50, 60, ITENS_SEGURANCA.central_ia.defesa), 25);
+  // No assalto ao banco, mesmo a combinação mais forte conserva a chance mínima de 10%.
+  assert.equal(calcularTaxaSucessoRoubo(30, 60, ITENS_SEGURANCA.central_ia.defesa), 10);
+  // Até uma defesa acima do catálogo não pode zerar a chance do atacante.
+  assert.equal(calcularTaxaSucessoRoubo(30, 0, 999), 10);
+});
 
 test('todas as ferramentas de roubo, banco e segurança têm uma única chave curta', () => {
   codigosUnicos(catalogoRoubo, 'roubo/banco');
@@ -163,4 +176,7 @@ test('/menusec mostra somente uma chave curta para comprar e equipar cada defesa
     assert.ok(texto.includes(`!equiparsec ${item.codigo}`), `equipamento não exibido: ${item.codigo}`);
   }
   assert.doesNotMatch(texto, /buysec (Cofre Forte|Sistema de Alarme|Câmera de Vigilância)/i);
+  assert.ok(texto.includes('Defesa: *85 pontos*'), 'a Central deve ser descrita em pontos, não como 100% de imunidade');
+  assert.ok(texto.includes('pelo menos *10%* de chance'), 'o menu deve informar que a defesa não é absoluta');
+  assert.doesNotMatch(texto, /100% de proteção|100% de defesa/i);
 });

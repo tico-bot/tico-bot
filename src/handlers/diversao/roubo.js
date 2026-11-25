@@ -37,7 +37,7 @@ const COOLDOWN_POLICIA_MS = 15 * 60 * 1000; // 15 min pra chamar polícia de nov
 const JANELA_DENUNCIA_POLICIA_MS = 2 * 60 * 60 * 1000; // 2 horas após o roubo para chamar a polícia
 const IMUNIDADE_ROUBO_MS  = 2 * 60 * 60 * 1000; // 2h de imunidade após ser roubado
 const TAXA_SUCESSO_BASE  = 50;
-const TAXA_MIN           = 5;
+const TAXA_MIN           = 10; // Todo ataque mantém uma chance mínima de sucesso, mesmo contra defesas fortes.
 const TAXA_MAX           = 95;
 const ROUBO_MIN_PCT      = 30;
 const ROUBO_MAX_PCT      = 100;
@@ -75,12 +75,17 @@ const ITENS_SEGURANCA = {
   seguranca: { nome: '👮 Guarda de Segurança',   codigo: 'guarda',  preco: 400, defesa: 45 },
   bunker:    { nome: '🛡️ Bunker Subterrâneo',   codigo: 'bunker',  preco: 500, defesa: 55 },
   laser:     { nome: '🔴 Raios Laser',           codigo: 'laser',   preco: 600, defesa: 65 },
-  militares: { nome: '🪖 Segurança Militar',     codigo: 'tropa',   preco: 800, defesa: 80 },
-  drones_taticos: { nome: '🚁 Enxame de Drones Táticos',      codigo: 'drone',   preco: 1200, defesa: 85 },
-  equipe_elite:   { nome: '🦾 Equipe de Segurança de Elite',  codigo: 'elite',   preco: 2200, defesa: 90 },
-  cofre_titanio:  { nome: '🏦 Cofre Blindado de Titânio',     codigo: 'titanio', preco: 4000, defesa: 95 },
-  central_ia:     { nome: '🧠 Central de Segurança com IA',   codigo: 'central', preco: 7500, defesa: 100 },
+  militares: { nome: '🪖 Segurança Militar',     codigo: 'tropa',   preco: 800, defesa: 70 },
+  drones_taticos: { nome: '🚁 Enxame de Drones Táticos',      codigo: 'drone',   preco: 1200, defesa: 75 },
+  equipe_elite:   { nome: '🦾 Equipe de Segurança de Elite',  codigo: 'elite',   preco: 2200, defesa: 78 },
+  cofre_titanio:  { nome: '🏦 Cofre Blindado de Titânio',     codigo: 'titanio', preco: 4000, defesa: 82 },
+  central_ia:     { nome: '🧠 Central de Segurança com IA',   codigo: 'central', preco: 7500, defesa: 85 },
 };
+
+function calcularTaxaSucessoRoubo(taxaBase, bonusAtaque, defesa = 0) {
+  const taxaBruta = Number(taxaBase) + Number(bonusAtaque) - Number(defesa || 0);
+  return Math.max(TAXA_MIN, Math.min(TAXA_MAX, taxaBruta));
+}
 
 const FALAS_VARIADAS = {
   compraRouboUso: [
@@ -161,21 +166,21 @@ Próximo passo: *!equiparroubo ${itemInfo.codigo}*.`
 
 🔐 ${itemInfo.nome}
 💵 Preço: *${formatarSaldo(itemInfo.preco, carteiraFinal)}*
-🛡️ Defesa: *+${itemInfo.defesa}%*
+🛡️ Nível de defesa: *${itemInfo.defesa} pontos*
 💎 Saldo restante: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
 
 Ative com *!equiparsec ${itemInfo.codigo}*.`,
     ({ itemInfo, carteiraFinal }) => `🛡️ *Equipamento de segurança adquirido!*
 
 Item: ${itemInfo.nome}
-Proteção: *+${itemInfo.defesa}%*
+Nível defensivo: *${itemInfo.defesa} pontos*
 Saldo atual: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
 
 Use *!equiparsec ${itemInfo.codigo}* para o ativar.`,
     ({ itemInfo, carteiraFinal }) => `📦 A sua nova defesa já está no inventário!
 
 🔒 ${itemInfo.nome}
-Bônus defensivo: *+${itemInfo.defesa}%*
+Nível defensivo: *${itemInfo.defesa} pontos*
 Carteira: *${formatarSaldo(carteiraFinal.gold, carteiraFinal)}*
 
 Falta só ativá-la: *!equiparsec ${itemInfo.codigo}*.`
@@ -228,23 +233,23 @@ ${ferramentaBanco ? `Probabilidade no /roubarbanco: até *${taxaBanco}%*\n` : ''
 Próximo passo: *${destino}*.`
   ],
   equiparSecSucesso: [
-    ({ itemInfo, qtd, defesaFinal }) => `✅ *Defesa ativada!*
+    ({ itemInfo, qtd }) => `✅ *Defesa ativada!*
 
 🔐 ${itemInfo.nome}
-🛡️ Protecção: *+${itemInfo.defesa}%*
-🔒 Chance de resistir: até *${defesaFinal}%*
+🛡️ Nível de defesa: *${itemInfo.defesa} pontos*
+⚠️ Reduz a chance do roubo, mas não garante imunidade.
 🎒 Quantidade: *${qtd}x*`,
-    ({ itemInfo, qtd, defesaFinal }) => `🧱 A sua segurança foi reforçada!
+    ({ itemInfo, qtd }) => `🧱 A sua segurança foi reforçada!
 
 Item: ${itemInfo.nome}
-Bônus defensivo: *+${itemInfo.defesa}%*
-Resistência possível: até *${defesaFinal}%*
+Nível defensivo: *${itemInfo.defesa} pontos*
+Mesmo assim, o ataque ainda pode funcionar.
 No inventário: *${qtd}x*`,
-    ({ itemInfo, qtd, defesaFinal }) => `🛡️ *Protecção pronta para uso.*
+    ({ itemInfo, qtd }) => `🛡️ *Protecção pronta para uso.*
 
 Equipamento: ${itemInfo.nome}
-Defesa adicional: *+${itemInfo.defesa}%*
-Chance de resistir: até *${defesaFinal}%*
+Nível de defesa: *${itemInfo.defesa} pontos*
+Nenhuma defesa bloqueia todos os ataques.
 Stock: *${qtd}x*`
   ],
   roubarSemMencao: [
@@ -543,7 +548,7 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
 
   for (const [key, item] of Object.entries(ITENS_SEGURANCA)) {
     texto += `  ▸ ${item.nome} — *${formatarSaldo(item.preco)}*\n`;
-    texto += `     └ Proteção: *+${item.defesa}%*\n`;
+    texto += `     └ Defesa: *${item.defesa} pontos*\n`;
     texto += `     └ Chave: *${item.codigo}* — comprar: \`${P}buysec ${item.codigo}\` | equipar: \`${P}equiparsec ${item.codigo}\`\n`;
   }
 
@@ -555,7 +560,8 @@ async function handleMenuSec(sock, msg, jid, getPrefix) {
   ▸ ${P}meiosec — Ver meio de segurança
 
 ⚠️ *ATENÇÃO*
-  • Sem defesa, há *${TAXA_SUCESSO_BASE}%* de chance de ser roubado com sucesso!
+  • A defesa reduz a chance, mas não a zera: até a Central com IA deixa pelo menos *${TAXA_MIN}%* de chance para o atacante.
+  • Nenhum equipamento concede imunidade total.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -789,10 +795,8 @@ async function handleEquiparSec(sock, msg, jid, caption) {
     { $set: { equiparsec: itemSlug } }
   );
 
-  const defesaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + itemInfo.defesa);
-
   await sock.sendMessage(jid, {
-    text: sortearFala('equiparSecSucesso', { itemInfo, qtd, defesaFinal }),
+    text: sortearFala('equiparSecSucesso', { itemInfo, qtd }),
   }, { quoted: msg });
 }
 
@@ -878,7 +882,7 @@ async function handleInvSec(sock, msg, jid) {
       const ativo = carteira.equiparsec === key;
       const tag = ativo ? ' ⚡ *ATIVO*' : '';
       texto += `  ${item.nome}${tag}\n`;
-      texto += `    └ Chave: *${item.codigo}* | Qtd: *${qtd}x* | Defesa: *+${item.defesa}%*\n`;
+      texto += `    └ Chave: *${item.codigo}* | Qtd: *${qtd}x* | Defesa: *${item.defesa} pts*\n`;
     }
   }
 
@@ -892,10 +896,9 @@ async function handleInvSec(sock, msg, jid) {
     const eq    = eqKey && ITENS_SEGURANCA[eqKey];
 
     if (eq) {
-      const chanceResistir = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.defesa);
       texto += `⚡ *Ativo:* ${eq.nome} (chave: *${eq.codigo}*)\n`;
-      texto += `🛡️ *Defesa ativa:* +${eq.defesa}% de proteção\n`;
-      texto += `🔒 *Chance de resistir:* até ${chanceResistir}%`;
+      texto += `🛡️ *Nível de defesa:* ${eq.defesa} pontos\n`;
+      texto += `⚠️ A defesa reduz a chance do roubo, mas não o impede completamente.`;
     } else {
       texto += sortearFala('semDefesaAtiva');
     }
@@ -916,18 +919,17 @@ async function handleMeioSec(sock, msg, jid) {
 
   const eq = carteira.equiparsec && ITENS_SEGURANCA[carteira.equiparsec];
   if (eq) {
-    const defesaFinal = Math.min(TAXA_MAX, TAXA_SUCESSO_BASE + eq.defesa);
     texto += `✅ *Defesa equipada:* ${eq.nome} (chave: *${eq.codigo}*)\n`;
-    texto += `🔒 *Proteção:* +${eq.defesa}%\n\n`;
+    texto += `🛡️ *Nível de defesa:* ${eq.defesa} pontos\n\n`;
     texto += `━━━━━━━━━━━━━━━━\n`;
     texto += `📊 *Como funciona:*\n`;
-    texto += `  Base de defesa: *${TAXA_SUCESSO_BASE}%*\n`;
-    texto += `  Bônus do item: *+${eq.defesa}%*\n`;
-    texto += `  🛡️ Total: *${defesaFinal}%* de chance de resistir\n\n`;
+    texto += `  • Os pontos de defesa reduzem a chance de sucesso do ataque.\n`;
+    texto += `  • O atacante ainda mantém pelo menos *${TAXA_MIN}%* de chance de sucesso.\n`;
+    texto += `  • A Central com IA é a melhor proteção, mas não torna ninguém invulnerável.\n\n`;
     texto += `🔄 Troque com *!equiparsec <chave>*`;
   } else {
     texto += `${sortearFala('semDefesaAtiva')}\n`;
-    texto += `⚠️ Sem defesa você tem apenas *${TAXA_SUCESSO_BASE}%* de chance de resistir!\n`;
+    texto += `⚠️ Sem defesa, o roubo usa a chance-base de *${TAXA_SUCESSO_BASE}%*, antes dos bônus do atacante.\n`;
     texto += `🛒 Consulte *!menusec* para escolher uma proteção.`;
   }
 
@@ -1041,15 +1043,13 @@ async function handleRoubar(sock, msg, jid) {
   );
 
   // ── Calcular taxa de sucesso ─────────────────────────────────────────────────
-  let taxaSucesso = TAXA_SUCESSO_BASE + itemAtaque.bonus;
-
   const itemDefesaSlug = carteiraVitima.equiparsec;
   const itemDefesa     = itemDefesaSlug && ITENS_SEGURANCA[itemDefesaSlug];
-  if (itemDefesa) {
-    taxaSucesso -= itemDefesa.defesa;
-  }
-
-  taxaSucesso = Math.max(TAXA_MIN, Math.min(TAXA_MAX, taxaSucesso));
+  const taxaSucesso = calcularTaxaSucessoRoubo(
+    TAXA_SUCESSO_BASE,
+    itemAtaque.bonus,
+    itemDefesa?.defesa ?? 0
+  );
 
   const rolagem = Math.random() * 100;
   const sucesso = rolagem < taxaSucesso;
@@ -1483,13 +1483,13 @@ async function handleRoubarBanco(sock, msg, jid) {
   );
 
   // ── Calcular taxa de sucesso ──────────────────────────────────────────────
-  let taxaSucesso = TAXA_SUCESSO_BASE_BANCO + itemAtaque.bonus;
-
   const itemDefesaSlug = carteiraVitima.equiparsec;
   const itemDefesa     = itemDefesaSlug && ITENS_SEGURANCA[itemDefesaSlug];
-  if (itemDefesa) taxaSucesso -= itemDefesa.defesa;
-
-  taxaSucesso = Math.max(TAXA_MIN, Math.min(TAXA_MAX, taxaSucesso));
+  const taxaSucesso = calcularTaxaSucessoRoubo(
+    TAXA_SUCESSO_BASE_BANCO,
+    itemAtaque.bonus,
+    itemDefesa?.defesa ?? 0
+  );
 
   const rolagem = Math.random() * 100;
   const sucesso = rolagem < taxaSucesso;
@@ -1592,6 +1592,7 @@ module.exports = {
   ITENS_ROUBO,
   ITENS_ROUBO_BANCO,
   ITENS_SEGURANCA,
+  calcularTaxaSucessoRoubo,
   resolverChaveFerramenta,
   selecionarFerramentaRoubo,
   selecionarFerramentaBanco,
