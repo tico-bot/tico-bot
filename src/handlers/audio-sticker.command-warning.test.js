@@ -47,15 +47,15 @@ test.after(() => {
 test('/sa envia o aviso de aceleração antes de enviar a figurinha sonora', async () => {
   const ffmpeg = require('ffmpeg-static');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-sa-warning-'));
-  const videoPath = path.join(dir, 'seven-seconds-with-audio.mp4');
+  const videoPath = path.join(dir, 'twelve-seconds-with-audio.mp4');
 
   try {
     execFileSync(ffmpeg, [
       '-y',
       '-f', 'lavfi',
-      '-i', 'color=c=blue:s=128x128:r=8:d=7',
+      '-i', 'color=c=blue:s=128x128:r=8:d=12',
       '-f', 'lavfi',
-      '-i', 'sine=frequency=440:duration=7',
+      '-i', 'sine=frequency=440:duration=12',
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
@@ -81,7 +81,7 @@ test('/sa envia o aviso de aceleração antes de enviar a figurinha sonora', asy
 
     assert.ok(warningIndex >= 0, 'should send the acceleration warning');
     assert.ok(stickerIndex > warningIndex, 'warning should arrive before the sound sticker');
-    assert.match(sent[warningIndex].text, /até \*5 segundos\*/);
+    assert.match(sent[warningIndex].text, /até \*9 segundos\*/);
   } finally {
     mediaBuffer = null;
     fs.rmSync(dir, { recursive: true, force: true });
