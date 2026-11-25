@@ -14,7 +14,7 @@ const { unwrapMessageContent } = require('../utils/message-content');
 const { contarSticker: registrarSticker } = require('../utils/persistence');
 
 const MAX_SOUND_SECONDS = 10;
-const VIDEO_SOUND_SECONDS = 5;
+const VIDEO_SOUND_SECONDS = 9;
 const PENDING_TTL_MS = 2 * 60 * 1000;
 const pendingSoundStickers = new Map();
 
@@ -223,7 +223,7 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
 
   if (!video) {
     await sock.sendMessage(jid, {
-      text: 'Responda a um *vídeo com áudio* usando */sa*.\nO vídeo pode ter até 20 segundos; a figurinha leva até 5 segundos de imagem e som.',
+      text: 'Responda a um *vídeo com áudio* usando */sa*.\nO vídeo pode ter até 20 segundos; a figurinha leva até 9 segundos de imagem e som.',
     }, { quoted: msg });
     return;
   }
