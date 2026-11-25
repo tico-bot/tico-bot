@@ -69,7 +69,7 @@ test('sticker menu lists the sound-sticker commands and explains their duration 
   const menu = await renderMenu('figurinhas', () =>
     figurinha.handleMenuFig(sock, msg, jid, getPrefix));
   assert.match(menu, /▸ !desfig — sticker → imagem\/vídeo/);
-  assert.match(menu, /▸ !sa — vídeo \+ som → figurinha sonora \(até 5s; acelera acima disso\)/);
+  assert.match(menu, /▸ !sa — vídeo \+ som → figurinha sonora \(até 9s; acelera acima disso\)/);
   assert.match(menu, /▸ !saudio — imagem\/vídeo \+ áudio separado \(até 10s\)/);
 });
 
@@ -190,3 +190,4 @@ test('international football help lists the same aliases supported by the router
   assert.match(routerSource, /matchCmd\(cmdWord, 'campeonato'\).*handleCompetition/);
   assert.match(routerSource, /filter\(name => name !== 'cinema'\)/);
 });
+

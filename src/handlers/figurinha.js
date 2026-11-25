@@ -1381,7 +1381,7 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
   ▸ ${P}togif — sticker → GIF
 
 🔊 *ÁUDIO*
-  ▸ ${P}sa — vídeo + som → figurinha sonora (até 5s; acelera acima disso)
+  ▸ ${P}sa — vídeo + som → figurinha sonora (até 9s; acelera acima disso)
   ▸ ${P}saudio — imagem/vídeo + áudio separado (até 10s)
   ▸ ${P}estourar — amplificar áudio de uma mídia
 

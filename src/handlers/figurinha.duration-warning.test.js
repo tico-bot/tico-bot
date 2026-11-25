@@ -9,6 +9,7 @@ const { execFileSync } = require('node:child_process');
 const {
   videoToStickerBuffer,
   getVideoAccelerationNotice,
+  handleMenuFig,
 } = require('./figurinha');
 
 test('só avisa sobre aceleração quando o vídeo ultrapassa 9 segundos', () => {
@@ -53,3 +54,17 @@ test('usa a duração real do vídeo para avisar mesmo quando o WhatsApp informa
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('menufig informa o limite correto de 9 segundos para /sa', async () => {
+  const sent = [];
+  const sock = { sendMessage: async (_jid, payload) => sent.push(payload) };
+  const jid = 'sticker-menu-test@g.us';
+
+  await handleMenuFig(sock, { key: { remoteJid: jid } }, jid, () => '!');
+
+  const menu = sent.find(payload => typeof payload?.text === 'string')?.text || '';
+  assert.match(menu, /!sa .*figurinha sonora \(até 9s; acelera acima disso\)/);
+  assert.doesNotMatch(menu, /!sa .*figurinha sonora \(até 5s/);
+});
+
