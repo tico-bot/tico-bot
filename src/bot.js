@@ -36,6 +36,7 @@ const CarteiraGrupo = require('./models/CarteiraGrupo');
 const { rodarAtualizacao } = require('./scripts/atualizarGrupos.js');
 const { acquireLock, startHeartbeat, releaseLock } = require('./utils/instanceLock');
 const { acquireLockWithRetry } = require('./utils/acquireLockWithRetry');
+const { installTicoStickerMetadata } = require('./utils/sticker-metadata');
 const { saveData, relacionamentos } = require('./utils/persistence');
 const Usuario = require('./models/Usuario');
 const Relacionamento = require('./models/Relacionamento');
@@ -209,6 +210,7 @@ async function startBot() {
     },
   });
 
+  installTicoStickerMetadata(sock);
   _botSock = sock;
 
   sock.ev.on('creds.update', saveCreds);

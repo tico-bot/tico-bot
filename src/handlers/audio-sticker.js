@@ -45,12 +45,78 @@ function buildQuotedMsg(jid, contextInfo, quoted) {
   return {
     key: {
       remoteJid: jid,
-      id: contextInfo.stanzaId,
-      fromMe: false,
-      participant: contextInfo.participant,
+      id: contextInfo?.stanzaId,
+      fromMe: Boolean(contextInfo?.fromMe),
+      ...(contextInfo?.participant ? { participant: contextInfo.participant } : {}),
     },
     message: quoted,
   };
+}
+
+function getMediaContextInfo(content) {
+  const candidates = [
+    content?.extendedTextMessage?.contextInfo,
+    content?.imageMessage?.contextInfo,
+    content?.videoMessage?.contextInfo,
+    content?.documentMessage?.contextInfo,
+    content?.documentWithCaptionMessage?.message?.extendedTextMessage?.contextInfo,
+    content?.messageContextInfo,
+  ];
+
+  return candidates.find(context => context?.quotedMessage) ||
+    candidates.find(Boolean) ||
+    null;
+}
+
+/**
+ * Abre os envelopes que o WhatsApp/Baileys pode colocar em volta da mídia.
+ * O bloqueio de visualização única é feito antes desta função.
+ */
+function unwrapStickerMediaMessage(message) {
+  let current = message;
+
+  for (let depth = 0; depth < 10 && current && typeof current === 'object'; depth += 1) {
+    const nested =
+      current.documentWithCaptionMessage?.message ||
+      current.deviceSentMessage?.message ||
+      current.editedMessage?.message;
+
+    if (nested) {
+      current = nested;
+      continue;
+    }
+
+    const unwrapped = unwrapMessageContent(current);
+    if (unwrapped === current) break;
+    current = unwrapped;
+  }
+
+  return current;
+}
+
+function getImageVideoFromMessage(message) {
+  const media = unwrapStickerMediaMessage(message);
+  let image = media?.imageMessage || null;
+  let video = media?.videoMessage || null;
+  const document = media?.documentMessage || null;
+  const mimetype = String(document?.mimetype || '').toLowerCase();
+
+  if (!image && !video && document) {
+    if (mimetype.startsWith('video/')) video = document;
+    else if (mimetype.startsWith('image/')) image = document;
+  }
+
+  return { media, image, video };
+}
+
+function getAudioFromMessage(message) {
+  const media = unwrapStickerMediaMessage(message);
+  let audio = media?.audioMessage || null;
+  const document = media?.documentMessage || null;
+  const mimetype = String(document?.mimetype || '').toLowerCase();
+
+  if (!audio && document && mimetype.startsWith('audio/')) audio = document;
+  return { media, audio };
 }
 
 function runExec(file, args, timeout = 60_000) {
@@ -125,8 +191,7 @@ function getVideoOnlyAccelerationNotice(durationSeconds) {
 
   const durationLabel = Number.isInteger(duration) ? String(duration) : duration.toFixed(1);
   return '🎬 O vídeo tem *' + durationLabel + ' segundos*. Vou acelerar apenas a animação ' +
-    'para caber no limite de *9 segundos*. Depois, envie um áudio de até *10 segundos*; ' +
-    'o áudio não será acelerado.';
+    'para caber no limite de *9 segundos*. O áudio original não será acelerado.';
 }
 
 async function toOpusAudio(buffer, ext, outputSeconds, speed = 1) {
@@ -184,6 +249,16 @@ function clearPending(key) {
   if (!pending) return;
   clearTimeout(pending.timer);
   pendingSoundStickers.delete(key);
+}
+
+function storePending(sock, jid, key, pending, expiredText) {
+  pending.timer = setTimeout(async () => {
+    if (pendingSoundStickers.get(key) !== pending) return;
+    pendingSoundStickers.delete(key);
+    await sock.sendMessage(jid, { text: expiredText }).catch(() => {});
+  }, PENDING_TTL_MS);
+  pending.timer.unref?.();
+  pendingSoundStickers.set(key, pending);
 }
 
 async function sendSoundSticker(sock, msg, jid, sticker, audio, senderJid, stickerCount) {
@@ -271,16 +346,75 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
   }
 }
 
+async function handleQuotedAudioFirst(sock, msg, jid, contextInfo, quotedAudio, author) {
+  await sendReaction(sock, msg, '⏳');
+
+  try {
+    const sourceMsg = buildQuotedMsg(jid, contextInfo, quotedAudio.media);
+    const downloaded = await downloadMediaMessage(
+      sourceMsg,
+      'buffer',
+      {},
+      { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage },
+    );
+    const buffer = Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded || []);
+    if (!buffer.length) throw new Error('O áudio citado está vazio ou indisponível.');
+
+    const ext = detectExt(buffer, quotedAudio.audio.mimetype || '');
+    const duration = await getDuration(buffer, ext, quotedAudio.audio.seconds);
+    if (duration > MAX_SOUND_SECONDS + 0.25) {
+      await sock.sendMessage(jid, {
+        text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é *10 segundos*. O áudio não será acelerado. Escolha um áudio mais curto.',
+      }, { quoted: msg });
+      await sendReaction(sock, msg, '❌');
+      return;
+    }
+
+    const audio = await toOpusAudio(buffer, ext, Math.min(MAX_SOUND_SECONDS, duration));
+    const senderJid = msg.key.participant || msg.key.remoteJid;
+    const key = pendingKey(jid, senderJid);
+    clearPending(key);
+
+    const pending = {
+      audio,
+      author,
+      senderJid,
+      mediaType: 'áudio',
+      timer: null,
+    };
+    storePending(
+      sock,
+      jid,
+      key,
+      pending,
+      '⌛ O áudio preparado expirou após *2 minutos*. Responda novamente ao áudio com */saudio* e depois envie uma imagem ou vídeo de até *20 segundos*.'
+    );
+
+    await sock.sendMessage(jid, {
+      text: '🔊 Áudio preparado! Agora envie, nesta conversa, uma *imagem ou vídeo* (vídeo de até *20 segundos*; a animação final terá até *9 segundos*). Vou juntar as mídias numa única figurinha sonora. O áudio não será acelerado e você tem *2 minutos* para enviar a imagem ou o vídeo.',
+    }, { quoted: msg });
+    await sendReaction(sock, msg, '✅');
+  } catch (error) {
+    console.error('[saudio] Falha ao preparar áudio citado:', error.message);
+    const detail = /matches no streams|does not contain any stream|Stream map/i.test(error.stderr || error.message)
+      ? 'A mensagem citada não contém uma faixa de áudio válida.'
+      : 'Não consegui preparar esse áudio. Confirme se ele está disponível e tente outro arquivo de até 10 segundos.';
+    await sock.sendMessage(jid, { text: '❌ ' + detail }, { quoted: msg }).catch(() => {});
+    await sendReaction(sock, msg, '❌');
+  }
+}
+
 async function handleSoundStickerImage(sock, msg, content, jid, author) {
   if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
     await sock.sendMessage(jid, { text: 'Não consigo usar mídias de visualização única em figurinhas sonoras.' }, { quoted: msg });
     return;
   }
 
-  let image = content.imageMessage;
-  let video = content.videoMessage;
+  const directMedia = getImageVideoFromMessage(content);
+  let image = directMedia.image;
+  let video = directMedia.video;
   let sourceMsg = msg;
-  const contextInfo = content.extendedTextMessage?.contextInfo;
+  const contextInfo = getMediaContextInfo(content);
   const quotedRaw = contextInfo?.quotedMessage;
 
   if (!image && !video && quotedRaw) {
@@ -288,15 +422,27 @@ async function handleSoundStickerImage(sock, msg, content, jid, author) {
       await sock.sendMessage(jid, { text: 'A mídia citada é de visualização única. Envie-a normalmente e tente novamente.' }, { quoted: msg });
       return;
     }
-    const quoted = unwrapMessageContent(quotedRaw);
-    image = quoted?.imageMessage;
-    video = quoted?.videoMessage;
-    if (image || video) sourceMsg = buildQuotedMsg(jid, contextInfo, quoted);
+
+    const quotedMedia = getImageVideoFromMessage(quotedRaw);
+    image = quotedMedia.image;
+    video = quotedMedia.video;
+    if (image || video) {
+      sourceMsg = buildQuotedMsg(jid, contextInfo, quotedMedia.media);
+    } else {
+      const quotedAudio = getAudioFromMessage(quotedRaw);
+      if (quotedAudio.audio) {
+        await handleQuotedAudioFirst(sock, msg, jid, contextInfo, quotedAudio, author);
+        return;
+      }
+    }
   }
 
   if (!image && !video) {
     await sock.sendMessage(jid, {
-      text: 'Responda a uma *imagem ou vídeo* com */saudio*. Depois, envie um áudio ou nota de voz de até *10 segundos*. O áudio não será acelerado.',
+      text: '🎵 *Duas maneiras de criar uma figurinha sonora:*\n\n' +
+        '1️⃣ Responda a uma *imagem ou vídeo* com */saudio* e depois envie um *áudio ou nota de voz* de até *10 segundos*.\n\n' +
+        '2️⃣ Responda a um *áudio ou nota de voz* com */saudio* e depois envie uma *imagem ou vídeo* (vídeo de até *20 segundos*).\n\n' +
+        'A animação final terá até *9 segundos*; se o vídeo passar disso, somente a animação do vídeo será acelerada. O áudio não será acelerado em nenhuma das opções. Você tem *2 minutos* para enviar a segunda mídia.',
     }, { quoted: msg });
     return;
   }
@@ -349,19 +495,17 @@ async function handleSoundStickerImage(sock, msg, content, jid, author) {
     const key = pendingKey(jid, senderJid);
     clearPending(key);
     const pending = { sticker, author, senderJid, mediaType: video ? 'vídeo' : 'imagem', timer: null };
-    pending.timer = setTimeout(async () => {
-      if (pendingSoundStickers.get(key) !== pending) return;
-      pendingSoundStickers.delete(key);
-      await sock.sendMessage(jid, {
-        text: '⌛ O pedido de figurinha sonora expirou. Responda novamente à imagem ou vídeo com */saudio* para começar de novo.',
-      }).catch(() => {});
-    }, PENDING_TTL_MS);
-    pending.timer.unref?.();
-    pendingSoundStickers.set(key, pending);
+    storePending(
+      sock,
+      jid,
+      key,
+      pending,
+      '⌛ O pedido de figurinha sonora expirou após *2 minutos*. Responda novamente à imagem ou vídeo com */saudio* e envie um áudio de até *10 segundos*.'
+    );
 
     const readyText = video
-      ? '🎬 Vídeo preparado! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar a animação e o áudio numa única figurinha sonora. O áudio não será acelerado.'
-      : '🖼️ Imagem preparada! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar os dois numa única figurinha sonora. O áudio não será acelerado; acima desse limite, será necessário enviar um arquivo mais curto.';
+      ? '🎬 Vídeo preparado! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar a animação e o áudio numa única figurinha sonora. Se o vídeo passar de *9 segundos*, somente a animação será acelerada. O áudio não será acelerado. Você tem *2 minutos* para enviar o áudio.'
+      : '🖼️ Imagem preparada! Agora envie, nesta conversa, um áudio ou uma nota de voz de até *10 segundos*. Vou juntar os dois numa única figurinha sonora. O áudio não será acelerado. Você tem *2 minutos* para enviar o áudio.';
     await sock.sendMessage(jid, { text: readyText }, { quoted: msg });
     await sendReaction(sock, msg, '✅');
   } catch (error) {
@@ -374,7 +518,7 @@ async function handleSoundStickerImage(sock, msg, content, jid, author) {
 async function handlePendingAudio(sock, msg, content, jid, author, senderJid, stickerCount) {
   const key = pendingKey(jid, senderJid);
   const pending = pendingSoundStickers.get(key);
-  if (!pending || !content.audioMessage) return false;
+  if (!pending?.sticker || !content.audioMessage) return false;
 
   if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
     clearPending(key);
@@ -394,7 +538,7 @@ async function handlePendingAudio(sock, msg, content, jid, author, senderJid, st
     if (duration > MAX_SOUND_SECONDS + 0.25) {
       clearPending(key);
       await sock.sendMessage(jid, {
-        text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é *10 segundos*. Não vou acelerar o áudio. Envie novamente uma imagem ou vídeo com */saudio* e depois um áudio de até *10 segundos*.',
+        text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é de até *10 segundos*. Não vou acelerar o áudio. Para tentar novamente, responda à imagem ou ao vídeo com */saudio* e envie um áudio mais curto.',
       }, { quoted: msg });
       await sendReaction(sock, msg, '❌');
       return true;
@@ -407,7 +551,90 @@ async function handlePendingAudio(sock, msg, content, jid, author, senderJid, st
     console.error('[saudio] Falha ao anexar áudio:', error.message);
     clearPending(key);
     await sock.sendMessage(jid, {
-      text: '❌ Não consegui processar esse áudio. Envie novamente uma imagem ou vídeo com */saudio* e depois tente outro arquivo de até 10 segundos.',
+      text: '❌ Não consegui processar esse áudio. Para tentar novamente, responda à imagem ou ao vídeo com */saudio* e envie outro áudio de até *10 segundos*.',
+    }, { quoted: msg }).catch(() => {});
+    await sendReaction(sock, msg, '❌');
+  }
+
+  return true;
+}
+
+async function handlePendingVisual(sock, msg, content, jid, author, senderJid, stickerCount) {
+  const key = pendingKey(jid, senderJid);
+  const pending = pendingSoundStickers.get(key);
+  if (!pending?.audio) return false;
+
+  if (isViewOnceMessage(msg?.message) || isViewOnceMessage(content)) {
+    clearPending(key);
+    await sock.sendMessage(jid, {
+      text: 'Não consigo usar mídia de visualização única em figurinhas sonoras. Comece novamente respondendo ao áudio com */saudio*.',
+    }, { quoted: msg });
+    return true;
+  }
+
+  const media = getImageVideoFromMessage(content);
+  if (!media.image && !media.video) return false;
+
+  await sendReaction(sock, msg, '⏳');
+  try {
+    const downloaded = await downloadMediaMessage(
+      msg,
+      'buffer',
+      {},
+      { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage },
+    );
+    const buffer = Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded || []);
+    if (!buffer.length) throw new Error('A imagem ou o vídeo enviado está vazio.');
+
+    let sticker;
+    if (media.video) {
+      const ext = detectExt(buffer, media.video.mimetype || '');
+      const duration = await getDuration(buffer, ext, media.video.seconds);
+      if (duration > 20.25) {
+        clearPending(key);
+        await sock.sendMessage(jid, {
+          text: '❌ O vídeo tem *' + Math.ceil(duration) + ' segundos*. O limite de entrada do */saudio* é *20 segundos*. Envie uma imagem ou vídeo mais curto.',
+        }, { quoted: msg });
+        await sendReaction(sock, msg, '❌');
+        return true;
+      }
+
+      sticker = await videoToStickerBuffer(
+        buffer,
+        ext,
+        duration,
+        9,
+        async actualDuration => {
+          const notice = getVideoOnlyAccelerationNotice(actualDuration);
+          if (notice) await sock.sendMessage(jid, { text: notice }, { quoted: msg });
+        },
+      );
+      if (!sticker || sticker.length < 100) {
+        throw new Error('Vídeo não pôde ser convertido para WebP animado.');
+      }
+    } else {
+      try {
+        sticker = await convertImageToSticker(buffer);
+      } catch {
+        sticker = await sharp(buffer, { limitInputPixels: 16_000_000 })
+          .rotate()
+          .flatten({ background: { r: 255, g: 255, b: 255 } })
+          .resize(384, 384, { fit: 'fill' })
+          .webp({ quality: 85 })
+          .toBuffer();
+      }
+      if (!sticker || sticker.length < 100) {
+        throw new Error('Imagem não pôde ser convertida para WebP.');
+      }
+    }
+
+    await sendSoundSticker(sock, msg, jid, sticker, pending.audio, senderJid, stickerCount);
+    clearPending(key);
+  } catch (error) {
+    console.error('[saudio] Falha ao preparar mídia após selecionar áudio:', error.message);
+    clearPending(key);
+    await sock.sendMessage(jid, {
+      text: '❌ Não consegui processar essa imagem ou vídeo. Comece novamente respondendo ao áudio com */saudio* e depois envie outra mídia de até 20 segundos.',
     }, { quoted: msg }).catch(() => {});
     await sendReaction(sock, msg, '❌');
   }
@@ -419,6 +646,7 @@ module.exports = {
   handleVideoSoundSticker,
   handleSoundStickerImage,
   handlePendingAudio,
+  handlePendingVisual,
   getDuration,
   getVideoSoundAccelerationNotice,
   getVideoOnlyAccelerationNotice,

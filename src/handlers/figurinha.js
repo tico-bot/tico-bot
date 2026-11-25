@@ -41,6 +41,10 @@ const VIDEO_QUALITY  = 25;
 const VIDEO_MAX_FRAMES = 72;
 const VIDEO_STICKER_MAX_SECONDS = 9;
 const VIDEO_INPUT_MAX_SECONDS = 20;
+const ANIMATED_WEBP_MAX_FRAMES = 300;
+const ANIMATED_WEBP_MAX_FRAME_PIXELS = 16_000_000;
+const ANIMATED_WEBP_MAX_TOTAL_PIXELS = 80_000_000;
+const ANIMATED_WEBP_MAX_DURATION_MS = 60_000;
 
 const VIEW_ONCE_FIELDS = [
   'viewOnceMessage',
@@ -535,6 +539,130 @@ async function muxStickerAudioIntoVideo(videoBuffer, audioBuffer, audioMimetype 
   }
 }
 
+async function animatedWebpToMp4Buffer(buffer, outputSize = 512) {
+  const ffmpegBin = resolveFfmpegBin();
+  const id = crypto.randomUUID();
+  const framesDir = path.join(os.tmpdir(), id + '_frames');
+  const concatPath = path.join(framesDir, 'frames.txt');
+  const outputPath = path.join(os.tmpdir(), id + '_animated.mp4');
+
+  try {
+    // Não usar animated:true aqui: o Sharp empilha todos os quadros na altura
+    // da imagem virtual e o limite passa a contar a animação inteira como uma só imagem.
+    const meta = await sharp(buffer, {
+      limitInputPixels: ANIMATED_WEBP_MAX_FRAME_PIXELS,
+    }).metadata();
+
+    const pages = Math.max(1, Number(meta.pages) || 1);
+    const frameWidth = Number(meta.width) || 0;
+    const frameHeight = Number(meta.pageHeight) || Number(meta.height) || 0;
+    const pixelsPerFrame = frameWidth * frameHeight;
+
+    if (pages < 2) {
+      const error = new Error('O WebP não contém quadros animados.');
+      error.code = 'ANIMATED_WEBP_NOT_ANIMATED';
+      throw error;
+    }
+    if (pages > ANIMATED_WEBP_MAX_FRAMES) {
+      const error = new Error('A animação ultrapassa o limite seguro de quadros.');
+      error.code = 'ANIMATED_WEBP_TOO_MANY_FRAMES';
+      throw error;
+    }
+    if (!pixelsPerFrame || pixelsPerFrame > ANIMATED_WEBP_MAX_FRAME_PIXELS) {
+      const error = new Error('Cada quadro ultrapassa o limite seguro de pixels.');
+      error.code = 'ANIMATED_WEBP_FRAME_TOO_LARGE';
+      throw error;
+    }
+    if (pixelsPerFrame * pages > ANIMATED_WEBP_MAX_TOTAL_PIXELS) {
+      const error = new Error('A animação ultrapassa o limite seguro de processamento.');
+      error.code = 'ANIMATED_WEBP_TOTAL_TOO_LARGE';
+      throw error;
+    }
+
+    const sourceDelays = Array.isArray(meta.delay) ? meta.delay : [];
+    const delays = Array.from({ length: pages }, (_, index) => {
+      const delay = Number(sourceDelays[index]);
+      return Number.isFinite(delay) && delay > 0 ? Math.max(10, Math.round(delay)) : 100;
+    });
+    const totalDurationMs = delays.reduce((total, delay) => total + delay, 0);
+    if (totalDurationMs > ANIMATED_WEBP_MAX_DURATION_MS) {
+      const error = new Error('A duração da animação ultrapassa o limite seguro de conversão.');
+      error.code = 'ANIMATED_WEBP_TOO_LONG';
+      throw error;
+    }
+
+    fs.mkdirSync(framesDir, { recursive: true });
+    const frameFiles = [];
+
+    for (let index = 0; index < pages; index += 1) {
+      const filename = 'f_' + String(index).padStart(4, '0') + '.png';
+      const frameBuffer = await sharp(buffer, {
+        page: index,
+        pages: 1,
+        limitInputPixels: ANIMATED_WEBP_MAX_FRAME_PIXELS,
+      })
+        .resize(outputSize, outputSize, { fit: 'fill' })
+        .png()
+        .toBuffer();
+
+      fs.writeFileSync(path.join(framesDir, filename), frameBuffer);
+      frameFiles.push(filename);
+    }
+
+    // O concat demuxer mantém os atrasos originais do WebP. Repetimos o último
+    // quadro para que o FFmpeg respeite também a duração do último frame.
+    const concatLines = [];
+    for (let index = 0; index < frameFiles.length; index += 1) {
+      concatLines.push("file '" + frameFiles[index] + "'");
+      concatLines.push('duration ' + (delays[index] / 1000).toFixed(6));
+    }
+    concatLines.push("file '" + frameFiles[frameFiles.length - 1] + "'");
+    fs.writeFileSync(concatPath, concatLines.join('\n') + '\n', 'utf8');
+
+    await new Promise((resolve, reject) => {
+      execFile(ffmpegBin, [
+        '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concatPath,
+        '-fps_mode', 'vfr',
+        '-t', (totalDurationMs / 1000).toFixed(6),
+        '-an',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        '-map_metadata', '-1',
+        outputPath,
+      ], { timeout: 60_000, windowsHide: true }, (error, _stdout, stderr) => {
+        if (error) {
+          error.stderr = String(stderr || '');
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    if (!fs.existsSync(outputPath)) {
+      throw new Error('O FFmpeg não gerou o MP4 da figurinha.');
+    }
+    const result = fs.readFileSync(outputPath);
+    if (result.length < 100 || result.toString('ascii', 4, 8) !== 'ftyp') {
+      throw new Error('O MP4 reconstruído a partir da figurinha é inválido.');
+    }
+
+    console.log('📹 WebP animado reconstruído: ' + pages + ' quadros, ' +
+      (totalDurationMs / 1000).toFixed(2) + 's');
+    return result;
+  } finally {
+    try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch { /* ignora */ }
+    try { fs.unlinkSync(outputPath); } catch { /* ignora */ }
+  }
+}
+
+
 async function handleDesfig(sock, msg, content, jid) {
   const contextInfo = content.extendedTextMessage?.contextInfo;
   const quoted      = contextInfo?.quotedMessage;
@@ -563,65 +691,20 @@ async function handleDesfig(sock, msg, content, jid) {
   console.log(`🔍 desfig: isAnimated(metadata)=${quoted.stickerMessage.isAnimated} | isAnimated(buffer)=${isAnimated}`);
 
   if (isAnimated) {
-    // O ffmpeg-static não consegue ler WebP animado diretamente como input.
-    // Solução: extrair cada frame com sharp (que suporta WebP animado nativamente)
-    // e montar o MP4 a partir dos PNGs — igual ao pipeline do videoToStickerBuffer.
-    const ffmpegBin = resolveFfmpegBin();
-    const tmpId     = crypto.randomUUID();
-    const framesDir = path.join(os.tmpdir(), `${tmpId}_frames`);
-    const outPath   = path.join(os.tmpdir(), `${tmpId}_out.mp4`);
-
-    fs.mkdirSync(framesDir, { recursive: true });
-
-    let frameCount = 0;
+    let videoBuffer;
     try {
-      // sharp lê todas as páginas (frames) de um WebP animado com { pages: -1 }
-      const img   = sharp(buffer, { animated: true, limitInputPixels: 16_000_000 });
-      const meta  = await img.metadata();
-      const pages = meta.pages || 1;
-      if (pages > VIDEO_MAX_FRAMES) throw new Error('Figurinha com quadros demais.');
-
-      for (let i = 0; i < pages; i++) {
-        const frameBuf = await sharp(buffer, { animated: false, page: i, limitInputPixels: 16_000_000 })
-          .resize(512, 512, { fit: 'fill' })
-          .png()
-          .toBuffer();
-        fs.writeFileSync(path.join(framesDir, `f_${String(i).padStart(4, '0')}.png`), frameBuf);
-        frameCount++;
-      }
-    } catch (e) {
-      console.log('❌ desfig sharp extract err:', e.message);
-      try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch {}
-      await sock.sendMessage(jid, { text: '⚠️ Não consegui extrair os frames dessa figurinha.' }, { quoted: msg });
+      videoBuffer = await animatedWebpToMp4Buffer(buffer, 512);
+    } catch (error) {
+      console.log('❌ desfig: falha ao reconstruir WebP animado:', error.message);
+      await sock.sendMessage(jid, {
+        text: error.code === 'ANIMATED_WEBP_TOO_MANY_FRAMES' ||
+          error.code === 'ANIMATED_WEBP_TOTAL_TOO_LARGE' ||
+          error.code === 'ANIMATED_WEBP_TOO_LONG'
+          ? '⚠️ Essa figurinha tem uma animação grande demais para converter. Tente uma versão mais curta.'
+          : '⚠️ Não consegui reconstruir o vídeo dessa figurinha.',
+      }, { quoted: msg });
       return;
     }
-
-    console.log(`📹 desfig: ${frameCount} frames extraídos via sharp`);
-
-    const ok = await new Promise((resolve) => {
-      execFile(ffmpegBin, [
-        '-y',
-        '-framerate', String(VIDEO_FPS),
-        '-i', path.join(framesDir, 'f_%04d.png'),
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-movflags', '+faststart',
-        outPath,
-      ], { timeout: 30000 }, (err, _, stderr) => {
-        if (err) console.log('❌ desfig mp4 err:', stderr?.slice(-500));
-        resolve(!err);
-      });
-    });
-
-    try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch { /* ignora */ }
-
-    if (!ok || !fs.existsSync(outPath)) {
-      await sock.sendMessage(jid, { text: '⚠️ Não consegui montar o vídeo da figurinha.' }, { quoted: msg });
-      return;
-    }
-
-    const videoBuffer = fs.readFileSync(outPath);
-    try { fs.unlinkSync(outPath); } catch { /* ignora */ }
 
     let outputVideo = videoBuffer;
     const embeddedAudio = quoted.stickerMessage.audioMessage;
@@ -630,8 +713,7 @@ async function handleDesfig(sock, msg, content, jid) {
         const audioMsg = buildQuotedMsg(jid, contextInfo, { audioMessage: embeddedAudio });
         const audioBuffer = await downloadMediaMessage(
           audioMsg,
-          'buffer', {},
-          { logger, reuploadRequest: sock.updateMediaMessage }
+          'buffer', {}, { logger, reuploadRequest: sock.updateMediaMessage }
         );
         if (!audioBuffer || audioBuffer.length < 100) {
           throw new Error('O áudio incorporado na figurinha está vazio.');
@@ -641,7 +723,8 @@ async function handleDesfig(sock, msg, content, jid) {
           audioBuffer,
           embeddedAudio.mimetype || 'audio/ogg'
         );
-        console.log(`🔊 desfig: áudio incorporado ao MP4 (${(audioBuffer.length / 1024).toFixed(0)}KB)`);
+        console.log('🔊 desfig: áudio incorporado ao MP4 (' +
+          (audioBuffer.length / 1024).toFixed(0) + 'KB)');
       } catch (error) {
         console.error('❌ desfig: falha ao recuperar/juntar o áudio da figurinha:', error.message);
         await sock.sendMessage(jid, {
@@ -656,7 +739,6 @@ async function handleDesfig(sock, msg, content, jid) {
       mimetype: 'video/mp4',
       caption: embeddedAudio ? '🎬🔊 Vídeo da figurinha com áudio!' : '🎬 Vídeo da figurinha!',
     }, { quoted: msg });
-
   } else {
     const jpegBuffer = await sharp(buffer, { limitInputPixels: 16_000_000 }).jpeg({ quality: 90 }).toBuffer();
     await sock.sendMessage(jid, {
@@ -701,55 +783,22 @@ async function handleToGif(sock, msg, content, jid) {
     return;
   }
 
-  const ffmpegBin = resolveFfmpegBin();
-  const tmpId     = crypto.randomUUID();
-  const framesDir = path.join(os.tmpdir(), `${tmpId}_frames`);
-  const outPath   = path.join(os.tmpdir(), `${tmpId}_out.gif`);
-
-  fs.mkdirSync(framesDir, { recursive: true });
-
-  let frameCount = 0;
+  let videoBuffer;
   try {
-    const meta  = await sharp(buffer, { animated: true, limitInputPixels: 16_000_000 }).metadata();
-    const pages = meta.pages || 1;
-    if (pages > VIDEO_MAX_FRAMES) throw new Error('Figurinha com quadros demais.');
-    for (let i = 0; i < pages; i++) {
-      const frameBuf = await sharp(buffer, { animated: false, page: i, limitInputPixels: 16_000_000 })
-        .resize(384, 384, { fit: 'fill' })
-        .png()
-        .toBuffer();
-      fs.writeFileSync(path.join(framesDir, `f_${String(i).padStart(4, '0')}.png`), frameBuf);
-      frameCount++;
-    }
-  } catch (e) {
-    console.log('❌ togif sharp extract err:', e.message);
-    try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch {}
-    await sock.sendMessage(jid, { text: '❌ Não consegui extrair os frames dessa figurinha.' }, { quoted: msg });
+    videoBuffer = await animatedWebpToMp4Buffer(buffer, 384);
+  } catch (error) {
+    console.log('❌ togif: falha ao reconstruir WebP animado:', error.message);
+    await sock.sendMessage(jid, {
+      text: '⚠️ Não consegui converter essa figurinha animada. Ela pode ser grande ou complexa demais.',
+    }, { quoted: msg });
     return;
   }
-
-  const ok = await new Promise((resolve) => {
-    execFile(ffmpegBin, [
-      '-y',
-      '-framerate', String(VIDEO_FPS),
-      '-i', path.join(framesDir, 'f_%04d.png'),
-      '-vf', `fps=${VIDEO_FPS},scale=384:-1:flags=lanczos`,
-      outPath,
-    ], { timeout: 30000 }, (err) => resolve(!err));
-  });
-
-  try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch { /* ignora */ }
-
-  if (!ok || !fs.existsSync(outPath)) {
-    await sock.sendMessage(jid, { text: '❌ Não consegui converter para GIF.' }, { quoted: msg });
-    return;
-  }
-
-  const gifBuf = fs.readFileSync(outPath);
-  try { fs.unlinkSync(outPath); } catch { /* ignora */ }
 
   await sock.sendMessage(jid, {
-    video: gifBuf, mimetype: 'video/mp4', gifPlayback: true, caption: '🎞️ GIF da figurinha!',
+    video: videoBuffer,
+    mimetype: 'video/mp4',
+    gifPlayback: true,
+    caption: '🎞️ GIF da figurinha!',
   }, { quoted: msg });
 }
 
@@ -1382,7 +1431,7 @@ async function handleMenuFig(sock, msg, jid, getPrefix) {
 
 🔊 *ÁUDIO*
   ▸ ${P}sa — vídeo + som → figurinha sonora (até 9s; acelera acima disso)
-  ▸ ${P}saudio — imagem/vídeo + áudio separado (até 10s)
+  ▸ ${P}saudio — imagem/vídeo e áudio em qualquer ordem (áudio até 10s; vídeo até 20s)
   ▸ ${P}estourar — amplificar áudio de uma mídia
 
 🔎 *PACOTES & BUSCA*
@@ -1424,4 +1473,5 @@ module.exports = {
   getViewOnceStickerWarning,
   muxStickerAudioIntoVideo,
   getVideoAccelerationNotice,
+  animatedWebpToMp4Buffer,
 };

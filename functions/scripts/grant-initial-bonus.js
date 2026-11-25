@@ -1,16 +1,10 @@
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { cert, initializeApp } = require("firebase-admin/app");
-const { FieldPath, FieldValue, Timestamp, getFirestore } = require("firebase-admin/firestore");
+const { FieldPath, FieldValue, getDatabase, connectDatabase, closeDatabase } = require("../mongo-store");
 
 const INITIAL_BONUS_CENTS = 50_000;
 const DEFAULT_MIGRATION_ID = "retroactive-initial-bonus-20260930";
 const BATCH_SIZE = 200;
-const EXPECTED_PROJECT_ID = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, "../../app/google-services.json"), "utf8"),
-).project_info.project_id;
 
 function readArgument(name) {
   const index = process.argv.indexOf(name);
@@ -39,21 +33,9 @@ function getCreditConfig() {
   return { amountCents, migrationId, description, type };
 }
 
-function initializeDatabase() {
-  const serializedServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serializedServiceAccount) {
-    throw new Error("Configure FIREBASE_SERVICE_ACCOUNT no ambiente antes de executar a migração.");
-  }
-
-  const serviceAccount = JSON.parse(serializedServiceAccount);
-  if (serviceAccount.project_id !== EXPECTED_PROJECT_ID) {
-    throw new Error(
-      `Projeto da credencial (${serviceAccount.project_id}) diferente do app (${EXPECTED_PROJECT_ID}).`,
-    );
-  }
-
-  initializeApp({ credential: cert(serviceAccount), projectId: EXPECTED_PROJECT_ID });
-  return getFirestore();
+async function initializeDatabase() {
+  await connectDatabase();
+  return getDatabase();
 }
 
 async function getMigration(database, apply, config) {
@@ -67,7 +49,7 @@ async function getMigration(database, apply, config) {
       }
       return { ref: migrationRef, ...data };
     }
-    return { ref: migrationRef, state: "preview", amountCents: config.amountCents, cohortCutoff: Timestamp.now() };
+    return { ref: migrationRef, state: "preview", amountCents: config.amountCents, cohortCutoff: new Date() };
   }
 
   const migration = await database.runTransaction(async (transaction) => {
@@ -82,7 +64,7 @@ async function getMigration(database, apply, config) {
     const data = {
       state: "running",
       amountCents: config.amountCents,
-      cohortCutoff: Timestamp.now(),
+      cohortCutoff: new Date(),
       createdAt: FieldValue.serverTimestamp(),
     };
     transaction.create(migrationRef, data);
@@ -159,14 +141,17 @@ async function creditAccount(database, userId, cutoffMillis, config) {
 async function main() {
   const apply = process.argv.includes("--apply");
   const config = getCreditConfig();
-  const database = initializeDatabase();
+  const database = await initializeDatabase();
   const migration = await getMigration(database, apply, config);
   if (migration.state === "completed") {
     console.log(`Migração já concluída: ${migration.creditedCount} contas receberam ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(config.amountCents / 100)}.`);
     return;
   }
 
-  const cutoffMillis = migration.cohortCutoff.toMillis();
+  const cutoffMillis = migration.cohortCutoff instanceof Date
+    ? migration.cohortCutoff.getTime()
+    : migration.cohortCutoff?.toMillis?.();
+  if (!Number.isFinite(cutoffMillis)) throw new Error("A data de corte da migração é inválida.");
   const counts = {
     eligible: 0,
     credited: 0,
@@ -213,7 +198,7 @@ async function main() {
     }
   }
 
-  console.log(`Projeto: ${EXPECTED_PROJECT_ID}`);
+  console.log("Banco: " + database.dbName);
   console.log(`Crédito por conta: ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(config.amountCents / 100)}`);
   console.log(`Coorte até: ${new Date(cutoffMillis).toISOString()}`);
   console.log(JSON.stringify(counts, null, 2));
@@ -232,7 +217,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.message || error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error) => {
+    console.error(error.message || error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await closeDatabase().catch((error) => {
+      console.error("Falha ao fechar MongoDB:", error.message || error);
+      process.exitCode = 1;
+    });
+  });

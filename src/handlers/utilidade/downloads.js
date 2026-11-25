@@ -754,6 +754,31 @@ async function fetchMeta(ytdlp, link, extraArgs = []) {
   try { return JSON.parse(stdout.trim()); } catch { return null; }
 }
 
+function buildTikTokVideoArgs({ baseArgs = [], cookieFilePath = null, outputPath, link }) {
+  if (typeof outputPath !== 'string' || !outputPath.trim()) {
+    throw new TypeError('Caminho de saída do TikTok inválido.');
+  }
+  if (typeof link !== 'string' || !/^https?:\/\//i.test(link)) {
+    throw new TypeError('Link do TikTok inválido.');
+  }
+
+  const args = [
+    ...baseArgs,
+    '--no-playlist',
+    // --print-json simula por padrão; --no-simulate mantém o download real.
+    '--no-simulate',
+    '--print-json',
+    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    '--merge-output-format', 'mp4',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+    '--referer', 'https://www.tiktok.com/',
+  ];
+
+  if (cookieFilePath) args.push('--cookies', cookieFilePath);
+  args.push('-o', outputPath, link);
+  return args;
+}
+
 // Alguns pins do Pinterest são imagens estáticas, não vídeos. O yt-dlp pode
 // retornar "No video formats found" nesses casos; tenta recuperar a imagem
 // de Open Graph em vez de falhar o comando !save.
@@ -1411,12 +1436,10 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const cookieContext = createTikTokCookieContext(id);
   const cookieFilePath = cookieContext.cookieFilePath;
   const cleanupCookie = () => cookieContext.cleanup();
-  const metaExtraArgs = cookieFilePath ? ['--cookies', cookieFilePath] : [];
   const isPhotoUrl = (() => {
     try { return /\/photo\/\d+(?:\/|$)/i.test(new URL(link).pathname); }
     catch { return false; }
   })();
-  const metaPromise = isPhotoUrl ? Promise.resolve(null) : fetchMeta(ytdlp, link, metaExtraArgs);
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
   log.info(`🎵 tiktok: baixando ${link}`);
@@ -1424,25 +1447,21 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const rawPath = tmpPath(id, '_raw.mp4');
   const outPath = tmpPath(id, '_out.mp4');
 
-  const dlArgs = [
-    ...getYtDlpArgs(),
-    '--no-playlist',
-    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-    '--merge-output-format', 'mp4',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-    '--referer', 'https://www.tiktok.com/',
-  ];
-  if (cookieFilePath) { dlArgs.push('--cookies', cookieFilePath); log.info('🍪 Usando cookies'); }
-  dlArgs.push('-o', rawPath, link);
+  const dlArgs = buildTikTokVideoArgs({
+    baseArgs: getYtDlpArgs(),
+    cookieFilePath,
+    outputPath: rawPath,
+    link,
+  });
+  if (cookieFilePath) log.info('🍪 Usando cookies');
 
   const downloadResult = isPhotoUrl
-    ? { ok: false, stderr: 'TikTok photo post' }
-    : await ytDlp(ytdlp, dlArgs, 60000);
-  const { ok: dlOk, stderr: dlStderr } = downloadResult;
+    ? { ok: false, stdout: '', stderr: 'TikTok photo post' }
+    : await ytDlp(ytdlp, dlArgs, 120000);
+  const { ok: dlOk, stderr: dlStderr, stdout: dlStdout } = downloadResult;
   if (!dlOk) {
     const isPhoto = /\/photo\/\d+(?:[/?#]|$)|photo.?post|image.?post|no video formats found|no formats found/i.test(link + '\n' + (dlStderr || ''));
     if (isPhoto) {
-      await metaPromise;
       safeDel(rawPath, outPath);
       try {
         const photoPost = await downloadTiktokPhotoPost(link, id, cookieFilePath);
@@ -1509,7 +1528,8 @@ async function handleTiktok(sock, msg, jid, caption, getPrefix) {
     return sock.sendMessage(jid, { text: '❌ Vídeo muito grande (máx 64MB).' }, { quoted: msg });
   }
 
-  const meta = await metaPromise;
+  // O próprio download já devolve os metadados; evita uma segunda chamada ao TikTok.
+  const meta = parseYtDlpJson(dlStdout);
 
   const buildTiktokCaption = (meta, fileSizeBytes) => {
     const titulo   = meta?.title || meta?.description?.slice(0, 100) || '—';
@@ -2167,4 +2187,5 @@ module.exports = {
   _isPublicAddress: isPublicAddress,
   _validateExternalUrl: validateExternalUrl,
   _listTiktokPhotoFiles: listTiktokPhotoFiles,
+  _buildTikTokVideoArgs: buildTikTokVideoArgs,
 };

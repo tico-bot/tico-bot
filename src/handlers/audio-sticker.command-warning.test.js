@@ -16,9 +16,13 @@ const originalBaileysExports = require.cache[baileysPath].exports;
 const originalPersistenceExports = require.cache[persistencePath].exports;
 
 let mediaBuffer = null;
+let downloadedMessage = null;
 require.cache[baileysPath].exports = {
   ...originalBaileysExports,
-  downloadMediaMessage: async () => mediaBuffer,
+  downloadMediaMessage: async message => {
+    downloadedMessage = message;
+    return mediaBuffer;
+  },
 };
 require.cache[persistencePath].exports = {
   ...originalPersistenceExports,
@@ -28,6 +32,7 @@ require.cache[persistencePath].exports = {
 const {
   handleVideoSoundSticker,
   handleSoundStickerImage,
+  handlePendingVisual,
 } = require('./audio-sticker');
 
 const jid = 'sound-sticker-test@s.whatsapp.net';
@@ -88,7 +93,7 @@ test('/sa envia o aviso de aceleração antes de enviar a figurinha sonora', asy
   }
 });
 
-test('/saudio esclarece que recebe imagem ou vídeo, seguido de áudio separado', async () => {
+test('/saudio explica as duas ordens possíveis e os limites das mídias', async () => {
   sent.length = 0;
   const msg = { key: { remoteJid: jid }, message: {} };
 
@@ -98,7 +103,210 @@ test('/saudio esclarece que recebe imagem ou vídeo, seguido de áudio separado'
   assert.match(prompt, /imagem ou vídeo/);
   assert.match(prompt, /áudio ou nota de voz/);
   assert.match(prompt, /até \*10 segundos\*/);
-  assert.match(prompt, /áudio não será acelerado/);
+  assert.match(prompt, /áudio não será acelerado em nenhuma das opções/);
+  assert.ok(prompt.includes('1️⃣ Responda a uma *imagem ou vídeo* com */saudio*'));
+  assert.ok(prompt.includes('2️⃣ Responda a um *áudio ou nota de voz* com */saudio*'));
+  assert.match(prompt, /2 minutos/);
+});
+
+test('/saudio reconhece vídeo citado dentro de envelopes do WhatsApp', async () => {
+  const ffmpeg = require('ffmpeg-static');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-saudio-quoted-video-'));
+  const videoPath = path.join(dir, 'quoted-video.mp4');
+
+  try {
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'testsrc2=s=128x128:r=8:d=3',
+      '-an',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      videoPath,
+    ], { stdio: 'ignore' });
+
+    mediaBuffer = fs.readFileSync(videoPath);
+    downloadedMessage = null;
+    sent.length = 0;
+
+    const quotedVideo = {
+      ephemeralMessage: {
+        message: {
+          documentWithCaptionMessage: {
+            message: {
+              videoMessage: { mimetype: 'video/mp4', seconds: 3 },
+            },
+          },
+        },
+      },
+    };
+    const msg = {
+      key: { remoteJid: jid },
+      message: {
+        extendedTextMessage: {
+          text: '/saudio',
+          contextInfo: {
+            stanzaId: 'quoted-video-message',
+            fromMe: true,
+            quotedMessage: quotedVideo,
+          },
+        },
+      },
+    };
+
+    await handleSoundStickerImage(sock, msg, msg.message, jid, null);
+
+    const readyPrompt = sent.find(payload =>
+      typeof payload?.text === 'string' && /Vídeo preparado/.test(payload.text));
+
+    assert.ok(readyPrompt, 'should prepare the quoted video instead of returning the usage prompt');
+    assert.ok(downloadedMessage?.message?.videoMessage, 'should download the unwrapped quoted video');
+    assert.equal(downloadedMessage.key.id, 'quoted-video-message');
+    assert.equal(downloadedMessage.key.fromMe, true);
+  } finally {
+    mediaBuffer = null;
+    downloadedMessage = null;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('/saudio também aceita selecionar primeiro o áudio e depois enviar a imagem', async () => {
+  const ffmpeg = require('ffmpeg-static');
+  const sharp = require('sharp');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-saudio-audio-first-'));
+  const audioPath = path.join(dir, 'three-seconds.ogg');
+
+  try {
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'sine=frequency=550:duration=3',
+      '-c:a', 'libopus',
+      '-b:a', '64k',
+      '-f', 'ogg',
+      audioPath,
+    ], { stdio: 'ignore' });
+
+    mediaBuffer = fs.readFileSync(audioPath);
+    downloadedMessage = null;
+    sent.length = 0;
+
+    const msg = {
+      key: { remoteJid: jid },
+      message: {
+        extendedTextMessage: {
+          text: '/saudio',
+          contextInfo: {
+            stanzaId: 'quoted-audio-message',
+            fromMe: true,
+            quotedMessage: {
+              ephemeralMessage: {
+                message: {
+                  audioMessage: { mimetype: 'audio/ogg', seconds: 3, ptt: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    await handleSoundStickerImage(sock, msg, msg.message, jid, null);
+
+    const readyPrompt = sent.find(payload =>
+      typeof payload?.text === 'string' && /Áudio preparado/.test(payload.text));
+    assert.ok(readyPrompt, 'should prepare the quoted audio and ask for an image or video');
+    assert.match(readyPrompt.text, /imagem ou vídeo/);
+    assert.ok(downloadedMessage?.message?.audioMessage, 'should download the quoted audio');
+
+    mediaBuffer = await sharp({
+      create: { width: 96, height: 96, channels: 3, background: '#bb44cc' },
+    }).png().toBuffer();
+    downloadedMessage = null;
+    const imageMsg = {
+      key: { remoteJid: jid },
+      message: { imageMessage: { mimetype: 'image/png' } },
+    };
+
+    const handled = await handlePendingVisual(
+      sock, imageMsg, imageMsg.message, jid, null, jid, null
+    );
+
+    const sticker = sent.find(payload => payload?.sticker && payload?.stickerAudio);
+    assert.equal(handled, true);
+    assert.ok(sticker, 'should send the sound sticker after the image arrives');
+    assert.ok(downloadedMessage?.message?.imageMessage, 'should download the image sent after the audio');
+    assert.ok(sticker.stickerAudio.seconds >= 1 && sticker.stickerAudio.seconds <= 10);
+    assert.equal(sticker.stickerAudio.mimetype, 'audio/ogg; codecs=opus');
+  } finally {
+    mediaBuffer = null;
+    downloadedMessage = null;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('/saudio também aceita selecionar primeiro o áudio e depois enviar um vídeo', async () => {
+  const ffmpeg = require('ffmpeg-static');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-saudio-audio-first-video-'));
+  const audioPath = path.join(dir, 'four-seconds.ogg');
+  const videoPath = path.join(dir, 'five-seconds.mp4');
+
+  try {
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'sine=frequency=440:duration=4',
+      '-c:a', 'libopus',
+      '-b:a', '64k',
+      '-f', 'ogg',
+      audioPath,
+    ], { stdio: 'ignore' });
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'testsrc2=s=128x128:r=8:d=5',
+      '-an',
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      videoPath,
+    ], { stdio: 'ignore' });
+
+    mediaBuffer = fs.readFileSync(audioPath);
+    sent.length = 0;
+    const audioCommand = {
+      key: { remoteJid: jid },
+      message: {
+        extendedTextMessage: {
+          text: '/saudio',
+          contextInfo: {
+            stanzaId: 'quoted-audio-before-video',
+            quotedMessage: {
+              audioMessage: { mimetype: 'audio/ogg', seconds: 4 },
+            },
+          },
+        },
+      },
+    };
+    await handleSoundStickerImage(sock, audioCommand, audioCommand.message, jid, null);
+    assert.ok(sent.some(payload => typeof payload?.text === 'string' && /Áudio preparado/.test(payload.text)));
+
+    mediaBuffer = fs.readFileSync(videoPath);
+    const videoMsg = {
+      key: { remoteJid: jid },
+      message: { videoMessage: { mimetype: 'video/mp4', seconds: 5 } },
+    };
+    const handled = await handlePendingVisual(sock, videoMsg, videoMsg.message, jid, null, jid, null);
+    const sticker = sent.find(payload => payload?.sticker && payload?.stickerAudio);
+
+    assert.equal(handled, true);
+    assert.ok(sticker, 'should create a sound sticker after the video arrives');
+    assert.ok(sticker.sticker.length > 100);
+    assert.ok(sticker.stickerAudio.seconds <= 10);
+  } finally {
+    mediaBuffer = null;
+    downloadedMessage = null;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('/saudio avisa que não acelera áudios acima de 10 segundos', async () => {

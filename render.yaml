@@ -4,6 +4,7 @@ services:
     runtime: node
     buildCommand: npm run build
     startCommand: node src/bot.js
+    autoDeployTrigger: off
     envVars:
       - key: ZECA_API_URL
         value: https://zeca-jvic.onrender.com

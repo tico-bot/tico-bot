@@ -67,4 +67,3 @@ test('menufig informa o limite correto de 9 segundos para /sa', async () => {
   assert.match(menu, /!sa .*figurinha sonora \(até 9s; acelera acima disso\)/);
   assert.doesNotMatch(menu, /!sa .*figurinha sonora \(até 5s/);
 });
-

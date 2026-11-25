@@ -4,7 +4,7 @@ const { createHash, createHmac, randomBytes, randomInt, randomUUID, scryptSync }
 const { getAuth } = require("firebase-admin/auth");
 const { cert, initializeApp } = require("firebase-admin/app");
 const { v2: cloudinary } = require("cloudinary");
-const { FieldPath, FieldValue, getFirestore } = require("firebase-admin/firestore");
+const { FieldPath, FieldValue, getDatabase } = require("./mongo-store");
 const { HttpsError, onCall } = require("./callable");
 const {
   blackjackHandValue,
@@ -72,7 +72,7 @@ const {
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 initializeApp(serviceAccount ? { credential: cert(JSON.parse(serviceAccount)) } : {});
 
-const database = getFirestore();
+const database = getDatabase();
 const INITIAL_BALANCE_CENTS = 50_000;
 const MAX_TRANSFER_CENTS = 1_000_000;
 const GAME_COOLDOWN_MS = 250;
@@ -231,7 +231,10 @@ async function deleteUserTransfers(targetUid) {
 }
 
 function timestampMillis(value) {
-  return value && typeof value.toMillis === "function" ? value.toMillis() : null;
+  if (value instanceof Date) return value.getTime();
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (Number.isFinite(value)) return value;
+  return null;
 }
 
 function hashTugPassword(password, roomId) {

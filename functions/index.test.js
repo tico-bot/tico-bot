@@ -94,7 +94,7 @@ test("social callables enforce authentication and validate payloads before datab
   );
 });
 
-test("admin inventory changes reject unknown items before accessing Firestore", async () => {
+test("admin inventory changes reject unknown items before accessing MongoDB", async () => {
   await assert.rejects(
     adminUpdateUserInventory({
       auth: { uid: "admin", token: { admin: true } },
@@ -120,7 +120,7 @@ test("Mines rejects invalid mine counts before starting a transaction", async ()
   );
 });
 
-test("Jokenpô matchmaking validates request IDs and choices before Firestore access", async () => {
+test("Jokenpô matchmaking validates request IDs and choices before MongoDB access", async () => {
   const player = { auth: { uid: "player", token: {} }, data: {} };
   await assert.rejects(
     queueJokenpoMatch(player),
@@ -290,7 +290,7 @@ test("WhatsApp account linking requires an authenticated app account and validat
     (error) => error.code === "invalid-argument",
   );
 });
-test("chat audio rejects untrusted URLs before accessing Firestore", async () => {
+test("chat audio rejects untrusted URLs before accessing MongoDB", async () => {
   await assert.rejects(
     sendChatMessage({
       auth: { uid: "player", token: {} },
@@ -343,7 +343,7 @@ test("new multiplayer and sports callables reject unauthenticated requests", asy
   }
 });
 
-test("group dissolution rejects invalid group IDs before accessing Firestore", async () => {
+test("group dissolution rejects invalid group IDs before accessing MongoDB", async () => {
   await assert.rejects(
     dissolveChatGroup({ auth: { uid: "player", token: {} }, data: { chatId: "invalid" } }),
     (error) => error.code === "invalid-argument",
@@ -400,7 +400,7 @@ test("tug rooms and sports bets reject invalid stakes and duplicate or unknown s
   );
 });
 
-test("title equipping requires authentication and rejects non-title catalog items before Firestore", async () => {
+test("title equipping requires authentication and rejects non-title catalog items before MongoDB", async () => {
   await assert.rejects(equipTitle({ auth: null, data: { itemId: "title_lucky" } }), (error) => error.code === "unauthenticated");
   for (const itemId of ["frame_aurora", "unknown_title"]) {
     await assert.rejects(

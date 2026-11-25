@@ -23,7 +23,7 @@ async function handleMenu(sock, msg, jid, caption, getPrefix, author) {
     '🎨 *FIGURINHAS & EFEITOS*',
     '  ▸ ' + P + 'menufig — criar e buscar figurinhas',
     '  ▸ ' + P + 'desfig — transformar figurinha em imagem/vídeo',
-    '  ▸ ' + P + 'sa / ' + P + 'saudio — criar figurinhas sonoras',
+    '  ▸ ' + P + 'sa / ' + P + 'saudio — figurinhas sonoras (veja o menufig)',
     '  ▸ ' + P + 'menuefeitos — filtros para fotos e vídeos',
     '',
     '🛡️ *ADMINISTRAÇÃO*',

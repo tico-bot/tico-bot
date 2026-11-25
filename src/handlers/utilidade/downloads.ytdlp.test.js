@@ -15,6 +15,7 @@ const {
   _argsWithoutYoutubeCookies,
   _listTiktokPhotoFiles,
   _getQuotedVideoContext,
+  _buildTikTokVideoArgs,
 } = require('./downloads');
 
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
@@ -152,6 +153,40 @@ test('lê JSON de metadados do yt-dlp mesmo com linhas de progresso', () => {
   const output = '[download] concluído\n' + JSON.stringify(metadata) + '\n';
   assert.deepEqual(_parseYtDlpJson(output), metadata);
   assert.equal(_parseYtDlpJson('sem JSON'), null);
+});
+
+test('monta uma única execução real do TikTok com metadados no próprio download', () => {
+  const outputPath = 'C:\\temp\\tiktok-video.mp4';
+  const cookiePath = 'C:\\temp\\tiktok-cookies.txt';
+  const args = _buildTikTokVideoArgs({
+    baseArgs: ['--ffmpeg-location', 'C:\\ffmpeg\\bin'],
+    cookieFilePath: cookiePath,
+    outputPath,
+    link: 'https://www.tiktok.com/@creator/video/123456789',
+  });
+
+  assert.ok(args.includes('--no-simulate'), 'o download real deve continuar activo junto com --print-json');
+  assert.ok(args.includes('--print-json'), 'os metadados devem vir do próprio download');
+  assert.ok(!args.includes('--skip-download'), 'não deve executar uma consulta de metadados sem baixar');
+  assert.ok(!args.includes('dummy'), 'não deve criar uma segunda saída simulada');
+  assert.equal(args.filter(value => value === '--cookies').length, 1);
+  assert.equal(args[args.indexOf('--cookies') + 1], cookiePath);
+  assert.equal(args[args.indexOf('-o') + 1], outputPath);
+  assert.equal(args.at(-1), 'https://www.tiktok.com/@creator/video/123456789');
+  assert.ok(args.includes('--ffmpeg-location'));
+  assert.ok(args.includes('--merge-output-format'));
+});
+
+test('valida URL e caminho de saída ao montar argumentos do TikTok', () => {
+  assert.throws(() => _buildTikTokVideoArgs({
+    outputPath: 'out.mp4',
+    link: 'file:///C:/private.mp4',
+  }), /Link do TikTok inválido/);
+
+  assert.throws(() => _buildTikTokVideoArgs({
+    outputPath: '',
+    link: 'https://www.tiktok.com/@creator/video/123',
+  }), /Caminho de saída/);
 });
 
 test('identifica pesquisas e URLs do YouTube sem classificar outros serviços', () => {

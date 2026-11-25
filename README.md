@@ -95,7 +95,12 @@ Alguns recursos opcionais podem utilizar variáveis adicionais, dependendo do qu
 | Variável | Finalidade |
 |---|---|
 | `MONGO_URI` ou `MONGODB_URI` | Conexão com o MongoDB |
+| `MONGO_DB_NAME` | Nome opcional da base da API auxiliar (por padrão, usa o nome da URI) |
+| `FIREBASE_SERVICE_ACCOUNT` | Credencial do Firebase Admin utilizada exclusivamente pela autenticação e administração de contas |
+| `FIREBASE_PROJECT_ID` | Identificador opcional do projecto Firebase para o script de administração de contas |
 | `PORT` | Porta do servidor HTTP auxiliar |
+| `PUBLIC_API_URL` | URL HTTPS pública opcional da API do painel, com ou sem o sufixo `/api` |
+| `CLOUDFLARED_PATH` | Caminho completo do executável cloudflared quando ele não estiver no caminho padrão ou no `PATH` |
 | `NODE_ENV` | Ambiente de execução |
 | `ADMIN_KEY` | Chave administrativa de determinados endpoints |
 | `BOT_OWNERS` | Configuração de proprietários do bot |
@@ -109,6 +114,8 @@ Alguns recursos opcionais podem utilizar variáveis adicionais, dependendo do qu
 | `CONTAS_KEY` | Chave de determinados recursos de contas |
 
 Configure somente as variáveis dos recursos que realmente utilizar. Os nomes acima não significam que todos os serviços externos estejam ativos por padrão. Consulte o código correspondente para conhecer o formato esperado de cada valor.
+
+O comando `/meupainel` usa `PUBLIC_API_URL` quando definida. Em um Web Service do Render, o Tico aproveita automaticamente a URL HTTPS pública fornecida em `RENDER_EXTERNAL_URL`; não precisa instalar nem executar `cloudflared` nesse ambiente. Fora do Render, o Tico cria um Quick Tunnel com `cloudflared` para permitir que o telemóvel acesse a API local. Se o executável estiver fora de `~/.local/bin` e do `PATH`, informe seu caminho em `CLOUDFLARED_PATH`.
 
 **Nunca** publique seu `.env`, tokens, cookies, chaves de API, credenciais do MongoDB ou arquivos de sessão. Não use credenciais reais em exemplos públicos.
 
@@ -237,3 +244,11 @@ Nenhuma licença de código aberto foi identificada nesta documentação. Até q
 ---
 
 **Tico Bot** — ferramentas, jogos e interação para comunidades no WhatsApp.
+
+## Banco da API auxiliar
+
+O serviço auxiliar em functions/ também utiliza MongoDB para perfis, saldos, transferências, jogos, chats, clãs e denúncias. Ele lê MONGO_URI (ou MONGODB_URI) e usa o nome da base indicado na própria URI. MONGO_DB_NAME pode ser definido para escolher outro nome.
+
+As operações financeiras e de jogos usam transações. Por isso, a ligação precisa apontar para um MongoDB com suporte a transações, como MongoDB Atlas, um replica set ou um cluster sharded. Uma instância standalone não é suficiente.
+
+O Firebase Authentication continua a ser utilizado apenas para validar a identidade e os tokens de login. O serviço não lê nem grava dados no Cloud Firestore e não depende de regras ou emuladores Firestore. Os registos antigos que estavam no Firestore não são copiados automaticamente para MongoDB; a importação exigiria um ficheiro de exportação fornecido separadamente.

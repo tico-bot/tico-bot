@@ -70,7 +70,7 @@ test('sticker menu lists the sound-sticker commands and explains their duration 
     figurinha.handleMenuFig(sock, msg, jid, getPrefix));
   assert.match(menu, /▸ !desfig — sticker → imagem\/vídeo/);
   assert.match(menu, /▸ !sa — vídeo \+ som → figurinha sonora \(até 9s; acelera acima disso\)/);
-  assert.match(menu, /▸ !saudio — imagem\/vídeo \+ áudio separado \(até 10s\)/);
+  assert.match(menu, /▸ !saudio — imagem\/vídeo e áudio em qualquer ordem \(áudio até 10s; vídeo até 20s\)/);
 });
 
 test('sticker menu documents all ATTP styles without a text placeholder', async () => {
@@ -88,7 +88,7 @@ test('main and category menus include key working commands', async () => {
   assert.match(main, /menujogos/);
   assert.match(main, /menubaixar/);
   assert.match(main, /desfig — transformar figurinha em imagem\/vídeo/);
-  assert.match(main, /sa \/ !saudio — criar figurinhas sonoras/);
+  assert.match(main, /sa \/ !saudio — figurinhas sonoras \(veja o menufig\)/);
   assert.match(main, /menufutebol/);
   assert.doesNotMatch(main, /Use o prefixo configurado neste grupo/);
   assert.match(main, /╔══════════════════════╗/);
@@ -190,4 +190,3 @@ test('international football help lists the same aliases supported by the router
   assert.match(routerSource, /matchCmd\(cmdWord, 'campeonato'\).*handleCompetition/);
   assert.match(routerSource, /filter\(name => name !== 'cinema'\)/);
 });
-

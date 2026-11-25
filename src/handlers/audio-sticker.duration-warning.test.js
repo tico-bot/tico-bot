@@ -60,4 +60,3 @@ test('/saudio limita a animação do vídeo a 9 segundos', () => {
   const notice = getVideoOnlyAccelerationNotice(12);
   assert.match(notice, /limite de \*9 segundos\*/);
 });
-

@@ -432,7 +432,13 @@ async function handleMessage(sock, msg) {
   // ── Anti-Link com lista branca e bloqueio de mensagens de pagamento ──
   if (await handleAntiLinkMessage(sock, msg, content, jid, caption, senderJid, senderAlternateJids, cfgGrupo)) return;
 
-  // Se alguém iniciou /saudio neste chat, o próximo áudio dessa pessoa completa a figurinha.
+  // Se alguém iniciou /saudio respondendo a um áudio, a próxima imagem/vídeo completa a figurinha.
+  const soundStickerVisualHandled = await audioStickerHandler.handlePendingVisual(
+    sock, msg, content, jid, author, senderJid, stickerCount
+  );
+  if (soundStickerVisualHandled) return;
+
+  // Se alguém iniciou /saudio respondendo a uma imagem/vídeo, o próximo áudio completa a figurinha.
   if (content.audioMessage) {
     const soundStickerHandled = await audioStickerHandler.handlePendingAudio(
       sock, msg, content, jid, author, senderJid, stickerCount

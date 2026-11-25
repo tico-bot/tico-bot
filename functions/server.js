@@ -3,8 +3,9 @@
 const crypto = require("node:crypto");
 const express = require("express");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore } = require("firebase-admin/firestore");
+const { connectDatabase, getDatabase } = require("./mongo-store");
 const handlers = require("./index");
+const database = getDatabase();
 const { HttpsError, STATUS } = require("./callable");
 
 const app = express();
@@ -65,7 +66,7 @@ app.post("/call/:name", async (req, res) => {
       } catch {
         throw new HttpsError("unauthenticated", "Sessão inválida. Entre novamente.");
       }
-      const profile = await getFirestore().collection("users").doc(auth.uid).get();
+      const profile = await database.collection("users").doc(auth.uid).get();
       if (profile.exists && profile.get("isBlocked") === true) {
         throw new HttpsError("permission-denied", "Esta conta está desativada.");
       }
@@ -75,14 +76,14 @@ app.post("/call/:name", async (req, res) => {
   } catch (error) {
     const known = error instanceof HttpsError;
     if (!known) console.error(error);
-    const quotaExceeded = error.code === 8
-      || error.code === "RESOURCE_EXHAUSTED"
-      || error.code === "resource-exhausted";
-    const code = known ? error.code : quotaExceeded ? "resource-exhausted" : "internal";
+    const unavailable = error.name === "MongoServerSelectionError"
+      || error.name === "MongoNetworkError"
+      || error.code === "ECONNREFUSED";
+    const code = known ? error.code : unavailable ? "unavailable" : "internal";
     const message = known
       ? error.message
-      : quotaExceeded
-        ? "A cota do Firestore foi excedida. Aguarde a renovação da cota ou habilite faturamento no Firebase."
+      : unavailable
+        ? "O banco MongoDB está indisponível. Tente novamente em instantes."
         : "Erro interno.";
     res.status(STATUS[code] || 500).json({
       error: { code, message },
@@ -91,13 +92,27 @@ app.post("/call/:name", async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`zeca-server na porta ${port}`);
-  const sweepExpiredRooms = () => {
-    handlers._cleanupExpiredTugRooms().catch((error) => {
-      console.error("Falha ao remover salas concluídas expiradas:", error);
-    });
-  };
-  sweepExpiredRooms();
-  setInterval(sweepExpiredRooms, 30_000);
-});
+
+async function startServer() {
+  await connectDatabase();
+  const server = app.listen(port, () => {
+    console.log("zeca-server na porta " + port + " · MongoDB conectado");
+    const sweepExpiredRooms = () => {
+      handlers._cleanupExpiredTugRooms().catch((error) => {
+        console.error("Falha ao remover salas concluídas expiradas:", error);
+      });
+    };
+    sweepExpiredRooms();
+    setInterval(sweepExpiredRooms, 30_000);
+  });
+  return server;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error("Não foi possível iniciar o zeca-server:", error?.stack || error?.message || error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { app, startServer };
