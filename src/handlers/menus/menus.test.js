@@ -65,6 +65,20 @@ test('all active Tico menus render with a configured prefix and no missing value
   }
 });
 
+test('admin menu documents approval and rejection of group join requests', async () => {
+  const menu = await renderMenu('administração', () =>
+    grupo.handleMenuAdm(sock, msg, jid, getPrefix));
+
+  assert.match(menu, /!aceitar \[qtd\] — aceitar pedidos \(sem qtd: todos\)/);
+  assert.match(menu, /!recusar \[qtd\] — recusar pedidos \(sem qtd: todos\)/);
+  assert.match(menu, /Tico Bot também precisa ser administrador/);
+
+  const routerPath = path.resolve(__dirname, '../../router.js');
+  const routerSource = fs.readFileSync(routerPath, 'utf8');
+  assert.match(routerSource, /grupoHandler\.handleAceitar\(sock, msg, content, jid\)/);
+  assert.match(routerSource, /grupoHandler\.handleRecusar\(sock, msg, content, jid\)/);
+});
+
 test('sticker menu lists the sound-sticker commands and explains their duration limits', async () => {
   const menu = await renderMenu('figurinhas', () =>
     figurinha.handleMenuFig(sock, msg, jid, getPrefix));

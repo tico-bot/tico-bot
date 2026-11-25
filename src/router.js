@@ -703,6 +703,10 @@ async function handleMessage(sock, msg) {
     { await diversaoHandler.handleMenuPet(sock, msg, jid, getPrefix); return; }
 
   // ── GRUPO & MODERAÇÃO ──────────────────────────────────────────
+  if (matchCmd(cmdWord, 'aceitar') || matchCmdStart(cmd, 'aceitar '))
+    { await grupoHandler.handleAceitar(sock, msg, content, jid); return; }
+  if (matchCmd(cmdWord, 'recusar') || matchCmdStart(cmd, 'recusar '))
+    { await grupoHandler.handleRecusar(sock, msg, content, jid); return; }
   if (matchCmd(cmdWord, 'ban') || matchCmdStart(cmd, 'ban '))
     { await grupoHandler.handleBan(sock, msg, content, jid, botJid); return; }
   if (matchCmd(cmdWord, 'mute') || matchCmdStart(cmd, 'mute '))

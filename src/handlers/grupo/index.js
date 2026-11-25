@@ -62,6 +62,7 @@ const {
 
 const segurancaHandler = require('./seguranca');
 const fotoHandler = require('./foto');
+const solicitacoesHandler = require('./solicitacoes');
 
 // ═══════════════════════════════════════════════════════════════
 // ─── !menuadm ─────────────────────────────────────────────────
@@ -120,6 +121,8 @@ module.exports = {
   handleAvisar,
   handleFixarGrupo,
   handleMenuAdm,
+  handleAceitar: solicitacoesHandler.handleAceitar,
+  handleRecusar: solicitacoesHandler.handleRecusar,
 
   // Helpers para bot.js e router.js
   processarBemVindo,
