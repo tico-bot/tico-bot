@@ -148,7 +148,17 @@ test('main and category menus include key working commands', async () => {
 
   const family = await renderMenu('filhos', () =>
     utilidade.handleMenuFilho(sock, msg, jid, getPrefix));
+  assert.ok(family.includes('adotarfilho [nome] — pedir adoção ao parceiro (nome opcional)'));
+  assert.ok(family.includes('o outro precisa aceitá-la em até 15 minutos'));
+  assert.ok(family.includes('a cada *6 horas*'));
+  assert.ok(family.includes('a cada *20 horas*'));
+  assert.ok(family.includes('após *24 horas*'));
   assert.match(family, /renomearfilho/);
+
+  const familyAlternatePrefix = await renderMenu('filhos with alternate prefix', () =>
+    utilidade.handleMenuFilho(sock, msg, jid, () => '#'));
+  assert.match(familyAlternatePrefix, /#tentarfilho/);
+  assert.doesNotMatch(familyAlternatePrefix, /!tentarfilho/);
 
   const admin = await renderMenu('administração', () =>
     grupo.handleMenuAdm(sock, msg, jid, getPrefix));

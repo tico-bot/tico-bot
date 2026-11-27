@@ -10,7 +10,12 @@ const { resolverJidCarteira, formatarSaldo, alterarGold } = require(path.join(__
 const { bloqueadoPorVinculo } = require(path.join(__dirname, '..', '..', 'utils', 'carteira', 'vinculo'));
 const republicaEconomia = require('../republica/economia');
 const republicaSocial = require('../republica/social');
-const { getParticipantJids } = require('../../utils/identity');
+const {
+  getParticipantJids,
+  getAlternateSenderJids,
+  resolvePhoneAndJid,
+} = require('../../utils/identity');
+const { normalizarJidUsuario } = require('../../utils/jid');
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CHANCE_FILHO       = 0.40;  // 40% de chance
@@ -47,9 +52,176 @@ const NOMES_MENINA = [
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
+function normalizarListaJids(valores) {
+  const lista = Array.isArray(valores) ? valores : [valores];
+  return [...new Set(lista
+    .map(valor => normalizarJidUsuario(typeof valor === 'string' ? valor.trim() : null))
+    .filter(Boolean))];
+}
+
+function identidadesSeSobrepoem(identidadesA, identidadesB) {
+  const conjunto = new Set(normalizarListaJids(identidadesA));
+  return normalizarListaJids(identidadesB).some(id => conjunto.has(id));
+}
+
+function avaliarParticipacaoPedidoAdocao(solicitanteIds, convidadoIds, usuarioIds, parceiroIds) {
+  const solicitanteEhUsuario = identidadesSeSobrepoem(solicitanteIds, usuarioIds);
+  const solicitanteEhParceiro = identidadesSeSobrepoem(solicitanteIds, parceiroIds);
+  const convidadoEhUsuario = identidadesSeSobrepoem(convidadoIds, usuarioIds);
+  const convidadoEhParceiro = identidadesSeSobrepoem(convidadoIds, parceiroIds);
+
+  return {
+    pertenceAoCasal:
+      (solicitanteEhUsuario && convidadoEhParceiro) ||
+      (solicitanteEhParceiro && convidadoEhUsuario),
+    usuarioEhSolicitante: solicitanteEhUsuario && convidadoEhParceiro,
+    usuarioEhConvidado: convidadoEhUsuario && solicitanteEhParceiro,
+  };
+}
+
+function obterPrefixoComando(msg) {
+  let atual = msg?.message;
+
+  for (let profundidade = 0; profundidade < 8 && atual && typeof atual === 'object'; profundidade++) {
+    const textos = [
+      atual.conversation,
+      atual.extendedTextMessage?.text,
+      atual.imageMessage?.caption,
+      atual.videoMessage?.caption,
+      atual.documentMessage?.caption,
+      atual.documentWithCaptionMessage?.message?.documentMessage?.caption,
+    ];
+    for (const texto of textos) {
+      const prefixo = typeof texto === 'string' ? texto.trim().match(/^([!.,/#])/)?.[1] : null;
+      if (prefixo) return prefixo;
+    }
+
+    const envelope = atual.ephemeralMessage ||
+      atual.viewOnceMessage ||
+      atual.viewOnceMessageV2 ||
+      atual.viewOnceMessageV2Extension ||
+      atual.documentWithCaptionMessage;
+    atual = envelope?.message;
+  }
+
+  return '!';
+}
+
+function comandoDoGrupo(msg, nome, argumentos = '') {
+  return obterPrefixoComando(msg) + nome + (argumentos ? ' ' + argumentos : '');
+}
+
+async function resolverIdentidadesJid(valores, sock) {
+  const iniciais = normalizarListaJids(valores);
+  const resultado = [...iniciais];
+  const vistos = new Set(resultado);
+
+  for (const jid of iniciais) {
+    const info = await resolvePhoneAndJid(jid, sock).catch(() => null);
+    for (const alias of [info?.resolvedJid, info?.pnJid, info?.lidJid]) {
+      const normalizado = normalizarJidUsuario(alias);
+      if (normalizado && !vistos.has(normalizado)) {
+        vistos.add(normalizado);
+        resultado.push(normalizado);
+      }
+    }
+  }
+  return resultado;
+}
+
+async function resolverIdentidadesRemetente(msg, sock) {
+  const jidPrincipal = msg?.key?.participant || msg?.key?.remoteJid;
+  return resolverIdentidadesJid(
+    [jidPrincipal, ...getAlternateSenderJids(msg)],
+    sock
+  );
+}
+
+async function buscarUsuariosPorIdentidades(identidades) {
+  // Todos os chamadores entregam aliases já resolvidos; não repetir consultas PN/LID.
+  const ids = normalizarListaJids(identidades);
+  const usuarios = [];
+  const vistos = new Set();
+  for (const id of ids) {
+    const usuario = await Usuario.findOne({ idWhatsApp: id }).lean();
+    if (!usuario) continue;
+    const chave = String(usuario._id || usuario.idWhatsApp);
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    usuarios.push(usuario);
+  }
+  return { usuarios, identidades: ids };
+}
+
+async function buscarCasalPorIdentidades(identidades, sock, idGrupo = null) {
+  const identidadesEntrada = await resolverIdentidadesJid(identidades, sock);
+  const { usuarios } = await buscarUsuariosPorIdentidades(identidadesEntrada);
+
+  for (const usuario of usuarios) {
+    if (!usuario?.casadoCom) continue;
+    if (idGrupo && usuario.casadoGrupo && usuario.casadoGrupo !== idGrupo) continue;
+
+    const usuarioIds = await resolverIdentidadesJid(
+      [usuario.idWhatsApp, ...identidadesEntrada],
+      sock
+    );
+    const identidadesParceiro = await resolverIdentidadesJid([usuario.casadoCom], sock);
+    const { usuarios: parceiros } = await buscarUsuariosPorIdentidades(identidadesParceiro);
+
+    for (const parceiro of parceiros) {
+      if (!parceiro?.casadoCom) continue;
+      if (idGrupo && parceiro.casadoGrupo && parceiro.casadoGrupo !== idGrupo) continue;
+
+      const parceiroIds = await resolverIdentidadesJid(
+        [parceiro.idWhatsApp, ...identidadesParceiro],
+        sock
+      );
+      if (identidadesSeSobrepoem(usuarioIds, parceiroIds)) continue;
+
+      const retornoParceiro = await resolverIdentidadesJid([parceiro.casadoCom], sock);
+      if (!identidadesSeSobrepoem(usuarioIds, retornoParceiro)) continue;
+
+      return { usuario, parceiro, usuarioIds, parceiroIds };
+    }
+  }
+
+  return null;
+}
+
+function filtroFilhos(jid, usuarioIds, parceiroIds) {
+  const idsA = normalizarListaJids(usuarioIds);
+  const idsB = normalizarListaJids(parceiroIds);
+  if (!idsA.length || !idsB.length) return { idGrupo: jid, _id: null };
+  return {
+    idGrupo: jid,
+    $or: [
+      { jidA: { $in: idsA }, jidB: { $in: idsB } },
+      { jidA: { $in: idsB }, jidB: { $in: idsA } },
+    ],
+  };
+}
+
+function filtroFilhosPorPai(jid, usuarioIds) {
+  const ids = normalizarListaJids(usuarioIds);
+  if (!ids.length) return { idGrupo: jid, _id: null };
+  return {
+    idGrupo: jid,
+    $or: [
+      { jidA: { $in: ids } },
+      { jidB: { $in: ids } },
+    ],
+  };
+}
+
 function calcularIdade(nascidoEm) {
   const diasVividos = (Date.now() - new Date(nascidoEm).getTime()) / (1000 * 60 * 60 * 24);
   return Math.floor(diasVividos / DIAS_POR_ANO);
+}
+
+function formatarIdade(nascidoEm) {
+  const idade = calcularIdade(nascidoEm);
+  if (idade <= 0) return 'menos de 1 ano';
+  return idade === 1 ? '1 ano' : idade + ' anos';
 }
 
 function statusBar(valor, tamanho = 8) {
@@ -68,57 +240,43 @@ function formatarTempo(ms) {
   return `${seg}s`;
 }
 
-async function buscarUsuarioComParceiro(userId) {
-  const usuario = await Usuario.findOne({ idWhatsApp: userId }).lean();
-  if (!usuario?.casadoCom) return null;
-  return { usuario, parceiro: usuario.casadoCom };
-}
-
-// Filtro para quando AINDA se conhece o parceiro (ex: tentar ter filho)
-function filtroFilhos(jid, userId, parceiro) {
+async function buscarUsuarioComParceiro(userId, sock, msg, idGrupo) {
+  const casal = await buscarCasalPorIdentidades(
+    [userId, ...getAlternateSenderJids(msg)],
+    sock,
+    idGrupo
+  );
+  if (!casal) return null;
   return {
-    idGrupo: jid,
-    $or: [
-      { jidA: userId, jidB: parceiro },
-      { jidA: parceiro, jidB: userId },
-    ],
+    usuario: casal.usuario,
+    parceiro: casal.parceiro.idWhatsApp,
+    usuarioIds: casal.usuarioIds,
+    parceiroIds: casal.parceiroIds,
   };
 }
 
-// Filtro independente de relacionamento ativo: pega todos os filhos
-// onde o usuário é um dos pais, dentro do grupo — funciona mesmo
-// depois de uma separação, preservando a guarda compartilhada.
-function filtroFilhosPorPai(jid, userId) {
-  return {
-    idGrupo: jid,
-    $or: [
-      { jidA: userId },
-      { jidB: userId },
-    ],
-  };
-}
+// Os filtros aceitam PN/LID equivalentes para não perder filhos quando
+// o WhatsApp alterna o identificador do mesmo participante.
 
 // Retorna true se jidA e jidB do filho estão atualmente casados/namorando
 // um com o outro — ou seja, o casal reconciliou. Nesse caso a guarda
 // compartilhada é desativada e qualquer um dos pais pode cuidar.
-async function estaoJuntos(filho) {
-  if (!filho.jidB) return false; // sem segundo pai cadastrado, nada a checar
+async function estaoJuntos(filho, sock) {
+  if (!filho.jidA || !filho.jidB) return false;
 
-  const pais = await Usuario.find(
-    { idWhatsApp: { $in: [filho.jidA, filho.jidB] } },
-    { idWhatsApp: 1, casadoCom: 1 }
-  ).lean();
+  const idsA = await resolverIdentidadesJid([filho.jidA], sock);
+  const idsB = await resolverIdentidadesJid([filho.jidB], sock);
+  const casalA = await buscarCasalPorIdentidades(idsA, sock, filho.idGrupo);
+  if (casalA && identidadesSeSobrepoem(casalA.parceiroIds, idsB)) return true;
 
-  const a = pais.find(p => p.idWhatsApp === filho.jidA);
-  const b = pais.find(p => p.idWhatsApp === filho.jidB);
-
-  return !!(a?.casadoCom === filho.jidB && b?.casadoCom === filho.jidA);
+  const casalB = await buscarCasalPorIdentidades(idsB, sock, filho.idGrupo);
+  return !!(casalB && identidadesSeSobrepoem(casalB.parceiroIds, idsA));
 }
 
 // Troca a guarda do filho 1x por dia, apenas enquanto o casal está separado.
 // Se reconciliarem, a guarda fica "livre" (null) e ambos podem cuidar.
-async function atualizarGuarda(filho) {
-  const juntos = await estaoJuntos(filho);
+async function atualizarGuarda(filho, sock) {
+  const juntos = await estaoJuntos(filho, sock);
 
   if (juntos) {
     // Casal reconciliou: guarda compartilhada desativada
@@ -153,14 +311,15 @@ async function handleTentarFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
   try {
-    const info = await buscarUsuarioComParceiro(userId);
+    const info = await buscarUsuarioComParceiro(userId, sock, msg, jid);
     if (!info) {
       return sock.sendMessage(jid, {
-        text: '❌ Você precisa estar em um relacionamento para ter filhos!',
+        text: '❌ Você precisa estar em um relacionamento ativo neste grupo para ter filhos biológicos!',
       }, { quoted: msg });
     }
 
-    const { usuario, parceiro } = info;
+    const { usuario, parceiro, usuarioIds, parceiroIds } = info;
+    const usuarioId = normalizarJidUsuario(usuario.idWhatsApp) || userId;
 
     // ── Cooldown de 20 minutos ──
     if (usuario.ultimaTentativaFilho) {
@@ -173,18 +332,41 @@ async function handleTentarFilho(sock, msg, jid) {
     }
 
     // ── Verifica limite de filhos (apenas com o parceiro atual) ──
-    const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, userId, parceiro));
+    const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, usuarioIds, parceiroIds));
     if (totalFilhos >= MAX_FILHOS) {
       return sock.sendMessage(jid, {
-        text: `❌ Vocês já têm *${totalFilhos} filhos*! O limite é ${MAX_FILHOS}.`,
+        text: `❌ Vocês já atingiram o limite de *${MAX_FILHOS} filhos por casal*!`,
       }, { quoted: msg });
     }
 
-    // ── Registra a tentativa (independente do resultado) ──
-    await Usuario.updateOne(
-      { idWhatsApp: userId },
-      { $set: { ultimaTentativaFilho: new Date() } }
-    );
+    // Reserva o cooldown atomicamente para impedir duas tentativas simultâneas.
+    const agoraTentativa = new Date();
+    const inicioCooldown = new Date(agoraTentativa.getTime() - COOLDOWN_TENTAR);
+    const tentativaReservada = await Usuario.findOneAndUpdate(
+      {
+        idWhatsApp: usuarioId,
+        $or: [
+          { ultimaTentativaFilho: null },
+          { ultimaTentativaFilho: { $lte: inicioCooldown } },
+        ],
+      },
+      { $set: { ultimaTentativaFilho: agoraTentativa } },
+      { new: true }
+    ).lean();
+
+    if (!tentativaReservada) {
+      const usuarioAtual = await Usuario.findOne({ idWhatsApp: usuarioId })
+        .select('ultimaTentativaFilho')
+        .lean();
+      const ultimaTentativa = new Date(usuarioAtual?.ultimaTentativaFilho || 0).getTime();
+      const restante = COOLDOWN_TENTAR - (Date.now() - ultimaTentativa);
+      if (restante > 0) {
+        return sock.sendMessage(jid, {
+          text: `⏳ Aguarde *${formatarTempo(restante)}* para tentar ter um filho novamente.`,
+        }, { quoted: msg });
+      }
+      throw new Error('Não foi possível reservar o cooldown da tentativa.');
+    }
 
     // ── Sorteio ──
     if (Math.random() > CHANCE_FILHO) {
@@ -206,7 +388,7 @@ async function handleTentarFilho(sock, msg, jid) {
     const emoji         = sexo === 'menino' ? '👦' : '👧';
 
     const filhoCriado = await Filho.create({
-      jidA: userId,
+      jidA: usuarioId,
       jidB: parceiro,
       idGrupo: jid,
       nome,
@@ -224,15 +406,15 @@ async function handleTentarFilho(sock, msg, jid) {
 
     let avisoLicencas = '';
     if (await republicaEconomia.modoAtivo(jid)) {
-      const licencas = await republicaSocial.registrarLicencasNascimento(jid, userId, parceiro, filhoCriado);
+      const licencas = await republicaSocial.registrarLicencasNascimento(jid, usuarioId, parceiro, filhoCriado);
       if (licencas.length) {
-        avisoLicencas = `\n\n👶 *LICENÇAS PARENTAIS:* ${licencas.length} responsável(is) empregado(s) recebeu(ram) licença de 2 dias, remunerada pelo Fundo Social.`;
+        avisoLicencas = `\n\n👶 *LICENÇAS PARENTAIS:* ${licencas.length} responsável(is) empregado(s) recebeu(ram) 2 dias de licença parental. Os pagamentos salariais são calculados pelo Fundo de Licença Parental.`;
         for (const licenca of licencas) {
           await sock.sendMessage(licenca.usuarioId, {
-            text: '👶 *LICENÇA ' + String(licenca.tipo || 'PARENTAL').toUpperCase() + ' ACTIVADA*\n\n' +
-              'Você recebeu 2 dias de licença remunerada no emprego do Tico.\n' +
+            text: '👶 *LICENÇA ' + String(licenca.tipo || 'PARENTAL').toUpperCase() + ' ATIVADA*\n\n' +
+              'Você recebeu 2 dias de licença parental no emprego do Tico.\n' +
               'Remuneração diária prevista: *' + Math.floor(licenca.salarioDiario || 0).toLocaleString('pt-BR') + ' Pratas*.\n' +
-              'O pagamento sai do Fundo de Licença Parental e o seu emprego fica protegido durante as 48 horas.',
+              'O Fundo de Licença Parental realiza até dois pagamentos diários conforme o salário apurado. Seu emprego fica protegido durante as 48 horas.',
           }).catch(() => {});
         }
       }
@@ -249,9 +431,9 @@ async function handleTentarFilho(sock, msg, jid) {
         `🍽️ Fome       : ${statusBar(100)}\n` +
         `😴 Sono       : ${statusBar(100)}\n` +
         `🎈 Alegria    : ${statusBar(100)}\n\n` +
-        `💡 Use *!cuidarfilho* para cuidar dele(a) diariamente!` +
+        `💡 Use *${comandoDoGrupo(msg, 'cuidarfilho')}* para cuidar dele(a). Cada filho pode receber cuidados novamente a cada 20 horas.` +
         avisoLicencas,
-      mentions: [userId, parceiro],
+      mentions: [usuarioId, parceiro],
     }, { quoted: msg });
 
   } catch (e) {
@@ -264,38 +446,56 @@ async function handleTentarFilho(sock, msg, jid) {
 
 
 // ─── !adotarfilho ─────────────────────────────────────────────────────────────
-async function obterCasalAdocao(sock, idGrupo, usuarioRaw) {
-  const usuarioId = await resolverJidCarteira(usuarioRaw, idGrupo);
-  const usuario = await Usuario.findOne({ idWhatsApp: usuarioId }).lean();
-  if (!usuario?.casadoCom) return null;
+async function obterCasalAdocao(sock, idGrupo, usuarioRaw, aliases = []) {
+  // Nunca use o identificador da carteira para consultar Usuario/Relacionamento:
+  // ele pode ser LID mesmo quando os modelos estão guardados pelo PN.
+  const casal = await buscarCasalPorIdentidades(
+    [usuarioRaw, ...aliases],
+    sock,
+    idGrupo
+  );
+  if (!casal?.usuario?.idWhatsApp || !casal?.parceiro?.idWhatsApp) return null;
 
-  const parceiroId = await resolverJidCarteira(usuario.casadoCom, idGrupo);
-  if (!parceiroId || parceiroId === usuarioId) return null;
-  const parceiro = await Usuario.findOne({ idWhatsApp: parceiroId }).lean();
-  if (!parceiro?.casadoCom) return null;
-  const parceiroDoParceiro = await resolverJidCarteira(parceiro.casadoCom, idGrupo);
-  if (parceiroDoParceiro !== usuarioId) return null;
+  const usuarioId = normalizarJidUsuario(casal.usuario.idWhatsApp);
+  const parceiroId = normalizarJidUsuario(casal.parceiro.idWhatsApp);
+  const usuarioIds = casal.usuarioIds;
+  const parceiroIds = casal.parceiroIds;
+  if (!usuarioId || !parceiroId || identidadesSeSobrepoem(usuarioIds, parceiroIds)) return null;
 
+  const filtrosRelacionamento = [];
+  for (const idUsuario of usuarioIds) {
+    for (const idParceiro of parceiroIds) {
+      filtrosRelacionamento.push(
+        { jidA: idUsuario, jidB: idParceiro },
+        { jidA: idParceiro, jidB: idUsuario },
+        { participantes: { $all: [idUsuario, idParceiro] } }
+      );
+    }
+  }
   const relacionamento = await Relacionamento.findOne({
     idGrupo,
-    $or: [
-      { jidA: usuarioId, jidB: parceiroId },
-      { jidA: parceiroId, jidB: usuarioId },
-      { participantes: { $all: [usuarioId, parceiroId] } },
-    ],
+    $or: filtrosRelacionamento,
   }).lean();
   if (!relacionamento) return null;
 
   const metadados = await sock.groupMetadata(idGrupo);
-  const membros = new Set();
+  let usuarioNoGrupo = false;
+  let parceiroNoGrupo = false;
   for (const participante of (metadados?.participants || [])) {
-    for (const raw of getParticipantJids(participante)) {
-      const canonico = await resolverJidCarteira(raw, idGrupo);
-      if (canonico) membros.add(canonico);
+    // getParticipantJids já entrega PN/LID quando o WhatsApp os informa.
+    // Os aliases do casal foram resolvidos antes; não consultar Mongo para cada membro.
+    const idsParticipante = getParticipantJids(participante);
+    if (!usuarioNoGrupo && identidadesSeSobrepoem(usuarioIds, idsParticipante)) {
+      usuarioNoGrupo = true;
     }
+    if (!parceiroNoGrupo && identidadesSeSobrepoem(parceiroIds, idsParticipante)) {
+      parceiroNoGrupo = true;
+    }
+    if (usuarioNoGrupo && parceiroNoGrupo) break;
   }
-  if (!membros.has(usuarioId) || !membros.has(parceiroId)) return null;
-  return { usuarioId, parceiroId };
+  if (!usuarioNoGrupo || !parceiroNoGrupo) return null;
+
+  return { usuarioId, parceiroId, usuarioIds, parceiroIds };
 }
 
 function gerarDadosAdocao(nome = '') {
@@ -352,70 +552,167 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
   }
 
   const autorRaw = msg.key.participant || msg.key.remoteJid;
+  const autorAliases = getAlternateSenderJids(msg);
   const partes = String(caption || '').trim().split(/\s+/).filter(Boolean);
   const primeiraOpcao = String(partes[1] || '').toLowerCase();
   const acao = ['aceitar', 'recusar', 'cancelar'].includes(primeiraOpcao) ? primeiraOpcao : '';
   const argumento = (acao ? partes.slice(2) : partes.slice(1)).join(' ').trim();
 
   try {
-    const casal = await obterCasalAdocao(sock, jid, autorRaw);
+    const casal = await obterCasalAdocao(sock, jid, autorRaw, autorAliases);
     if (!casal) {
       return sock.sendMessage(jid, {
-        text: '❌ Para adoptar, os dois responsáveis precisam ter um relacionamento activo registado neste grupo e continuar como membros.',
+        text: '❌ Para adotar, os dois responsáveis precisam estar em um relacionamento ativo registrado neste grupo e fazer parte dele.',
       }, { quoted: msg });
     }
-    const { usuarioId, parceiroId } = casal;
+    const { usuarioId, parceiroId, usuarioIds, parceiroIds } = casal;
 
     if (acao === 'cancelar' || acao === 'recusar') {
       if (!argumento) return sock.sendMessage(jid, {
-        text: '⚠️ Informe o código do pedido: /adotarfilho ' + acao + ' <código>.',
+        text: '⚠️ Informe o código do pedido: *' + comandoDoGrupo(msg, 'adotarfilho', acao + ' <código>') + '*.',
       }, { quoted: msg });
+
       const pedido = await AdocaoSolicitacao.findOne({
         idGrupo: jid,
         codigo: argumento.toUpperCase(),
-        status: 'pendente',
-        expiresAt: { $gt: new Date() },
       });
-      if (!pedido) return sock.sendMessage(jid, { text: '❌ Pedido não encontrado, expirado ou já processado.' }, { quoted: msg });
+      if (!pedido) return sock.sendMessage(jid, { text: '❌ Pedido de adoção não encontrado.' }, { quoted: msg });
+
+      const pedidoSolicitanteIds = await resolverIdentidadesJid([pedido.solicitanteId], sock);
+      const pedidoParceiroIds = await resolverIdentidadesJid([pedido.parceiroId], sock);
+      const participacao = avaliarParticipacaoPedidoAdocao(
+        pedidoSolicitanteIds,
+        pedidoParceiroIds,
+        usuarioIds,
+        parceiroIds
+      );
+      if (!participacao.pertenceAoCasal) return sock.sendMessage(jid, {
+        text: '❌ Este pedido não pertence ao relacionamento atual e não pode ser alterado por este casal.',
+      }, { quoted: msg });
+
       const podeAgir = acao === 'cancelar'
-        ? pedido.solicitanteId === usuarioId
-        : pedido.parceiroId === usuarioId;
+        ? participacao.usuarioEhSolicitante
+        : participacao.usuarioEhConvidado;
       if (!podeAgir) return sock.sendMessage(jid, {
         text: acao === 'cancelar'
           ? '❌ Apenas quem iniciou o pedido pode cancelá-lo.'
           : '❌ Apenas o parceiro convidado pode recusar a adoção.',
       }, { quoted: msg });
-      pedido.status = acao === 'cancelar' ? 'cancelada' : 'recusada';
-      await pedido.save();
+
+      if (pedido.status !== 'pendente') {
+        return sock.sendMessage(jid, {
+          text: pedido.status === 'expirada'
+            ? '⌛ Este pedido já expirou.'
+            : '⏳ Este pedido já foi processado ou está sendo confirmado.',
+        }, { quoted: msg });
+      }
+
+      const agora = new Date();
+      if (!pedido.expiresAt || new Date(pedido.expiresAt) <= agora) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: pedido._id, status: 'pendente' },
+          { $set: { status: 'expirada' } }
+        );
+        return sock.sendMessage(jid, { text: '⌛ Este pedido expirou.' }, { quoted: msg });
+      }
+
+      const novoStatus = acao === 'cancelar' ? 'cancelada' : 'recusada';
+      const atualizado = await AdocaoSolicitacao.findOneAndUpdate(
+        {
+          _id: pedido._id,
+          idGrupo: jid,
+          status: 'pendente',
+          expiresAt: { $gt: agora },
+          solicitanteId: pedido.solicitanteId,
+          parceiroId: pedido.parceiroId,
+        },
+        { $set: { status: novoStatus } },
+        { new: true }
+      );
+      if (!atualizado) {
+        return sock.sendMessage(jid, {
+          text: '⏳ O pedido mudou de estado antes da operação. Consulte o código novamente.',
+        }, { quoted: msg });
+      }
+
       return sock.sendMessage(jid, {
         text: acao === 'cancelar'
           ? '🛑 Pedido de adoção cancelado.'
-          : '📩 O parceiro recusou o pedido de adoção. Nenhuma criança foi registada.',
+          : '📩 O parceiro recusou o pedido de adoção. Nenhuma criança foi registrada.',
       }, { quoted: msg });
     }
 
     if (acao === 'aceitar') {
       if (!argumento) return sock.sendMessage(jid, {
-        text: '⚠️ Informe o código enviado no grupo: /adotarfilho aceitar <código>.',
+        text: '⚠️ Informe o código enviado no grupo: *' + comandoDoGrupo(msg, 'adotarfilho', 'aceitar <código>') + '*.',
       }, { quoted: msg });
       let pedido = await AdocaoSolicitacao.findOne({
         idGrupo: jid,
         codigo: argumento.toUpperCase(),
       });
       if (!pedido) return sock.sendMessage(jid, { text: '❌ Pedido de adoção não encontrado.' }, { quoted: msg });
-      if (pedido.parceiroId !== usuarioId) {
-        return sock.sendMessage(jid, { text: '❌ Apenas o parceiro convidado pode aceitar este pedido.' }, { quoted: msg });
+      const pedidoSolicitanteIds = await resolverIdentidadesJid([pedido.solicitanteId], sock);
+      const pedidoParceiroIds = await resolverIdentidadesJid([pedido.parceiroId], sock);
+      const participacao = avaliarParticipacaoPedidoAdocao(
+        pedidoSolicitanteIds,
+        pedidoParceiroIds,
+        usuarioIds,
+        parceiroIds
+      );
+      if (!participacao.pertenceAoCasal) {
+        return sock.sendMessage(jid, {
+          text: '❌ Este pedido não pertence ao relacionamento atual e não pode ser confirmado por este casal.',
+        }, { quoted: msg });
+      }
+      if (!participacao.usuarioEhConvidado) {
+        return sock.sendMessage(jid, {
+          text: '❌ Apenas o responsável convidado pode aceitar este pedido.',
+        }, { quoted: msg });
       }
       if (pedido.status === 'aceita') {
-        return sock.sendMessage(jid, { text: '✅ Esta adoção já foi confirmada e a criança já está registada.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '✅ Esta adoção já foi confirmada e a criança já está registrada.' }, { quoted: msg });
       }
-      if (pedido.status === 'pendente' && pedido.expiresAt <= new Date()) {
-        pedido.status = 'expirada';
-        await pedido.save();
+      if (pedido.status === 'pendente' && (!pedido.expiresAt || new Date(pedido.expiresAt) <= new Date())) {
+        await AdocaoSolicitacao.updateOne(
+          { _id: pedido._id, status: 'pendente' },
+          { $set: { status: 'expirada' } }
+        );
         return sock.sendMessage(jid, { text: '⌛ O pedido expirou. O parceiro precisa iniciar uma nova solicitação.' }, { quoted: msg });
       }
       if (!['pendente', 'processando'].includes(pedido.status)) {
         return sock.sendMessage(jid, { text: '❌ Este pedido já foi recusado, cancelado ou expirou.' }, { quoted: msg });
+      }
+
+      if (pedido.status === 'processando') {
+        const timestampProcessamento = pedido.processamentoEm
+          ? new Date(pedido.processamentoEm).getTime()
+          : NaN;
+        const processamentoParado = !Number.isFinite(timestampProcessamento) ||
+          Date.now() - timestampProcessamento >= 2 * 60 * 1000;
+        const pedidoExpirado = !pedido.expiresAt ||
+          new Date(pedido.expiresAt).getTime() <= Date.now();
+
+        if (processamentoParado && pedidoExpirado) {
+          const filhoExistente = await Filho.findOne({ adocaoSolicitacaoId: pedido._id });
+          if (!filhoExistente) {
+            const expirado = await AdocaoSolicitacao.updateOne(
+              {
+                _id: pedido._id,
+                status: 'processando',
+                processamentoEm: pedido.processamentoEm || null,
+              },
+              { $set: { status: 'expirada' } }
+            );
+            if (expirado.modifiedCount) {
+              return sock.sendMessage(jid, {
+                text: '⌛ O pedido expirou durante uma tentativa interrompida. Inicie uma nova solicitação.',
+              }, { quoted: msg });
+            }
+            return sock.sendMessage(jid, {
+              text: '⏳ O estado do pedido mudou durante a confirmação. Consulte o código novamente.',
+            }, { quoted: msg });
+          }
+        }
       }
 
       const reservado = await AdocaoSolicitacao.findOneAndUpdate(
@@ -438,26 +735,34 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
           );
           return sock.sendMessage(jid, { text: '⌛ O pedido expirou antes da confirmação. Inicie uma nova solicitação.' }, { quoted: msg });
         }
-        return sock.sendMessage(jid, { text: '⏳ Este pedido já foi aceite, recusado ou está a ser processado.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '⏳ Este pedido já foi aceito, recusado ou está sendo processado.' }, { quoted: msg });
       } else if (pedido.status === 'processando' &&
         pedido.processamentoEm &&
         Date.now() - new Date(pedido.processamentoEm).getTime() < 2 * 60 * 1000) {
-        return sock.sendMessage(jid, { text: '⏳ Esta adoção já está a ser processada. Aguarde a confirmação.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '⏳ Esta adoção já está sendo processada. Aguarde a confirmação.' }, { quoted: msg });
       } else if (pedido.status === 'processando') {
+        const agoraRetomada = new Date();
         const retomado = await AdocaoSolicitacao.findOneAndUpdate(
           {
             _id: pedido._id,
             status: 'processando',
-            processamentoEm: { $lte: new Date(Date.now() - 2 * 60 * 1000) },
+            $or: [
+              { processamentoEm: { $lte: new Date(agoraRetomada.getTime() - 2 * 60 * 1000) } },
+              { processamentoEm: null },
+            ],
           },
-          { $set: { processamentoEm: new Date() } },
+          { $set: { processamentoEm: agoraRetomada } },
           { new: true }
         );
-        if (!retomado) return sock.sendMessage(jid, { text: '⏳ Esta adoção já está a ser processada. Aguarde a confirmação.' }, { quoted: msg });
+        if (!retomado) return sock.sendMessage(jid, { text: '⏳ Esta adoção já está sendo processada. Aguarde a confirmação.' }, { quoted: msg });
         pedido = retomado;
       }
 
-      const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, pedido.solicitanteId, pedido.parceiroId));
+      const totalFilhos = await Filho.countDocuments(filtroFilhos(
+        jid,
+        await resolverIdentidadesJid([pedido.solicitanteId], sock),
+        await resolverIdentidadesJid([pedido.parceiroId], sock)
+      ));
       if (totalFilhos >= MAX_FILHOS) {
         await AdocaoSolicitacao.updateOne(
           { _id: pedido._id, status: 'processando' },
@@ -492,10 +797,10 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
           );
           for (const licenca of licencas) {
             await sock.sendMessage(licenca.usuarioId, {
-              text: '👶 *LICENÇA PARENTAL POR ADOÇÃO ACTIVADA*\n\n' +
-                'A adoção foi confirmada e você recebeu 48 horas de licença remunerada.\n' +
+              text: '👶 *LICENÇA PARENTAL POR ADOÇÃO ATIVADA*\n\n' +
+                'A adoção foi confirmada e você recebeu 48 horas de licença parental.\n' +
                 'Remuneração diária prevista: *' + Math.floor(licenca.salarioDiario || 0).toLocaleString('pt-BR') + ' Pratas*.\n' +
-                'O Fundo de Licença Parental pagará até dois salários diários, e o seu emprego fica protegido durante este período.',
+                'O Fundo de Licença Parental realiza até dois pagamentos diários conforme o valor salarial apurado. Seu emprego fica protegido durante as 48 horas.',
             }).catch(() => {});
           }
         } catch (erroLicenca) {
@@ -509,20 +814,20 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
         text: '🏡 *ADOÇÃO CONFIRMADA!*\n\n' +
           emoji + ' *' + filho.nome + '* passou a fazer parte da família.\n' +
           '✨ Personalidade: *' + filho.personalidade + '*\n' +
-          '👨‍👩‍👧 Os dois responsáveis foram registados e podem usar /filho e /cuidarfilho normalmente.\n' +
+          '👨‍👩‍👧 Os dois responsáveis foram cadastrados e podem usar *' + comandoDoGrupo(msg, 'filho') + '* e *' + comandoDoGrupo(msg, 'cuidarfilho') + '* normalmente.\n' +
           (licencas.length
-            ? '👶 *' + licencas.length + '* responsável(is) empregado(s) recebeu(ram) 48 horas de licença parental remunerada.'
+            ? '👶 *' + licencas.length + '* responsável(is) empregado(s) recebeu(ram) 48 horas de licença parental.'
             : falhaLicenca
-              ? '⚠️ A adoção foi concluída, mas não consegui registar a licença parental. A família foi actualizada; consulte um administrador.'
+              ? '⚠️ A adoção foi concluída, mas não consegui registrar a licença parental. A família foi atualizada; consulte um administrador.'
               : 'ℹ️ Nenhuma licença foi emitida: o Modo República está desligado ou os responsáveis não possuem emprego elegível.'),
         mentions: [pedido.solicitanteId, pedido.parceiroId],
       }, { quoted: msg });
     }
 
-    const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, usuarioId, parceiroId));
+    const totalFilhos = await Filho.countDocuments(filtroFilhos(jid, usuarioIds, parceiroIds));
     if (totalFilhos >= MAX_FILHOS) {
       return sock.sendMessage(jid, {
-        text: '❌ Vocês já têm ' + totalFilhos + ' filhos. O limite é ' + MAX_FILHOS + '.',
+        text: '❌ Vocês já atingiram o limite de ' + MAX_FILHOS + ' filhos por casal.',
       }, { quoted: msg });
     }
 
@@ -537,7 +842,10 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
       idGrupo: jid,
       chaveCasal,
       status: 'processando',
-      processamentoEm: { $lte: new Date(agora.getTime() - 2 * 60 * 1000) },
+      $or: [
+        { processamentoEm: { $lte: new Date(agora.getTime() - 2 * 60 * 1000) } },
+        { processamentoEm: null },
+      ],
     });
     for (const processo of processosParados) {
       const filhoExistente = await Filho.findOne({ adocaoSolicitacaoId: processo._id });
@@ -546,7 +854,7 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
           { _id: processo._id, status: 'processando' },
           { $set: { status: 'aceita', aceitaEm: processo.aceitaEm || agora, filhoId: filhoExistente._id } }
         );
-      } else if (processo.expiresAt <= agora) {
+      } else if (!processo.expiresAt || new Date(processo.expiresAt) <= agora) {
         await AdocaoSolicitacao.updateOne(
           { _id: processo._id, status: 'processando' },
           { $set: { status: 'expirada' } }
@@ -598,15 +906,15 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
         '👶 Criança: *' + pedido.nome + '* (' + pedido.sexo + ')\n' +
         '📋 Código: *' + pedido.codigo + '*\n' +
         '⌛ Prazo de confirmação: *15 minutos*.\n\n' +
-        '@' + parceiroId.split('@')[0] + ', confirme com */adotarfilho aceitar ' + pedido.codigo + '* ou recuse com */adotarfilho recusar ' + pedido.codigo + '*.\n' +
-        'Quem iniciou o pedido pode cancelá-lo com */adotarfilho cancelar ' + pedido.codigo + '*.',
+        '@' + parceiroId.split('@')[0] + ', confirme com *' + comandoDoGrupo(msg, 'adotarfilho', 'aceitar ' + pedido.codigo) + '* ou recuse com *' + comandoDoGrupo(msg, 'adotarfilho', 'recusar ' + pedido.codigo) + '*.\n' +
+        'Quem iniciou o pedido pode cancelá-lo com *' + comandoDoGrupo(msg, 'adotarfilho', 'cancelar ' + pedido.codigo) + '*.',
       mentions: [parceiroId, usuarioId],
     }, { quoted: msg });
   } catch (erro) {
     console.error('[handleAdotarFilho] Erro:', erro?.stack || erro?.message || erro);
     const mensagem = /no máximo\s+\d+\s+caracteres/i.test(String(erro?.message || ''))
       ? '⚠️ ' + erro.message
-      : '⚠️ Não foi possível processar a adoção. Confirme se os dois responsáveis continuam ligados neste grupo e tente novamente.';
+      : '⚠️ Ocorreu uma falha ao processar a adoção. Tente novamente; se o problema persistir, avise um administrador.';
     return sock.sendMessage(jid, { text: mensagem }, { quoted: msg }).catch(() => {});
   }
 }
@@ -615,41 +923,38 @@ async function handleAdotarFilho(sock, msg, jid, caption) {
 // Funciona independente de relacionamento ativo — guarda compartilhada
 // só vale enquanto o casal estiver separado.
 async function handleVerFilho(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
   try {
-    // .sort() garante que o número exibido aqui seja o MESMO número que
-    // !renomearfilho vai usar — sem isso a ordem do MongoDB não é garantida
-    // entre consultas diferentes.
-    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
+    const userIds = await resolverIdentidadesRemetente(msg, sock);
+    // .sort() mantém a numeração igual à usada por /renomearfilho.
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userIds)).sort({ nascidoEm: 1 });
 
     if (filhos.length === 0) {
       return sock.sendMessage(jid, {
-        text: '👶 Você ainda não tem filhos! Use *!tentarfilho* (com um relacionamento ativo) para tentar.',
+        text: '👶 Você ainda não tem filhos! Use *' + comandoDoGrupo(msg, 'tentarfilho') + '* para tentar (é necessário ter um relacionamento ativo neste grupo).',
       }, { quoted: msg });
     }
 
-    let texto = `👨‍👩‍👧‍👦 *SEUS FILHOS* (${filhos.length}/${MAX_FILHOS})\n\n`;
+    let texto = `👨‍👩‍👧‍👦 *SEUS FILHOS* (${filhos.length} no grupo)\n\n`;
 
     for (let i = 0; i < filhos.length; i++) {
       const filho   = filhos[i];
-      const idade   = calcularIdade(filho.nascidoEm);
+      const idade   = formatarIdade(filho.nascidoEm);
       const emoji   = filho.sexo === 'menino' ? '👦' : '👧';
-      const guarda  = await atualizarGuarda(filho);
+      const guarda  = await atualizarGuarda(filho, sock);
 
       let guardaStr;
       if (guarda === null) {
         guardaStr = 'compartilhada (vocês estão juntos)';
-      } else if (guarda === userId) {
+      } else if (identidadesSeSobrepoem(userIds, [guarda])) {
         guardaStr = 'com você hoje';
       } else {
-        guardaStr = 'com seu ex-parceiro(a) hoje';
+        guardaStr = 'com o outro responsável hoje';
       }
 
-      const doente = filho.doente ? '\n⚠️ *DOENTE!* Use *!remediofil* para curar.' : '';
+      const doente = filho.doente ? '\n⚠️ *DOENTE!* Use *' + comandoDoGrupo(msg, 'remediofil') + '* para tratar.' : '';
 
       texto +=
-        `*${i + 1}.* ${emoji} *${filho.nome}* — ${idade} ano(s)\n` +
+        `*${i + 1}.* ${emoji} *${filho.nome}* — ${idade}\n` +
         `✨ ${filho.personalidade}\n` +
         `😊 Felicidade : ${statusBar(filho.felicidade)}\n` +
         `🍽️ Fome       : ${statusBar(filho.fome)}\n` +
@@ -660,7 +965,7 @@ async function handleVerFilho(sock, msg, jid) {
         `\n\n`;
     }
 
-    texto += `_Use *!renomearfilho* para dar um novo nome a um deles._`;
+    texto += `_Use *${comandoDoGrupo(msg, 'renomearfilho')}* para dar um novo nome a um deles._`;
 
     return sock.sendMessage(jid, { text: texto.trim() }, { quoted: msg });
   } catch (e) {
@@ -674,10 +979,9 @@ async function handleVerFilho(sock, msg, jid) {
 // guarda é livre (null) e qualquer um dos pais pode cuidar. Se separados,
 // só quem está com a guarda no dia pode cuidar.
 async function handleCuidarFilho(sock, msg, jid) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
   try {
-    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
+    const userIds = await resolverIdentidadesRemetente(msg, sock);
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userIds)).sort({ nascidoEm: 1 });
 
     if (filhos.length === 0) {
       return sock.sendMessage(jid, { text: '👶 Você não tem filhos ainda!' }, { quoted: msg });
@@ -689,12 +993,11 @@ async function handleCuidarFilho(sock, msg, jid) {
     let algumIndisponivel = false;
 
     for (const filho of filhos) {
-      const guarda = await atualizarGuarda(filho);
+      const guarda = await atualizarGuarda(filho, sock);
 
       // guarda === null → casal junto, guarda livre, qualquer um cuida.
       // guarda !== null → separados, só quem está com a guarda cuida.
-      if (guarda !== null && guarda !== userId) {
-        texto += `👶 *${filho.nome}* está com seu ex-parceiro(a) hoje.\n\n`;
+      if (guarda !== null && !identidadesSeSobrepoem(userIds, [guarda])) {        texto += `👶 *${filho.nome}* está sob os cuidados do outro responsável hoje.\n\n`;
         algumIndisponivel = true;
         continue;
       }
@@ -702,7 +1005,7 @@ async function handleCuidarFilho(sock, msg, jid) {
       // Cooldown
       if (filho.ultimoCuidado && agora - new Date(filho.ultimoCuidado).getTime() < COOLDOWN_CUIDAR) {
         const restante = COOLDOWN_CUIDAR - (agora - new Date(filho.ultimoCuidado).getTime());
-        texto += `👶 *${filho.nome}* — já foi cuidado(a)! Próximo em *${formatarTempo(restante)}*.\n\n`;
+        texto += `👶 *${filho.nome}* já recebeu cuidados. Você poderá cuidar novamente em *${formatarTempo(restante)}*.\n\n`;
         algumIndisponivel = true;
         continue;
       }
@@ -743,8 +1046,9 @@ async function handleRemedioFilho(sock, msg, jid) {
   const userId = msg.key.participant || msg.key.remoteJid;
 
   try {
+    const userIds = await resolverIdentidadesRemetente(msg, sock);
     const filhoDoente = await Filho.findOne({
-      ...filtroFilhosPorPai(jid, userId),
+      ...filtroFilhosPorPai(jid, userIds),
       doente: true,
     });
 
@@ -802,7 +1106,7 @@ async function handleRemedioFilho(sock, msg, jid) {
 
 // ─── !renomearfilho ───────────────────────────────────────────────────────────
 // Funciona independente de relacionamento ativo e independente de guarda —
-// dar nome não é uma ação de cuidado diário, então qualquer um dos pais pode.
+// dar nome não depende do cooldown de cuidado, então qualquer um dos pais pode.
 
 async function _aplicarRenome(sock, msg, jid, filho, novoNomeRaw) {
   const novoNome = novoNomeRaw.trim();
@@ -832,10 +1136,9 @@ async function _aplicarRenome(sock, msg, jid, filho, novoNomeRaw) {
 }
 
 async function handleRenomearFilho(sock, msg, jid, args) {
-  const userId = msg.key.participant || msg.key.remoteJid;
-
   try {
-    const filhos = await Filho.find(filtroFilhosPorPai(jid, userId)).sort({ nascidoEm: 1 });
+    const userIds = await resolverIdentidadesRemetente(msg, sock);
+    const filhos = await Filho.find(filtroFilhosPorPai(jid, userIds)).sort({ nascidoEm: 1 });
 
     if (filhos.length === 0) {
       return sock.sendMessage(jid, { text: '👶 Você não tem filhos ainda!' }, { quoted: msg });
@@ -847,7 +1150,7 @@ async function handleRenomearFilho(sock, msg, jid, args) {
     if (filhos.length === 1) {
       if (!texto) {
         return sock.sendMessage(jid, {
-          text: `✏️ Use: *!renomearfilho <novo nome>*\nExemplo: *!renomearfilho Enzo*`,
+          text: `✏️ Use: *${comandoDoGrupo(msg, 'renomearfilho', '<novo nome>')}*\nExemplo: *${comandoDoGrupo(msg, 'renomearfilho', 'Enzo')}*`,
         }, { quoted: msg });
       }
       return _aplicarRenome(sock, msg, jid, filhos[0], texto);
@@ -859,7 +1162,7 @@ async function handleRenomearFilho(sock, msg, jid, args) {
       const lista = filhos.map((f, i) => `  *${i + 1}.* ${f.nome}`).join('\n');
       return sock.sendMessage(jid, {
         text:
-          `✏️ Você tem mais de um filho! Use:\n*!renomearfilho <número> <novo nome>*\n\n` +
+          `✏️ Você tem mais de um filho! Use:\n*${comandoDoGrupo(msg, 'renomearfilho', '<número> <novo nome>')}*\n\n` +
           `Seus filhos:\n${lista}`,
       }, { quoted: msg });
     }
@@ -869,7 +1172,7 @@ async function handleRenomearFilho(sock, msg, jid, args) {
 
     if (!filhoAlvo) {
       return sock.sendMessage(jid, {
-        text: `❌ Número inválido! Use *!filho* para ver a lista numerada de novo.`,
+        text: `❌ Número inválido! Use *${comandoDoGrupo(msg, 'filho')}* para ver a lista numerada novamente.`,
       }, { quoted: msg });
     }
 
@@ -881,7 +1184,7 @@ async function handleRenomearFilho(sock, msg, jid, args) {
   }
 }
 
-// ─── DECAY DIÁRIO (rodar via scheduler) ──────────────────────────────────────
+// ─── DECAY DOS ATRIBUTOS (a cada 6 horas, via scheduler) ─────────────────────
 async function decayFilhos() {
   try {
     const result = await Filho.updateMany({}, [
@@ -922,4 +1225,10 @@ module.exports = {
   handleRemedioFilho,
   handleRenomearFilho,
   initFilhosScheduler,
+  _normalizarListaJids: normalizarListaJids,
+  _identidadesSeSobrepoem: identidadesSeSobrepoem,
+  _avaliarParticipacaoPedidoAdocao: avaliarParticipacaoPedidoAdocao,
+  _obterPrefixoComando: obterPrefixoComando,
+  _filtroFilhos: filtroFilhos,
+  _filtroFilhosPorPai: filtroFilhosPorPai,
 };

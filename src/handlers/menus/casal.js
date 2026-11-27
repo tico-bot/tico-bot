@@ -76,9 +76,9 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
 
 👨‍👩‍👧 *FAMÍLIA*
   ▸ ${P}tentarfilho — tentar ter um filho biológico
-  ▸ ${P}adotarfilho <nome> — pedir adoção ao parceiro
-  ▸ ${P}adotarfilho aceitar <código> — confirmar adoção
-  ▸ ${P}adotarfilho recusar <código> — recusar pedido
+  ▸ ${P}adotarfilho [nome] — pedir adoção ao parceiro (nome opcional)
+  ▸ ${P}adotarfilho aceitar <código> — confirmar adoção (responsável convidado)
+  ▸ ${P}adotarfilho recusar <código> — recusar pedido (responsável convidado)
   ▸ ${P}adotarfilho cancelar <código> — cancelar o próprio pedido
   ▸ ${P}filho — ver filhos e situação atual
   ▸ ${P}cuidarfilho — cuidar dos filhos
@@ -90,12 +90,12 @@ async function handleMenuFilho(sock, msg, jid, getPrefix) {
 
 📋 *COMO FUNCIONA*
   • Limite de até *3 filhos por casal*, incluindo adoções.
-  • A adoção exige confirmação dos dois responsáveis e expira em 15 minutos.
-  • Com o Modo República activo, responsáveis empregados recebem até 48 horas de licença por adoção.
-  • Cada *7 dias* equivalem a 1 ano de idade.
-  • Os atributos diminuem com o tempo; cuide da família.
-  • Felicidade zerada pode deixar o filho doente.
-  • Após uma separação, a guarda é compartilhada conforme as regras do sistema.
+  • Um responsável solicita a adoção; o outro precisa aceitá-la em até 15 minutos.
+  • Com o Modo República ativo, responsáveis com emprego elegível podem receber 48 horas de licença parental; a remuneração segue o salário apurado.
+  • Cada *7 dias* no sistema equivalem a 1 ano de idade.
+  • Os atributos diminuem a cada *6 horas*; se a felicidade chegar a zero, o filho pode adoecer.
+  • Cada filho pode receber cuidados novamente a cada *20 horas*.
+  • Se o casal estiver separado, a guarda alterna quando o sistema é consultado após *24 horas*. Se estiverem juntos, ambos podem cuidar.
 
 📊 *ATRIBUTOS*
   😊 Felicidade  •  🍽️ Fome

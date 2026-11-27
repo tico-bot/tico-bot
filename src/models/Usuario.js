@@ -122,6 +122,8 @@ const usuarioSchema = new mongoose.Schema({
   xpCasal:     { type: Number, default: 0,    min: 0 },
   casadoCom:   { type: String, default: null },
   casadoTipo:  { type: String, enum: ['casamento', 'namoro', null], default: null },
+  // Cooldown persistente de 20 minutos do comando /tentarfilho.
+  ultimaTentativaFilho: { type: Date, default: null },
   casadoDesde: { type: Date,   default: null },
   casadoGrupo: { type: String, default: null },
   casalItens:  { type: [casalItemSchema], default: [] },
