@@ -54,12 +54,18 @@ function buildQuotedMsg(jid, contextInfo, quoted) {
 }
 
 function getMediaContextInfo(content) {
+  const documentContent = content?.documentWithCaptionMessage?.message;
   const candidates = [
     content?.extendedTextMessage?.contextInfo,
     content?.imageMessage?.contextInfo,
     content?.videoMessage?.contextInfo,
+    content?.audioMessage?.contextInfo,
     content?.documentMessage?.contextInfo,
-    content?.documentWithCaptionMessage?.message?.extendedTextMessage?.contextInfo,
+    documentContent?.extendedTextMessage?.contextInfo,
+    documentContent?.imageMessage?.contextInfo,
+    documentContent?.videoMessage?.contextInfo,
+    documentContent?.audioMessage?.contextInfo,
+    documentContent?.documentMessage?.contextInfo,
     content?.messageContextInfo,
   ];
 
@@ -346,11 +352,10 @@ async function handleVideoSoundSticker(sock, msg, content, jid, author, stickerC
   }
 }
 
-async function handleQuotedAudioFirst(sock, msg, jid, contextInfo, quotedAudio, author) {
+async function handleAudioFirst(sock, msg, jid, sourceMsg, audioMessage, author) {
   await sendReaction(sock, msg, '⏳');
 
   try {
-    const sourceMsg = buildQuotedMsg(jid, contextInfo, quotedAudio.media);
     const downloaded = await downloadMediaMessage(
       sourceMsg,
       'buffer',
@@ -360,8 +365,8 @@ async function handleQuotedAudioFirst(sock, msg, jid, contextInfo, quotedAudio, 
     const buffer = Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded || []);
     if (!buffer.length) throw new Error('O áudio citado está vazio ou indisponível.');
 
-    const ext = detectExt(buffer, quotedAudio.audio.mimetype || '');
-    const duration = await getDuration(buffer, ext, quotedAudio.audio.seconds);
+    const ext = detectExt(buffer, audioMessage.mimetype || '');
+    const duration = await getDuration(buffer, ext, audioMessage.seconds);
     if (duration > MAX_SOUND_SECONDS + 0.25) {
       await sock.sendMessage(jid, {
         text: '❌ O áudio tem *' + Math.ceil(duration) + ' segundos*. O limite do */saudio* é *10 segundos*. O áudio não será acelerado. Escolha um áudio mais curto.',
@@ -431,9 +436,18 @@ async function handleSoundStickerImage(sock, msg, content, jid, author) {
     } else {
       const quotedAudio = getAudioFromMessage(quotedRaw);
       if (quotedAudio.audio) {
-        await handleQuotedAudioFirst(sock, msg, jid, contextInfo, quotedAudio, author);
+        const quotedSourceMsg = buildQuotedMsg(jid, contextInfo, quotedAudio.media);
+        await handleAudioFirst(sock, msg, jid, quotedSourceMsg, quotedAudio.audio, author);
         return;
       }
+    }
+  }
+
+  if (!image && !video) {
+    const directAudio = getAudioFromMessage(content);
+    if (directAudio.audio) {
+      await handleAudioFirst(sock, msg, jid, msg, directAudio.audio, author);
+      return;
     }
   }
 
@@ -651,3 +665,5 @@ module.exports = {
   getVideoSoundAccelerationNotice,
   getVideoOnlyAccelerationNotice,
 };
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

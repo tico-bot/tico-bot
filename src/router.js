@@ -259,10 +259,23 @@ async function handleMessage(sock, msg) {
   const content = unwrapMessageContent(msg.message);
   if (!content) return;
 
-  const imageMsg  = content.imageMessage;
-  const videoMsg  = content.videoMessage;
-  const textMsg   = content.conversation || content.extendedTextMessage?.text || '';
-  const caption   = (imageMsg?.caption || videoMsg?.caption || textMsg || '').trim();
+  const documentContent = content.documentWithCaptionMessage?.message;
+  const imageMsg  = content.imageMessage || documentContent?.imageMessage;
+  const videoMsg  = content.videoMessage || documentContent?.videoMessage;
+  const audioMsg  = content.audioMessage || documentContent?.audioMessage;
+  const documentMsg = content.documentMessage || documentContent?.documentMessage;
+  const textMsg   = content.conversation ||
+    content.extendedTextMessage?.text ||
+    documentContent?.extendedTextMessage?.text ||
+    '';
+  const caption   = (
+    imageMsg?.caption ||
+    videoMsg?.caption ||
+    audioMsg?.caption ||
+    documentMsg?.caption ||
+    textMsg ||
+    ''
+  ).trim();
   const author    = await getSenderName(msg, sock, contactNames);
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderAlternateJids = getAlternateSenderJids(msg);
@@ -1344,3 +1357,5 @@ module.exports = {
   contactNames, // exportado para bot.js poder popular via contacts.upsert/update
   invalidateGrupoConfigCache,
 };
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

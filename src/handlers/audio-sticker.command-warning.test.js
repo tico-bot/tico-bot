@@ -245,6 +245,52 @@ test('/saudio também aceita selecionar primeiro o áudio e depois enviar a imag
   }
 });
 
+test('/saudio também prepara um áudio enviado diretamente com o comando', async () => {
+  const ffmpeg = require('ffmpeg-static');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-saudio-direct-audio-'));
+  const audioPath = path.join(dir, 'three-seconds.ogg');
+
+  try {
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'sine=frequency=520:duration=3',
+      '-c:a', 'libopus',
+      '-b:a', '64k',
+      '-f', 'ogg',
+      audioPath,
+    ], { stdio: 'ignore' });
+
+    mediaBuffer = fs.readFileSync(audioPath);
+    downloadedMessage = null;
+    sent.length = 0;
+
+    const audioCommand = {
+      key: { remoteJid: jid },
+      message: {
+        audioMessage: {
+          mimetype: 'audio/ogg',
+          seconds: 3,
+          caption: '/saudio',
+        },
+      },
+    };
+
+    await handleSoundStickerImage(sock, audioCommand, audioCommand.message, jid, null);
+
+    const readyPrompt = sent.find(payload =>
+      typeof payload?.text === 'string' && /Áudio preparado/.test(payload.text));
+
+    assert.ok(readyPrompt, 'should prepare an audio message with /saudio instead of showing usage instructions');
+    assert.match(readyPrompt.text, /imagem ou vídeo/);
+    assert.equal(downloadedMessage, audioCommand, 'should download the direct audio message');
+  } finally {
+    mediaBuffer = null;
+    downloadedMessage = null;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('/saudio também aceita selecionar primeiro o áudio e depois enviar um vídeo', async () => {
   const ffmpeg = require('ffmpeg-static');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-saudio-audio-first-video-'));
@@ -433,3 +479,5 @@ test('/saudio aceita vídeo animado e depois anexa o áudio enviado separadament
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

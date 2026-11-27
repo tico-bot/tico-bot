@@ -672,6 +672,64 @@ function createTikTokCookieContext(id) {
   };
 }
 
+function normalizeInstagramCookies(raw) {
+  let content = String(raw || '').trim();
+  if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+  content = content.split(String.fromCharCode(13)).join('');
+  if (!content) throw new Error('arquivo vazio');
+  const lines = content.split(String.fromCharCode(10));
+  const header = lines.find(line => line.trim());
+  if (!(header || '').startsWith('# Netscape HTTP Cookie File') && !(header || '').startsWith('# HTTP Cookie File')) {
+    throw new Error('formato inválido; esperado Netscape HTTP Cookie File');
+  }
+  const validRow = lines.some(line => {
+    if (!line.trim() || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) return false;
+    const fields = line.split(String.fromCharCode(9));
+    const domain = (fields[0] || '').replace('#HttpOnly_', '').replace(/^\\./, '').toLowerCase();
+    return fields.length === 7 && fields[5] && fields[6] &&
+      (domain === 'instagram.com' || domain.endsWith('.instagram.com') ||
+       domain === 'cdninstagram.com' || domain.endsWith('.cdninstagram.com') ||
+       domain === 'facebook.com' || domain.endsWith('.facebook.com'));
+  });
+  if (!validRow) throw new Error('nenhum cookie válido dos domínios Instagram/Meta');
+  return content + String.fromCharCode(10);
+}
+function createInstagramCookieContext(id) {
+  let cookieFilePath = null;
+  let cookieTempFile = null;
+  const envCookies = process.env.INSTAGRAM_COOKIES;
+
+  const candidates = [
+    { value: envCookies, label: 'INSTAGRAM_COOKIES' },
+    ...(!envCookies?.trim() ? [
+      { value: (() => {
+        const local = path.join(__dirname, '../../instagram_cookies.txt');
+        return fs.existsSync(local) ? fs.readFileSync(local, 'utf8') : '';
+      })(), label: 'instagram_cookies.txt' },
+    ] : []),
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.value?.trim()) continue;
+    try {
+      const normalized = normalizeInstagramCookies(candidate.value);
+      cookieTempFile = tmpPath(id, '_instagram_cookies.txt');
+      fs.writeFileSync(cookieTempFile, normalized, { encoding: 'utf8', mode: 0o600 });
+      cookieFilePath = cookieTempFile;
+      log.info('🍪 Cookies do Instagram válidos (' + Buffer.byteLength(normalized) + ' bytes)');
+      break;
+    } catch (error) {
+      log.warn('[yt-dlp] ' + candidate.label + ' inválido:', error.message);
+    }
+  }
+
+  if (!cookieFilePath) log.warn('⚠️ Sem cookies do Instagram; publicações que exigem login podem falhar.');
+  return {
+    cookieFilePath,
+    cleanup() { if (cookieTempFile) safeDel(cookieTempFile); },
+  };
+}
+
 function createYoutubeCookieContext(id) {
   let cookieFilePath = null;
   let cookieTempFile = null;
@@ -948,6 +1006,14 @@ async function handleSave(sock, msg, jid, caption) {
   const metaPromise = fetchMeta(ytdlp, link);
 
   const baseArgs = [...getYtDlpArgs(), '--no-playlist', '--max-filesize', '200m'];
+  const parsedLink = new URL(link);
+  const isInstagram = parsedLink.hostname === 'instagram.com' || parsedLink.hostname.endsWith('.instagram.com');
+  let instagramCookieContext = null;
+  if (isInstagram) {
+    instagramCookieContext = createInstagramCookieContext(id);
+    if (instagramCookieContext.cookieFilePath) baseArgs.push('--cookies', instagramCookieContext.cookieFilePath);
+    baseArgs.push('--referer', 'https://www.instagram.com/');
+  }
   const isPinterest = /pinterest|pin\.it/i.test(link);
   if (isPinterest) {
     baseArgs.push(
@@ -960,7 +1026,8 @@ async function handleSave(sock, msg, jid, caption) {
   }
   baseArgs.push('-o', outTemplate, link);
 
-  const { ok: dlOk } = await ytDlp(ytdlp, baseArgs, 120000);
+  const { ok: dlOk, stderr: dlStderr } = await ytDlp(ytdlp, baseArgs, 120000);
+  instagramCookieContext?.cleanup();
   const base = outTemplate.replace('.%(ext)s', '');
   const exts = ['.mp4','.mkv','.webm','.mov','.mp3','.m4a','.jpg','.jpeg','.png','.gif','.webp','.opus','.ogg','.pdf','.zip','.txt'];
   let filePath = exts.map(e => base + e).find(p => fs.existsSync(p)) || null;
@@ -972,7 +1039,14 @@ async function handleSave(sock, msg, jid, caption) {
     if (imageFallback) filePath = imageFallback;
   }
   if (!dlOk && !filePath) {
-    return sock.sendMessage(jid, { text: '❌ Não consegui baixar o conteúdo. Se for um pin de imagem, confirme se ele está público; se for vídeo, tente outro link do Pinterest.' }, { quoted: msg });
+    const failureText = isPinterest
+      ? '❌ Não consegui baixar o conteúdo do Pinterest. Confirme se o Pin está público e tente novamente.'
+      : isInstagram
+        ? (/login|cookie|authentication|sign in|checkpoint/i.test(dlStderr || '')
+          ? '❌ O Instagram exige uma sessão válida. Configure INSTAGRAM_COOKIES ou o ficheiro instagram_cookies.txt e tente novamente.'
+          : '❌ Não consegui baixar essa publicação do Instagram. Confirme se o perfil/publicação está público ou se os cookies do Instagram estão actualizados.')
+        : '❌ Não consegui baixar o conteúdo. Verifique se o link é válido e se a publicação está disponível.';
+    return sock.sendMessage(jid, { text: failureText }, { quoted: msg });
   }
 
   if (!filePath) {
@@ -1417,6 +1491,80 @@ async function downloadTiktokPhotoPost(link, id, cookieFilePath) {
   }
 }
 
+const TIKTOK_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac', '.webm']);
+
+function isTikTokPhotoUrl(input) {
+  try {
+    const url = new URL(input);
+    return url.protocol === 'https:' &&
+      (url.hostname === 'tiktok.com' || url.hostname.endsWith('.tiktok.com')) &&
+      url.pathname.split('/').some((part, index, parts) => part.toLowerCase() === 'photo' && /^[0-9]+$/.test(parts[index + 1] || ''));
+  } catch {
+    return false;
+  }
+}
+
+function buildTikTokPhotoAudioArgs({ outputDir, cookieFilePath, link }) {
+  if (typeof outputDir !== 'string' || !outputDir.trim()) {
+    throw new Error('Pasta de saída do áudio TikTok inválida.');
+  }
+  if (!isTikTokPhotoUrl(link)) {
+    throw new Error('Link de publicação de fotos do TikTok inválido.');
+  }
+
+  const args = [
+    '--config-ignore',
+    '-D', outputDir,
+    '-f', '{id}_audio.{extension}',
+    '-o', 'extractor.tiktok.photos=false',
+    '-o', 'extractor.tiktok.videos=false',
+    '-o', 'extractor.tiktok.audio=true',
+  ];
+  if (typeof cookieFilePath === 'string' && cookieFilePath.trim()) {
+    args.push('--cookies', cookieFilePath);
+  }
+  args.push(link);
+  return args;
+}
+
+function listTikTokAudioFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter(entry => entry.isFile() && TIKTOK_AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+    .map(entry => path.join(directory, entry.name))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b), undefined, { numeric: true }));
+}
+
+async function downloadTikTokPhotoAudio(link, id, cookieFilePath) {
+  const outputDir = tmpPath(id, '_tiktok_photo_audio');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  try {
+    const args = buildTikTokPhotoAudioArgs({ outputDir, cookieFilePath, link });
+    const result = await runGalleryDl(args, 120000);
+    if (!result.ok) {
+      const diagnostic = (result.stderr || result.stdout || 'sem detalhes').trim().slice(-1200);
+      throw new Error('gallery-dl não conseguiu extrair o áudio: ' + diagnostic);
+    }
+
+    const files = listTikTokAudioFiles(outputDir);
+    if (files.length === 0) {
+      throw new Error('A publicação não disponibilizou uma faixa de áudio para download.');
+    }
+    if (files.length > 1) {
+      throw new Error('A publicação devolveu mais de uma faixa de áudio; download cancelado por segurança.');
+    }
+
+    const filePath = files[0];
+    const size = fs.statSync(filePath).size;
+    if (size < 1000 || size > SIZE_LIMIT) {
+      throw new Error('A faixa de áudio está vazia ou excede o limite permitido.');
+    }
+    return { outputDir, file: filePath };
+  } catch (error) {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+    throw error;
+  }
+}
 // !tiktok
 async function handleTiktok(sock, msg, jid, caption, getPrefix) {
   const P = getPrefix(jid);
@@ -1729,10 +1877,70 @@ async function handleAudioDownload(sock, msg, jid, caption) {
 
   await sock.sendMessage(jid, { react: { text: '⏳', key: msg.key } });
 
-  const ytdlp = await getYtDlpPath();
-  const ffmpegBin = getFfmpegPath();
   const { randomUUID } = require('crypto');
   const id = randomUUID();
+
+  if (isTikTokPhotoUrl(link)) {
+    const ffmpegBin = getFfmpegPath();
+    const cookieContext = createTikTokCookieContext(id);
+    let outputDir = null;
+    const outPath = tmpPath(id, '_tiktok_photo_audio.mp3');
+
+    try {
+      const downloaded = await downloadTikTokPhotoAudio(link, id, cookieContext.cookieFilePath);
+      outputDir = downloaded.outputDir;
+
+      const converted = await ffmpeg(ffmpegBin, [
+        '-y', '-i', downloaded.file,
+        '-map', '0:a:0',
+        '-vn',
+        '-c:a', 'libmp3lame',
+        '-b:a', '192k',
+        '-ar', '44100',
+        '-ac', '2',
+        outPath,
+      ], 180000);
+
+      if (!converted || !fs.existsSync(outPath)) {
+        throw new Error('O FFmpeg não conseguiu converter a faixa de áudio.');
+      }
+
+      const audioBuffer = fs.readFileSync(outPath);
+      if (!audioBuffer.length || audioBuffer.length > SIZE_LIMIT) {
+        throw new Error('O áudio convertido está vazio ou excede o limite de 64 MB.');
+      }
+
+      const username = (() => {
+        try { const parts = new URL(link).pathname.split('/'); return parts[1]?.startsWith('@') ? parts[1].slice(1) : null; }
+        catch { return null; }
+      })();
+      let infoCaption = '━━━ [ 🎵 *TikTok* 🎵 ] ━━━\n\n';
+      infoCaption += '🎵 *Áudio:* Faixa da publicação de fotos\n';
+      if (username) infoCaption += '👤 *Criador:* @' + username + '\n';
+      infoCaption += '🎚️ *Qualidade:* MP3 192kbps\n';
+      infoCaption += '💾 *Tamanho:* ' + (audioBuffer.length / 1024 / 1024).toFixed(1) + ' MB\n\n';
+      infoCaption += '🔗 ' + link;
+
+      await sock.sendMessage(jid, { text: infoCaption }, { quoted: msg });
+      await sock.sendMessage(jid, { audio: audioBuffer, mimetype: 'audio/mpeg', ptt: false }, { quoted: msg });
+      await sock.sendMessage(jid, { react: { text: '✅', key: msg.key } });
+      log.info('✅ Áudio extraído de publicação de fotos do TikTok e enviado!');
+    } catch (error) {
+      log.warn('[audio] Falha ao extrair áudio de publicação de fotos do TikTok:', error.message);
+      await sock.sendMessage(jid, {
+        text: '❌ Não consegui extrair a faixa de áudio dessa publicação do TikTok. Verifique se ela possui som e se continua disponível.',
+      }, { quoted: msg }).catch(() => {});
+      await sock.sendMessage(jid, { react: { text: '❌', key: msg.key } }).catch(() => {});
+    } finally {
+      cookieContext.cleanup();
+      safeDel(outPath);
+      if (outputDir) fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+    return;
+  }
+
+  const ytdlp = await getYtDlpPath();
+  const ffmpegBin = getFfmpegPath();
   const rawTemplate = tmpPath(id, '_raw.%(ext)s');
   const outPath = tmpPath(id, '_out.mp3');
 
@@ -2178,6 +2386,8 @@ module.exports = {
   _getYtDlpFfmpegLocation: getYtDlpFfmpegLocation,
   getYtDlpYouTubeArgs,
   _normalizeYoutubeCookies: normalizeYoutubeCookies,
+  _normalizeInstagramCookies: normalizeInstagramCookies,
+  _createInstagramCookieContext: createInstagramCookieContext,
   _parseYtDlpJson: parseYtDlpJson,
   _isYouTubeTarget: isYouTubeTarget,
   _getYtDlpUserError: getYtDlpUserError,
@@ -2186,6 +2396,10 @@ module.exports = {
   limparTmpAntigos,
   _isPublicAddress: isPublicAddress,
   _validateExternalUrl: validateExternalUrl,
-  _listTiktokPhotoFiles: listTiktokPhotoFiles,
+  _listTiktokPhotoFiles: listTiktokPhotoFiles,  _isTikTokPhotoUrl: isTikTokPhotoUrl,
+  _buildTikTokPhotoAudioArgs: buildTikTokPhotoAudioArgs,
+  _listTikTokAudioFiles: listTikTokAudioFiles,
   _buildTikTokVideoArgs: buildTikTokVideoArgs,
 };
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]

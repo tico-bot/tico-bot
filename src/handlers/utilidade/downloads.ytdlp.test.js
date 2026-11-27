@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   _normalizeYoutubeCookies,
+  _normalizeInstagramCookies,
+  _createInstagramCookieContext,
   _parseYtDlpJson,
   _isYouTubeTarget,
   _getYtDlpUserError,
@@ -14,6 +16,9 @@ const {
   _createTikTokCookieContext,
   _argsWithoutYoutubeCookies,
   _listTiktokPhotoFiles,
+  _isTikTokPhotoUrl,
+  _buildTikTokPhotoAudioArgs,
+  _listTikTokAudioFiles,
   _getQuotedVideoContext,
   _buildTikTokVideoArgs,
 } = require('./downloads');
@@ -21,6 +26,30 @@ const {
 const COOKIE_HEADER = '# Netscape HTTP Cookie File';
 const YOUTUBE_COOKIE = '.youtube.com\tTRUE\t/\tTRUE\t1893456000\tSID\ttest-session-value';
 const TIKTOK_COOKIE = '.tiktok.com\tTRUE\t/\tTRUE\t1893456000\tsid_tt\ttest-tiktok-session';
+
+test('valida cookies Netscape do Instagram e rejeita cookies de outros domínios', () => {
+  const fixture = COOKIE_HEADER + '\n' + '.instagram.com\tTRUE\t/\tTRUE\t1893456000\tsessionid\ttest-session';
+  assert.equal(_normalizeInstagramCookies(fixture), fixture + '\n');
+  assert.throws(() => _normalizeInstagramCookies(COOKIE_HEADER + '\n' + YOUTUBE_COOKIE), /Instagram/);
+});
+
+test('cria e remove o ficheiro temporário de cookies do Instagram', () => {
+  const previous = process.env.INSTAGRAM_COOKIES;
+  const fixture = COOKIE_HEADER + '\n' + '.instagram.com\tTRUE\t/\tTRUE\t1893456000\tsessionid\ttest-session';
+  process.env.INSTAGRAM_COOKIES = fixture;
+  const context = _createInstagramCookieContext('test-instagram-cookie');
+  try {
+    assert.ok(context.cookieFilePath);
+    const fs = require('node:fs');
+    assert.equal(fs.readFileSync(context.cookieFilePath, 'utf8'), fixture + '\n');
+    context.cleanup();
+    assert.equal(fs.existsSync(context.cookieFilePath), false);
+  } finally {
+    context.cleanup();
+    if (previous === undefined) delete process.env.INSTAGRAM_COOKIES;
+    else process.env.INSTAGRAM_COOKIES = previous;
+  }
+});
 
 test('identifica vídeo citado em mensagem efémera e monta a chave para descarregar a mídia', () => {
   const msg = {
@@ -338,3 +367,53 @@ test('identifica e ordena imagens do carrossel do TikTok, ignorando outros fiche
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('reconhece publicações de fotos do TikTok sem confundir links de vídeo ou outros domínios', () => {
+  assert.equal(_isTikTokPhotoUrl('https://www.tiktok.com/@creator/photo/123456789?_r=1'), true);
+  assert.equal(_isTikTokPhotoUrl('https://www.tiktok.com/@creator/video/123456789'), false);
+  assert.equal(_isTikTokPhotoUrl('https://tiktok.com.evil.example/@creator/photo/123456789'), false);
+  assert.equal(_isTikTokPhotoUrl('http://www.tiktok.com/@creator/photo/123456789'), false);
+  assert.equal(_isTikTokPhotoUrl('not-a-url'), false);
+});
+
+test('monta argumentos do gallery-dl para descarregar apenas o áudio de um post TikTok /photo/', () => {
+  const link = 'https://www.tiktok.com/@creator/photo/123456789?_r=1';
+  const outputDir = 'C:\\\\temp\\\\tiktok-audio';
+  const cookiePath = 'C:\\\\temp\\\\tiktok-cookies.txt';
+  const args = _buildTikTokPhotoAudioArgs({ outputDir, cookieFilePath: cookiePath, link });
+
+  assert.ok(args.includes('--config-ignore'));
+  assert.equal(args[args.indexOf('-D') + 1], outputDir);
+  assert.equal(args[args.indexOf('-f') + 1], '{id}_audio.{extension}');
+  assert.ok(args.includes('extractor.tiktok.photos=false'));
+  assert.ok(args.includes('extractor.tiktok.videos=false'));
+  assert.ok(args.includes('extractor.tiktok.audio=true'));
+  assert.equal(args[args.indexOf('--cookies') + 1], cookiePath);
+  assert.equal(args.at(-1), link);
+  assert.throws(() => _buildTikTokPhotoAudioArgs({
+    outputDir,
+    link: 'https://www.tiktok.com/@creator/video/123456789',
+  }), /publicação de fotos/);
+});
+
+test('localiza somente ficheiros de áudio do gallery-dl e ordena-os pelo nome', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tico-tiktok-audio-test-'));
+
+  try {
+    for (const name of ['track_b.mp3', 'track_a.m4a', 'cover.jpg', 'notes.txt', 'track_c.webm']) {
+      fs.writeFileSync(path.join(directory, name), 'audio-test');
+    }
+    assert.deepEqual(
+      _listTikTokAudioFiles(directory).map(file => path.basename(file)),
+      ['track_a.m4a', 'track_b.mp3', 'track_c.webm']
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+[executed on device: DESKTOP-1L1H92H (d948dffa-9149-4e26-ab82-1adcd5da63f8)]
